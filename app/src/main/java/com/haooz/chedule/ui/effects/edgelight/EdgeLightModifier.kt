@@ -24,16 +24,7 @@ import kotlin.math.ceil
 
 internal class EdgeLightElement(
     val shape: androidx.compose.ui.graphics.Shape,
-    val edgeLight: () -> EdgeLight?,
-    /**
-     * 「值重载」（[Modifier.edgeLight] 传 EdgeLight 的那个）把原始值也带上：
-     * 那个重载每次调用都会新建一个 `{ edgeLight }` lambda，而 lambda 只能按引用比较，
-     * 于是每次重组 `equals` 都判不等 → `update()` → `invalidateOutlineCache()`，
-     * 轮廓（ContinuousRoundedRectangle 走的是 Path 构建）就每次重组重算一遍。
-     * 带上原值后两个值重载之间按**值**比较，重组不再无故失效。
-     * 动态 lambda 重载不传这个字段，仍按引用比较，语义不变。
-     */
-    private val edgeLightValue: EdgeLight? = null,
+    val edgeLight: () -> EdgeLight?
 ) : ModifierNodeElement<EdgeLightNode>() {
 
     override fun create(): EdgeLightNode {
@@ -50,24 +41,20 @@ internal class EdgeLightElement(
     override fun InspectorInfo.inspectableProperties() {
         name = "edgeLight"
         properties["shape"] = shape
-        properties["edgeLight"] = edgeLightValue ?: edgeLight
+        properties["edgeLight"] = edgeLight
     }
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is EdgeLightElement) return false
         if (shape != other.shape) return false
-        // 两边都是值重载 → 按值比；否则退回按引用比（动态 lambda 的原语义）
-        if (edgeLightValue != null && other.edgeLightValue != null) {
-            return edgeLightValue == other.edgeLightValue
-        }
         if (edgeLight != other.edgeLight) return false
         return true
     }
 
     override fun hashCode(): Int {
         var result = shape.hashCode()
-        result = 31 * result + (edgeLightValue?.hashCode() ?: edgeLight.hashCode())
+        result = 31 * result + edgeLight.hashCode()
         return result
     }
 }
@@ -276,8 +263,7 @@ fun Modifier.edgeLight(
     return this.then(
         EdgeLightElement(
             shape = shape,
-            edgeLight = { edgeLight },
-            edgeLightValue = edgeLight,
+            edgeLight = { edgeLight }
         )
     )
 }

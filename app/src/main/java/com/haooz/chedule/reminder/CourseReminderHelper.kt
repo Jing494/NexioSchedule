@@ -60,6 +60,21 @@ object CourseReminderHelper {
         if (debugEnabled(context)) android.util.Log.d(TAG, message)
     }
 
+    /**
+     * 提升（promoted ongoing）相关调用失败时**不能静默**。
+     *
+     * 这几个 API 一旦抛异常（例如系统不支持/权限被撤），通知照样发出去，
+     * 但会**退化成普通通知**——用户看到的是"没有实时动态"，而日志里一个字都没有，
+     * 无法归因。所以失败一律留 warn 痕迹。这些调用每次发通知最多两三次，不在热路径上。
+     */
+    private inline fun promotedCatching(tag: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "promoted-api failed: $tag (${e.javaClass.simpleName}: ${e.message})")
+        }
+    }
+
     const val EXTRA_REMINDER_TYPE = "reminder_type"
     const val EXTRA_COURSE_NAME = "course_name"
     const val EXTRA_COURSE_SECTION = "course_section"
@@ -430,6 +445,9 @@ object CourseReminderHelper {
             // 立即占位：检查与更新必须原子，否则两条并发线程会同时通过判断、各全量重排一次
             lastServiceStartAt = now
         }
+        // 启动路径自愈：上次给超级岛"绕白名单"时把小米推送服务断网，若进程在恢复前被杀，
+        // 网络会一直是关的。这里补一次恢复（没标记时是一次 SharedPreferences 读，代价可忽略）。
+        runCatching { com.haooz.chedule.shizuku.ShizukuManager.healPendingXmsfRestore(context) }
         doStartReminderService(context, repository)
     }
 
@@ -1649,8 +1667,8 @@ object CourseReminderHelper {
                         .setProgress(progressPercent.coerceIn(0, 100))
                 )
             }
-            runCatching { styleBuilder.setRequestPromotedOngoing(true) }
-            runCatching { styleBuilder.setShortCriticalText("明天返校") }
+            promotedCatching("returnDay.setRequestPromotedOngoing") { styleBuilder.setRequestPromotedOngoing(true) }
+            promotedCatching("returnDay.setShortCriticalText") { styleBuilder.setShortCriticalText("明天返校") }
             manager.notify(
                 RETURN_DAY_LIVE_ID,
                 styleBuilder.build().apply {
@@ -1788,8 +1806,8 @@ object CourseReminderHelper {
                 }
                 styleBuilder.setStyle(progressStyle)
             }
-            runCatching { styleBuilder.setRequestPromotedOngoing(true) }
-            runCatching { styleBuilder.setShortCriticalText(shortCriticalText) }
+            promotedCatching("inClass.setRequestPromotedOngoing") { styleBuilder.setRequestPromotedOngoing(true) }
+            promotedCatching("inClass.setShortCriticalText") { styleBuilder.setShortCriticalText(shortCriticalText) }
             styleBuilder.build().apply { flags = flags or Notification.FLAG_ONLY_ALERT_ONCE }
         } else {
             NotificationCompat.Builder(context, CHANNEL_LIVE_ID)
@@ -1898,12 +1916,20 @@ object CourseReminderHelper {
      * 原实现每次发通知都 `createNotificationChannel` ×2 —— 那就是 2 次 binder 往返 +
      * 2 个 NotificationChannel 分配。课中提醒是**每分钟**发一次的，
      * 等于每分钟白付两次跨进程调用去设置同一个通道。
+     *
+     * 但**不能只用一个布尔量永久跳过**：用户可以在系统设置里把通道删掉，
+     * 而 `createNotificationChannel` 正好是"被删了会重建"的那条路径；
+     * 永久跳过会让之后的通知静默丢弃。所以做成 10 分钟心跳复核：
+     * 每分钟那条热路径照样零开销，通道被删也能在 10 分钟内自愈。
      */
+    private const val CHANNEL_ENSURE_INTERVAL_MS = 10 * 60 * 1000L
+
     @Volatile
-    private var notificationChannelsReady = false
+    private var notificationChannelsEnsuredAt = 0L
 
     private fun ensureNotificationChannels(context: Context) {
-        if (notificationChannelsReady) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - notificationChannelsEnsuredAt < CHANNEL_ENSURE_INTERVAL_MS) return
         val manager = context.getSystemService(NotificationManager::class.java)
         val alertChannel = NotificationChannel(
             CHANNEL_REMINDER_ID,
@@ -1931,7 +1957,7 @@ object CourseReminderHelper {
         }
         manager.createNotificationChannel(alertChannel)
         manager.createNotificationChannel(liveChannel)
-        notificationChannelsReady = true
+        notificationChannelsEnsuredAt = android.os.SystemClock.elapsedRealtime()
     }
 
     fun showReminderNotification(

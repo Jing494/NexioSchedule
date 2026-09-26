@@ -93,10 +93,18 @@ object ReturnDayReminder {
         val lastDate: LocalDate,
         val daysLeft: Int,
     ) {
+        /** 这段假期一共几天。 */
+        val totalDays: Int
+            get() = ChronoUnit.DAYS.between(firstDate, lastDate).toInt() + 1
+
+        /** 今天是这段假期的第几天（1 起）。首日 = 1，末日 = [totalDays]。 */
+        val dayIndex: Int
+            get() = (totalDays - daysLeft).coerceIn(1, totalDays.coerceAtLeast(1))
+
         /** 假期进度（0~100），用于实时动态的进度条。单日假期给 0。 */
         val progressPercent: Int
             get() {
-                val total = ChronoUnit.DAYS.between(firstDate, lastDate).toInt() + 1
+                val total = totalDays
                 if (total <= 1) return 0
                 val passed = (total - daysLeft).coerceIn(0, total)
                 return (passed * 100 / total).coerceIn(0, 100)
@@ -142,8 +150,9 @@ object ReturnDayReminder {
     /**
      * 今日页 / 小部件用的一句话状态。不适用时返回 null（调用方保持原样）。
      *
-     * - 返校日 → "今天/明天是中秋最后一天，返校啦"
-     * - 假期中（仅当天）→ "中秋还剩 2 天"
+     * - 返校日（今天）→ "今天是中秋最后一天 · 距晚自习（18:30）还有 5 小时"
+     * - 返校日（次日）→ "明天是中秋最后一天 · 晚自习 18:30 开始"
+     * - 假期中（仅当天）→ "今天是中秋第 2 天 · 还剩 1 天"
      */
     fun statusText(
         context: Context,
@@ -161,30 +170,51 @@ object ReturnDayReminder {
             // 注意：中文紧跟在 $label 后面会被当成标识符（$label是 不是 $label + 是），必须加花括号
             val where = if (span != null) "${label}是${span.name}最后一天" else "${label}是周末最后一天"
             val what = returnCourseName?.takeIf { it.isNotBlank() }
+            val hasTime = what != null && !returnStartTime.isNullOrBlank()
             // 只有"今天"算倒计时才有意义（次日提醒等场景算出来是负数或几十小时）
-            val hours = if (isToday) hoursUntil(returnStartTime) else null
+            val remaining = if (isToday) remainingText(returnStartTime) else null
             return when {
-                hours != null && hours > 0 -> "$where，距返校${what ?: ""}还有 $hours 小时"
-                what != null && !returnStartTime.isNullOrBlank() ->
-                    "$where，${what} $returnStartTime 开始"
+                // 原句「距返校${课名}还有 N 小时」在没有课名时会变成「距返校还有」，
+                // 有课名时又缺停顿；改成「距<课名>（18:30）还有 …」/「距返校还有 …」，用 · 分段。
+                // 另外不足 1 小时原来向上取整成「1 小时」，起不到倒计时作用 —— 现在改说分钟。
+                remaining != null && hasTime -> "$where · 距${what}（$returnStartTime）还有 $remaining"
+                remaining != null -> "$where · 距返校还有 $remaining"
+                hasTime -> "$where · $what $returnStartTime 开始"
                 else -> "$where，返校啦"
             }
         }
-        // 假期余额：与总开关**解耦**（余额是假期信息，不是豁免功能的一部分）。
+        // 假期余额 / 假期进度：与总开关**解耦**（余额是假期信息，不是豁免功能的一部分）。
         // 但只在「当天」显示 —— 在次日小部件上按明天算余额会说成"还剩 N 天"，
         // 用户读到的是今天的信息，属于串味；非当天时返回 null 让调用方保持原样。
+        //
+        // 形态改成「今天是<假期名>第 N 天」，假期期间**每天**都显示，
+        // 而不是只在最后一天说「今天是 X 最后一天」；剩余天数作为次要信息跟在后面。
         if (span != null && isToday) {
+            val head = "今天是${span.name}第 ${span.dayIndex} 天"
             return if (span.daysLeft > 0) {
-                "${span.name}还剩 ${span.daysLeft} 天"
+                "$head · 还剩 ${span.daysLeft} 天"
             } else {
-                "今天是${span.name}最后一天"
+                "$head · 最后一天"
             }
         }
         return null
     }
 
-    /** 距某个 "HH:mm" 还有多少小时（向上取整）；已过或格式非法返回 null。 */
-    private fun hoursUntil(startTime: String?): Int? {
+    /**
+     * 距某个 "HH:mm" 还有多久，返回可直接拼进句子的短文案。
+     * 不足 1 小时说分钟（倒计时的意义就在这里），否则给「N 小时 M 分钟」；
+     * 已过或格式非法返回 null。
+     */
+    private fun remainingText(startTime: String?): String? {
+        val minutes = minutesUntil(startTime) ?: return null
+        if (minutes < 60) return "$minutes 分钟"
+        val h = minutes / 60
+        val m = minutes % 60
+        return if (m == 0L) "$h 小时" else "$h 小时 $m 分钟"
+    }
+
+    /** 距某个 "HH:mm" 还有多少分钟；已过或格式非法返回 null。 */
+    private fun minutesUntil(startTime: String?): Long? {
         val parts = startTime?.trim().orEmpty().split(":")
         if (parts.size != 2) return null
         val hour = parts[0].toIntOrNull() ?: return null
@@ -194,6 +224,6 @@ object ReturnDayReminder {
         }.getOrNull() ?: return null
         val minutes = java.time.Duration.between(java.time.LocalTime.now(), target).toMinutes()
         if (minutes <= 0) return null
-        return ((minutes + 59) / 60).toInt()
+        return minutes
     }
 }

@@ -28,7 +28,9 @@ object IslandNotificationHelper {
     private const val CHANNEL_ID = "course_reminder_island"
     private const val CHANNEL_NAME = "课程提醒超级岛"
     private const val KEY_ISLAND_EXPAND_GLOW_ENABLED = "island_expand_glow_enabled"
-    // 课中提醒：到点后「已上课」替换为模板6进度卡片
+    // 课中提醒：到点后「已上课」替换为课中卡片。
+    // 注意：课中走的是 buildInClassIslandParamsJson（展开态=模板9：文本组件2+识别图形组件1+按钮组件2），
+    // 全项目**没有**课中进度卡片，别再按"模板6进度"去理解这条路径。
     const val KEY_IN_CLASS_REMINDER = "island_in_class_enabled"
     // 官方必选：运营场景标识
     private const val BUSINESS_TAG = "course_reminder"
@@ -41,7 +43,7 @@ object IslandNotificationHelper {
     // 「已上课」独立 ID：同 ID 更新被岛框架视为静默替换，Chronometer 会卡 00:00
     const val ISLAND_STARTED_NOTIFICATION_ID = 1004
     const val ISLAND_STARTED_TEST_NOTIFICATION_ID = 5001
-    // 课中提醒模板6 独立 ID：与「已上课」两条路径完全分开，不在同一条通知里 if/else
+    // 课中提醒独立 ID（展开态为模板9）：与「已上课」两条路径完全分开，不在同一条通知里 if/else
     const val ISLAND_IN_CLASS_NOTIFICATION_ID = 1005
     const val ISLAND_IN_CLASS_TEST_NOTIFICATION_ID = 5002
 
@@ -206,7 +208,12 @@ object IslandNotificationHelper {
         }
     }
 
-    // Mutex 串行化 disable→notify→enable；finally 保证 XMSF 网络一定恢复
+    // Mutex 串行化 disable→notify→enable；finally 保证 XMSF 网络一定恢复。
+    //
+    // 但 finally **只在进程还活着时**才执行：如果这 100ms 窗口内进程被系统杀掉
+    // （HyperOS 后台清理、崩溃），小米推送服务的网络就会一直处于被封状态。
+    // 所以 disable 之前先落一个"待恢复"标记，恢复成功才清；启动路径上做自愈
+    // （见 ShizukuManager.healPendingXmsfRestore，由 startReminderService 调用）。
     private suspend fun withShizukuBypass(
         context: Context,
         notificationId: Int,
@@ -219,14 +226,18 @@ object IslandNotificationHelper {
         }
         shizukuBypassMutex.withLock {
             val disabled = try {
+                ShizukuManager.markXmsfRestorePending(context)
                 ShizukuManager.setXmsfNetworkingEnabled(context, false)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to disable XMSF networking", e)
+                ShizukuManager.clearXmsfRestorePending(context)
                 sendNotificationDirect(context, notificationId, notification)
                 return@withLock
             }
             if (!disabled) {
                 Log.w(TAG, "Failed to disable XMSF networking, sending notification anyway")
+                // 没真的断网就没有"待恢复"这回事
+                ShizukuManager.clearXmsfRestorePending(context)
                 sendNotificationDirect(context, notificationId, notification)
                 return@withLock
             }
@@ -237,8 +248,10 @@ object IslandNotificationHelper {
             } finally {
                 try {
                     ShizukuManager.setXmsfNetworkingEnabled(context, true)
+                    ShizukuManager.clearXmsfRestorePending(context)
                     Log.d(TAG, "XMSF networking restored")
                 } catch (e: Exception) {
+                    // 保留"待恢复"标记，交给启动路径自愈
                     Log.e(TAG, "CRITICAL: Failed to restore XMSF networking!", e)
                 }
             }
@@ -374,7 +387,7 @@ object IslandNotificationHelper {
 
     // courseStartMillis 是课程开始时间的唯一真源，倒计时/文案/已上课态都由它派生
     // courseEndMillis 用于课中提醒：给出剩余时间与进度；null 或已过下课点则回退静态「已上课」
-    // 仅用于：课前倒计时 / 静态「已上课」。课中模板6 走 buildInClassIslandParamsJson
+    // 仅用于：课前倒计时 / 静态「已上课」。课中走 buildInClassIslandParamsJson（模板9）
     private fun buildIslandParamsJson(
         context: Context,
         title: String,
@@ -400,18 +413,24 @@ object IslandNotificationHelper {
         val counting = remainMs != null && remainMs > 0
         val minutesUntil = if (counting) ((remainMs + 59_999L) / 60_000L).toInt() else 0
 
+        // A 区（图文组件1）规范要求"图标或正文大字二选一，**不能为空**"，
+        // 而本文件的 imageTextInfoLeft 只带 textInfo、不带 picInfo；
+        // B 区 textInfo.title 同样必传。原实现这里直接 `?: ""`，
+        // 数据侧课程名为空时就会得到空标题 —— 系统那边表现为"静默不出岛"，且没有任何痕迹。
+        // 统一回退到 title（baseInfo.title 本来就回退 title），保证两区都非空。
+        val fallbackText = title.ifBlank { "课程提醒" }
         val islandLeftText = when (leftMode) {
             0 -> courseName ?: ""
             1 -> classroom ?: ""
             2 -> if (counting) "${minutesUntil}分钟" else "已上课"
             else -> courseName ?: ""
-        }
+        }.ifBlank { fallbackText }
         val islandRightText = when (rightMode) {
             0 -> courseName ?: ""
             1 -> classroom ?: ""
             2 -> if (counting) "${minutesUntil}分钟" else "已上课"
             else -> classroom ?: ""
-        }
+        }.ifBlank { fallbackText }
         val aodTitle = if (aodMode == 1) classroom ?: courseName ?: title else courseName ?: title
 
         val paramV2 = JSONObject().apply {
@@ -803,7 +822,9 @@ object IslandNotificationHelper {
     /**
      * 「明天返校」超级岛（返校日前一晚）。
      *
-     * 复用课前倒计时同一套模板与发送路径（模板2：文本组件2 + 识别图形组件1），
+     * 复用课前倒计时的组件与发送路径。注意课前/已上课那套其实是
+     * **模板9**（文本组件2 + 识别图形组件1 + 按钮组件2），不是模板2；
+     * 本函数会在下面把按钮组件（hintInfo）摘掉，凑成模板6。
      * 只换成静态文案、不带倒计时。**不新开通道，也不触碰 XMSF 绕白名单那段逻辑。**
      */
     fun sendReturnDayIslandNotification(
@@ -814,7 +835,10 @@ object IslandNotificationHelper {
         notificationId: Int = ISLAND_RETURN_DAY_NOTIFICATION_ID,
         /** 形如 "中秋最后一天"；有则在标题里点明是哪段假期 */
         holidayLabel: String? = null,
-        /** 非空时注入进度组件，凑成模板6（文本组件2 + 识别图形组件1 + 进度组件2） */
+        /**
+         * 非空时注入进度组件2。注入前会先摘掉 hintInfo（按钮组件），
+         * 组件组合因此正好等于模板库的**模板6**（文本组件2 + 识别图形组件1 + 进度组件2）。
+         */
         progressPercent: Int? = null,
     ) {
         val title = if (holidayLabel.isNullOrBlank()) "明天返校" else "明天返校 · $holidayLabel"
@@ -836,13 +860,26 @@ object IslandNotificationHelper {
             classroom = "返校",
             courseStartMillis = null,
         )
-        // 进度组件2（纯净版）：只传 progress/颜色，不传任何 picXXX 字段即为模板库的「进度组件2」
-        val params = if (progressPercent == null) {
-            paramsRaw
-        } else {
-            runCatching {
-                val root = JSONObject(paramsRaw)
-                root.optJSONObject("param_v2")?.put(
+        // 「明天返校」是**静态提醒**，但 buildIslandParamsJson 是按"课前/已上课"两态设计的，
+        // 传 courseStartMillis=null 会落到"已上课"态，于是：
+        //   · hintInfo 的 title/content 被写成「已上课 / 现在」（模板库里它是描述"当前状况"的组件）
+        //   · B 区 textInfo.title 也被写成「已上课」
+        // 这两处都不是"明天返校"该有的文案；而且 hintInfo 是"圆头图文按钮"组件，对静态提醒没有意义。
+        // 处理：去掉 hintInfo，并把 B 区标题换成节次 —— 组件组合正好变成模板库里的
+        // **模板6（文本组件2 + 识别图形组件1 + 进度组件2）**，
+        // 而不是原来那个"文本2 + 图形1 + 按钮2 + 进度"的四组件、模板清单里不存在的组合。
+        val staticRightText = section.ifBlank { "返校" }
+        val params = runCatching {
+            val root = JSONObject(paramsRaw)
+            val paramV2 = root.optJSONObject("param_v2") ?: return@runCatching paramsRaw
+            paramV2.remove("hintInfo")
+            paramV2.optJSONObject("param_island")
+                ?.optJSONObject("bigIslandArea")
+                ?.optJSONObject("textInfo")
+                ?.put("title", staticRightText)
+            if (progressPercent != null) {
+                // 进度组件2（纯净版）：只传 progress/颜色、不传任何 picXXX 字段，即为模板库的「进度组件2」
+                paramV2.put(
                     "progressInfo",
                     JSONObject().apply {
                         put("progress", progressPercent.coerceIn(0, 100))
@@ -850,9 +887,9 @@ object IslandNotificationHelper {
                         put("colorProgressEnd", "#FF2196F3")
                     },
                 )
-                root.toString()
-            }.getOrDefault(paramsRaw)
-        }
+            }
+            root.toString()
+        }.getOrDefault(paramsRaw)
         sendIslandNotification(
             context = context,
             notificationId = notificationId,

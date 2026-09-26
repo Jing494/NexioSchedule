@@ -97,6 +97,55 @@ object ShizukuManager {
         }
     }
 
+    // ===== XMSF 绕白名单的"待恢复"标记：防止进程死在 disable/restore 之间 =====
+    //
+    // withShizukuBypass 的序列是：关掉 com.xiaomi.xmsf 的网络 → notify → 100ms → 重新打开。
+    // 如果进程在这 100ms 窗口里被系统杀掉（HyperOS 后台清理、崩溃），finally 不会执行，
+    // **小米推送服务的网络会一直处于被封状态**，直到下一次发岛才顺带恢复。
+    // 所以 disable 之前先把"待恢复"落盘，恢复成功后清除；启动路径上做一次自愈。
+    private const val XMSF_PREFS = "xmsf_bypass_state"
+    private const val KEY_XMSF_PENDING_RESTORE = "pending_restore"
+
+    /** 必须在**真正 disable 之前**调用。 */
+    fun markXmsfRestorePending(context: Context) {
+        try {
+            context.getSharedPreferences(XMSF_PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_XMSF_PENDING_RESTORE, true).apply()
+        } catch (e: Exception) {
+            Log.w(TAG, "markXmsfRestorePending failed", e)
+        }
+    }
+
+    fun clearXmsfRestorePending(context: Context) {
+        try {
+            context.getSharedPreferences(XMSF_PREFS, Context.MODE_PRIVATE)
+                .edit().remove(KEY_XMSF_PENDING_RESTORE).apply()
+        } catch (e: Exception) {
+            Log.w(TAG, "clearXmsfRestorePending failed", e)
+        }
+    }
+
+    /**
+     * 自愈：上次"关掉 XMSF 网络"之后没来得及恢复（进程被杀/崩溃），
+     * 这里在启动路径上补一次恢复。恢复成功才清标记，失败保留等下次再试。
+     */
+    fun healPendingXmsfRestore(context: Context) {
+        val prefs = try {
+            context.getSharedPreferences(XMSF_PREFS, Context.MODE_PRIVATE)
+        } catch (e: Exception) {
+            return
+        }
+        if (!prefs.getBoolean(KEY_XMSF_PENDING_RESTORE, false)) return
+        Log.w(TAG, "pending XMSF restore found, healing")
+        val ok = try {
+            setXmsfNetworkingEnabled(context, true)
+        } catch (e: Exception) {
+            Log.e(TAG, "healPendingXmsfRestore failed", e)
+            false
+        }
+        if (ok) clearXmsfRestorePending(context)
+    }
+
     fun setXmsfNetworkingEnabled(context: Context, enabled: Boolean): Boolean {
         if (!isShizukuRunning() || !checkSelfPermission()) {
             Log.w(TAG, "Shizuku not available or no permission")
