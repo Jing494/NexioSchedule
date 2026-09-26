@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.haooz.chedule.data.Course
+import com.haooz.chedule.data.ReturnDayReminder
 import com.haooz.chedule.ui.effects.edgelight.edgeLight
 import com.haooz.chedule.ui.effects.edgelight.rememberCourseCardEdgeLight
 import com.kyant.backdrop.Backdrop
@@ -86,6 +87,8 @@ fun DayColumn(
     currentWeek: Int = 1,
     isHoliday: Boolean = false,
     isWorkSwap: Boolean = false,
+    /** 返校日豁免节次：这些节次的课不算假期，按正常课渲染（不变灰、不打「假」标） */
+    exemptSections: Set<Int> = emptySet(),
     pendingDay: Int = -1,
     pendingSection: Int = -1,
     onPendingChange: (day: Int, section: Int) -> Unit = { _, _ -> },
@@ -254,6 +257,7 @@ fun DayColumn(
                 currentWeek = currentWeek,
                 isHoliday = isHoliday,
                 isWorkSwap = isWorkSwap,
+                exemptSections = exemptSections,
                 showBreakDividers = showBreakDividers,
                 morningSections = morningSections,
                 afternoonSections = afternoonSections,
@@ -295,6 +299,8 @@ private fun CourseCardsLayer(
     currentWeek: Int,
     isHoliday: Boolean,
     isWorkSwap: Boolean,
+    /** 返校日豁免节次：这些节次的课按正常课渲染（不变灰、不打「假」标） */
+    exemptSections: Set<Int> = emptySet(),
     showBreakDividers: Boolean,
     morningSections: Int,
     afternoonSections: Int,
@@ -386,6 +392,8 @@ private fun CourseCardsLayer(
         val course = renderData.course
         val isCurrentWeekCourse = renderData.isCurrentWeekCourse
         val isDragging = course.id in draggingCourseIds && isCurrentWeekCourse
+        // 返校日豁免：落在豁免节次的课不算假期，按正常课渲染（恢复课程色、不打「假」标）
+        val courseIsHoliday = isHoliday && !ReturnDayReminder.isExempt(course, exemptSections)
 
         // 自定义时间课按时间轴插值定位/定高，不按节次分段
         if (course.hasValidCustomTime()) {
@@ -410,7 +418,7 @@ private fun CourseCardsLayer(
                         gridScrollFlag = gridScrollFlag,
                         isDark = isDark,
                         isCurrentWeek = isCurrentWeekCourse,
-                        isHoliday = isHoliday,
+                        isHoliday = courseIsHoliday,
                         isWorkSwap = isWorkSwap,
                         hasMultipleCourses = renderData.hasHiddenCourses,
                         wallpaperBackdrop = wallpaperBackdrop,
@@ -454,7 +462,7 @@ private fun CourseCardsLayer(
                         gridScrollFlag = gridScrollFlag,
                         isDark = isDark,
                         isCurrentWeek = isCurrentWeekCourse,
-                        isHoliday = isHoliday,
+                        isHoliday = courseIsHoliday,
                         isWorkSwap = isWorkSwap,
                         hasMultipleCourses = idx == 0 && renderData.hasHiddenCourses,
                         wallpaperBackdrop = wallpaperBackdrop,

@@ -124,8 +124,11 @@ fun Modifier.pagerAxisTakeoverGesture(
             val dragState = PagerDragState()
             dragState.startScrollOffset =
                 pagerState.currentPage + pagerState.currentPageOffsetFraction
-            var dragChannel: Channel<Float>? = null
+            var dragChannel: Channel<Unit>? = null
             var scrollWorker: Job? = null
+            // 触摸采样率（常见 120Hz）高于渲染帧率（60Hz），同一帧内可能收到多次 move。
+            // 把增量累积起来、每帧只提交一次 scrollBy，减少重复的滚动分发与重组。
+            var pendingDelta = 0f
             val workerDone = CompletableDeferred<Unit>()
             var accX = 0f
             var accY = 0f
@@ -163,16 +166,22 @@ fun Modifier.pagerAxisTakeoverGesture(
                     if ((xDominant || dualAxis) && scrollWorker == null) {
                         settleJob.value?.cancel()
                         settleJob.value = null
-                        val channel = Channel<Float>(Channel.UNLIMITED)
+                        val channel = Channel<Unit>(Channel.CONFLATED)
                         dragChannel = channel
                         scrollWorker = scope.launch {
                             try {
                                 pagerState.scroll(MutatePriority.UserInput) {
                                     dragState.startScrollOffset =
                                         pagerState.currentPage + pagerState.currentPageOffsetFraction
-                                    for (delta in channel) {
-                                        scrollBy(delta)
+                                    for (ignored in channel) {
+                                        val delta = pendingDelta
+                                        pendingDelta = 0f
+                                        if (delta != 0f) scrollBy(delta)
                                     }
+                                    // 收尾：最后一次累积可能没来得及发信号，避免丢掉这截位移
+                                    val residual = pendingDelta
+                                    pendingDelta = 0f
+                                    if (residual != 0f) scrollBy(residual)
                                 }
                             } finally {
                                 workerDone.complete(Unit)
@@ -182,7 +191,8 @@ fun Modifier.pagerAxisTakeoverGesture(
                 }
                 if (!xDominant && !dualAxis) continue
                 // 不 consume：对角斜滑时纵向滚动仍可并行
-                dragChannel?.trySend(-dx)
+                pendingDelta += -dx
+                dragChannel?.trySend(Unit)
                 if (xDominant) change.consume()
             }
             dragChannel?.close()

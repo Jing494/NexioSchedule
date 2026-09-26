@@ -128,7 +128,14 @@ class CourseWidgetProviderPad : AppWidgetProvider() {
             when {
                 isHoliday -> "假期中，暂无课程"
                 currentWeek < 1 -> "学期暂未开始"
-                resolution.isHolidayDate -> "假期中，暂无课程"
+                resolution.isHolidayDate ->
+                    com.haooz.chedule.data.ReturnDayReminder.statusText(
+                        context,
+                        repository,
+                        java.time.LocalDate.now().plusDays(if (showTomorrow) 1 else 0),
+                        displayCourses.firstOrNull()?.name,
+                        displayCourses.firstOrNull()?.let { getCourseStartTime(it, repository) },
+                    ) ?: "假期中，暂无课程"
                 showTomorrow -> "明日无课"
                 todayCourses.isEmpty() -> "今日无课"
                 else -> "今日课程已上完"

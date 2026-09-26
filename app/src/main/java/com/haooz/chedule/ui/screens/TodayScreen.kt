@@ -3,6 +3,7 @@ package com.haooz.chedule.ui.screens
 import android.annotation.SuppressLint
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -569,15 +570,37 @@ fun TodayScreen(
                     val dayRange =
                         (1..5).toList() + settingsViewModel.getWeekendDaysForWeek(displayWeek)
                             .filter { it in 6..7 }
-                    // 节假日直接空课；调休补班即使落在智能周末隐藏的周六日也显示
+                    // 节假日：返校日会在这里放出「豁免节次的真实课程」（resolveDaySchedule
+                    // 已按豁免节次筛过，非返校日它本来就是空表）；调休补班即使落在智能周末
+                    // 隐藏的周六日也显示
                     when {
-                        pageResolution.isHolidayDate -> emptyList()
+                        pageResolution.isHolidayDate -> pageResolution.courses
                         pageResolution.isWorkSwap || pageResolution.displayDayOfWeek in dayRange ->
                             pageResolution.courses
                         else -> emptyList()
                     }
                 }
                 val pageWeek = displayWeek
+                // 返校 / 假期余额文案（今日页顶部提示；不适用时为 null，保持原样）
+                val returnStatus = remember(pageDate, pageCourses, holidayVersion, dataVersion) {
+                    if (pageDate != LocalDate.now()) {
+                        null
+                    } else {
+                        val returnRepository =
+                            com.haooz.chedule.data.CourseRepository.getInstance(appContext)
+                        val firstReturn = pageCourses.firstOrNull()
+                        com.haooz.chedule.data.ReturnDayReminder.statusText(
+                            appContext,
+                            returnRepository,
+                            pageDate,
+                            firstReturn?.name,
+                            firstReturn?.let {
+                                com.haooz.chedule.reminder.CourseReminderHelper
+                                    .getCourseStartTime(it, returnRepository)
+                            },
+                        )
+                    }
+                }
                 val coursePeriods = pageCourses.associateWith {
                     it.periodIndex(sectionTimes, morningSections, afternoonSections)
                 }
@@ -671,6 +694,49 @@ fun TodayScreen(
                             ),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
+                            if (returnStatus != null) {
+                                // 返校/假期余额：整宽卡片 + 自动换行（原来写死 64dp 高度，
+                                // 长句会被裁掉；CourseSectionTitle 是单行标题样式，不适合这里）
+                                item {
+                                    BlurCard(
+                                        cornerRadius = 20.dp,
+                                        wallpaperBackdrop = if (hasWallpaper) cardBackdrop else null,
+                                        blurRadius = cardBlurRadius,
+                                        surfaceOpacity = courseCardOpacity,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                // 关掉默认涟漪：与 MIUI 风格不符，点一下会出现很丑的黑阴影块
+                                                indication = null,
+                                            ) {
+                                                runCatching {
+                                                    appContext.startActivity(
+                                                        android.content.Intent(
+                                                            appContext,
+                                                            com.haooz.chedule.ui.activities
+                                                                .HolidaySettingsActivity::class.java,
+                                                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                    )
+                                                }
+                                            }
+                                    ) {
+                                        Column(modifier = Modifier.fillMaxWidth()) {
+                                            Text(
+                                                text = returnStatus,
+                                                style = MiuixTheme.textStyles.body1.copy(
+                                                    fontSize = 15.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                ),
+                                                color = MiuixTheme.colorScheme.onSurface,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 18.dp, vertical = 14.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                             addCourseSections(morningCourses, afternoonCourses, eveningCourses, pageCourses, isPageToday, pageDate, pageWeek, courses, hiddenCourseIds, sectionTimes, onCourseClick, if (hasWallpaper) cardBackdrop else null, cardBlurRadius, courseCardOpacity, showClassroom, showTeacher, isHolidayDate = pageResolution.isHolidayDate)
                         }
                     }
@@ -732,6 +798,49 @@ fun TodayScreen(
                                     blurRadius = cardBlurRadius,
                                     surfaceOpacity = highlightCardOpacity
                                 )
+                            }
+                        }
+                        if (returnStatus != null) {
+                            // 返校/假期余额：整宽卡片 + 自动换行（原来写死 64dp 高度，
+                            // 长句会被裁掉；CourseSectionTitle 是单行标题样式，不适合这里）
+                            item {
+                                BlurCard(
+                                    cornerRadius = 20.dp,
+                                    wallpaperBackdrop = if (hasWallpaper) cardBackdrop else null,
+                                    blurRadius = cardBlurRadius,
+                                    surfaceOpacity = courseCardOpacity,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            // 关掉默认涟漪：与 MIUI 风格不符，点一下会出现很丑的黑阴影块
+                                            indication = null,
+                                        ) {
+                                            runCatching {
+                                                appContext.startActivity(
+                                                    android.content.Intent(
+                                                        appContext,
+                                                        com.haooz.chedule.ui.activities
+                                                            .HolidaySettingsActivity::class.java,
+                                                    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                )
+                                            }
+                                        }
+                                ) {
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        Text(
+                                            text = returnStatus,
+                                            style = MiuixTheme.textStyles.body1.copy(
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Medium,
+                                            ),
+                                            color = MiuixTheme.colorScheme.onSurface,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 18.dp, vertical = 14.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                         addCourseSections(morningCourses, afternoonCourses, eveningCourses, pageCourses, isPageToday, pageDate, pageWeek, courses, hiddenCourseIds, sectionTimes, onCourseClick, if (hasWallpaper) cardBackdrop else null, cardBlurRadius, courseCardOpacity, showClassroom, showTeacher, isHolidayDate = pageResolution.isHolidayDate)

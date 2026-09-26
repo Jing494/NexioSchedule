@@ -256,7 +256,10 @@ fun MainScheduleScreen(
     var specialItemSelectedDays by remember { mutableStateOf(setOf<Int>()) }
     val hapticFeedback = LocalHapticFeedback.current
     val configuration = LocalConfiguration.current
-    val isTablet = configuration.screenWidthDp >= 600
+    // 必须与 MainActivity 的 navBarStyle 同源：只有「真平板」（最小宽度 ≥600dp）才有侧栏，
+    // 而这里 isTablet 是用来给侧栏留位的（+24dp +56dp）。用 screenWidthDp 的话，
+    // 手机横屏（914dp）会被判成平板 → navBarStyle 已改走底部栏，网格却仍留 80dp 左侧空白。
+    val isTablet = configuration.smallestScreenWidthDp >= 600
     val density = LocalDensity.current
     // 沉浸式：滚动视口不避开底栏。底部留白写进滚动 layout 高度，避免被测量链裁掉
     val scheduleEndSpacer = 175.dp
@@ -483,23 +486,56 @@ fun MainScheduleScreen(
             }
         }
     }
-    // page -> dayOfWeek -> (isHoliday, isWorkSwap)，同样预计算
-    val weekDayFlags: Map<Int, Map<Int, Pair<Boolean, Boolean>>> = remember(
-        semesterStartMonday, holidayIndex, workswapIndex, totalWeeks
+    // 一天在课表页上的标记：是否假期 / 是否调休 / 该天被豁免的节次
+    data class DayFlags(
+        val isHoliday: Boolean,
+        val isWorkSwap: Boolean,
+        val exemptSections: Set<Int> = emptySet(),
+    )
+
+    // 返校日豁免配置：假期最后一天把指定节次从「假期清空」里放出来
+    val returnDayConfig = remember(scheduleContext, dataVersion, holidayVersion) {
+        val repository = CourseRepository.getInstance(scheduleContext)
+        repository.getReturnDayReminder() to repository.getReturnDayReminderSections()
+    }
+
+    // page -> dayOfWeek -> DayFlags（是否假期 / 是否调休 / 当天豁免节次），同样预计算
+    val weekDayFlags: Map<Int, Map<Int, DayFlags>> = remember(
+        semesterStartMonday, holidayIndex, workswapIndex, totalWeeks, returnDayConfig
     ) {
         if (totalWeeks <= 0) emptyMap()
-        else HashMap<Int, Map<Int, Pair<Boolean, Boolean>>>(totalWeeks).apply {
-            for (page in 0 until totalWeeks) {
-                val weekForPage = page + 1
-                put(page, allDays.associateWith { dayOfWeek ->
-                    val dateForDay = semesterStartMonday
-                        .plusWeeks((weekForPage - 1).toLong())
-                        .plusDays((dayOfWeek - 1).toLong())
-                    val isHoliday = holidayIndex[dateForDay.toString()] != null
-                    val isWorkSwap = workswapIndex[dateForDay.toString()]
-                        ?.followWeekday?.takeIf { it in 1..7 } != null
-                    isHoliday to isWorkSwap
-                })
+        else {
+            // 与 ReturnDayReminder.isReturnDay 同口径，但完全复用已建好的两个索引，
+            // 避免在组合期反复解析假期 JSON（那是这条链路上最贵的一步）
+            fun isSchoolDay(date: LocalDate): Boolean {
+                val key = date.toString()
+                if (workswapIndex[key] != null) return true
+                if (holidayIndex[key] != null) return false
+                return date.dayOfWeek.value <= 5
+            }
+            val (returnEnabled, returnSections) = returnDayConfig
+            val applyExempt = returnEnabled && returnSections.isNotEmpty()
+            HashMap<Int, Map<Int, DayFlags>>(totalWeeks).apply {
+                for (page in 0 until totalWeeks) {
+                    val weekForPage = page + 1
+                    put(page, allDays.associateWith { dayOfWeek ->
+                        val dateForDay = semesterStartMonday
+                            .plusWeeks((weekForPage - 1).toLong())
+                            .plusDays((dayOfWeek - 1).toLong())
+                        val isHoliday = holidayIndex[dateForDay.toString()] != null
+                        val isWorkSwap = workswapIndex[dateForDay.toString()]
+                            ?.followWeekday?.takeIf { it in 1..7 } != null
+                        // 返校日 = 当天不上课、次日要上课 → 这些节次在课表页按正常课渲染
+                        val exemptSections = if (applyExempt && !isSchoolDay(dateForDay) &&
+                            isSchoolDay(dateForDay.plusDays(1))
+                        ) {
+                            returnSections
+                        } else {
+                            emptySet()
+                        }
+                        DayFlags(isHoliday, isWorkSwap, exemptSections)
+                    })
+                }
             }
         }
     }
@@ -817,9 +853,10 @@ fun MainScheduleScreen(
                             val (displayDayForCol, displayWeekForDay, filteredDayCourses) =
                                 weekFilteredCourses[page]?.get(dayOfWeek)
                                     ?: Triple(dayOfWeek, week, emptyList())
-                            val dayFlags = weekDayFlags[page]?.get(dayOfWeek) ?: (false to false)
-                            val isHoliday = dayFlags.first
-                            val isWorkSwap = dayFlags.second
+                            val dayFlags = weekDayFlags[page]?.get(dayOfWeek)
+                                ?: DayFlags(false, false, emptySet())
+                            val isHoliday = dayFlags.isHoliday
+                            val isWorkSwap = dayFlags.isWorkSwap
                             // 调课日空白格添加：落到 follow 星期/周（周五课调到周二 → 点周二默认周五）
                             val addDayForCol = if (isWorkSwap) displayDayForCol else dayOfWeek
                             val addWeekForCol = if (isWorkSwap) displayWeekForDay else -1
@@ -888,6 +925,7 @@ fun MainScheduleScreen(
                                 currentWeek = displayWeekForDay,
                                 isHoliday = isHoliday,
                                 isWorkSwap = isWorkSwap,
+                                exemptSections = dayFlags.exemptSections,
                                 pendingDay = pendingDay,
                                 pendingSection = pendingSection,
                                 onPendingChange = onPendingChange,

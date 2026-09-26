@@ -440,6 +440,8 @@ fun LiquidNavigationRail(
     isShiftMode: Boolean,
     modifier: Modifier = Modifier,
     onSidebarExpandedChange: ((Boolean) -> Unit)? = null,
+    /** 见 [TabletNavSideBar] 的 glassActive：分页/滚动期间退化为不模糊 */
+    glassActive: () -> Boolean = { true },
 ) {
     var liquidSelectedTab by remember { mutableIntStateOf(selectedTab) }
     LaunchedEffect(selectedTab) { liquidSelectedTab = selectedTab }
@@ -453,5 +455,6 @@ fun LiquidNavigationRail(
         onTabSelected = onTabSelected,
         isShiftMode = isShiftMode,
         modifier = modifier,
+        glassActive = glassActive,
     )
 }
