@@ -1738,7 +1738,11 @@ fun CourseScheduleApp() {
         (1..5).toList() + settingsViewModel.getWeekendDaysForWeek(currentViewingWeek)
             .filter { it in 6..7 }
     }
-    val viewingIsHoliday = viewModel.isWeekHoliday(currentViewingWeek)
+    // isWeekHoliday 内部会 getLastWeekWithCourses() 遍历**全部课程**；
+    // 直接写在 body 里等于上面每一次全量重组都扫一遍课表。
+    val viewingIsHoliday = remember(currentViewingWeek, courses, totalWeeks, dataVersion) {
+        viewModel.isWeekHoliday(currentViewingWeek)
+    }
     val weekDates = remember(currentViewingWeek, classStartTime, teachingWeekRules) {
         try {
             val startDate = LocalDate.parse(classStartTime.replace("/", "-"))
@@ -2508,11 +2512,13 @@ fun CourseScheduleApp() {
             showSwitchSchedule && switchOverlayActive -> 0f
             else -> 1f
         }
-        val mainContentBlurDp =
-            if (shortcutMenuBlurRadius.value > 0.01f) shortcutMenuBlurRadius.value.dp
-            else managePageBlurRadius.value.dp
-        val mainContentBlurModifier =
-            if (mainContentBlurDp.value > 0f) Modifier.blur(mainContentBlurDp) else Modifier
+        // 主内容模糊**不在 composition 里读半径**。
+        //
+        // 原来这里写成 `Modifier.blur(半径.dp)`，半径取自两个 Animatable（长按拖动 /
+        // 点开课程详情时播放）。在函数体里读 .value 就是订阅，于是每动画一帧整个
+        // 四千多行的 body 都要重跑一遍，而且 `Modifier.blur` 也会被重建（新的
+        // BlurEffect + 离屏合成）。现在改为在主内容**已有的** graphicsLayer 里于绘制期
+        // 读半径并设 renderEffect：只失效这一层，不触发重组，也不再额外建图层。
 
         // liquidGlass 录制跳帧指纹：结构量变了才 update→markNeedsRecord。
         // 必须 remember 出稳定 List，否则 equals 失败会强制录制。
@@ -2533,16 +2539,18 @@ fun CourseScheduleApp() {
                 pagerState.currentPage
             )
         }
-        // 局部 val 不能直接捕获进 remember lambda，一律经 rememberUpdatedState
-        val latestCutoutScale by rememberUpdatedState(cutoutMainScale.value)
-        val latestBackgroundScale by rememberUpdatedState(backgroundScale.value)
-        val latestSheetOffset by rememberUpdatedState(sheetOffsetY.value)
-        val latestShortcutBlur by rememberUpdatedState(shortcutMenuBlurRadius.value)
-        val latestManageBlur by rememberUpdatedState(managePageBlurRadius.value)
-        val latestSwitchProgress by rememberUpdatedState(switchAnimProgress.value)
-        val latestCustomizeExitScale by rememberUpdatedState(customizeExitScale.value)
-        val latestCustomizeCoverScale by rememberUpdatedState(customizeCoverScale.value)
-        val latestCustomizeCoverAlpha by rememberUpdatedState(customizeCoverAlpha.value)
+        // 这些 Animatable **不能在 composition 里读 .value**。
+        //
+        // 原来的写法是 `rememberUpdatedState(xxx.value)` —— 参数在调用点求值，
+        // 也就是在 CourseScheduleApp 的函数体里读了一次快照状态。读一次就订阅一次，
+        // 而 CourseScheduleApp 从 1097 到 5225 行是**同一个 restart scope**，
+        // 于是「长按课程卡拖动（改 shortcutMenuBlurRadius）」「点开课程详情（改
+        // managePageBlurRadius）」这两个最热的交互里，每动画一帧整个四千多行的
+        // body 就完整重跑一遍（连带所有 remember 键求值、Scaffold 重建）。
+        //
+        // 下面这些的值只在 liquidGlassMustRecord 那个 lambda 里被读；lambda 是在
+        // 绘制期被调用的，读在这里属于「draw 期读状态」，只会失效对应的绘制，
+        // 不再触发重组。这样每个动画帧省下的是一次全量重组。
         val latestIsWindowCutout by rememberUpdatedState(isWindowCutoutActive)
         val latestShowCustomize by rememberUpdatedState(showCustomizePage)
         val latestIsCustomizeExiting by rememberUpdatedState(isCustomizeExiting)
@@ -2580,16 +2588,16 @@ fun CourseScheduleApp() {
                     (latestShowCustomize && latestIsCustomizeExiting) ||
                     latestShowSwitch && latestSwitchAnimForward && latestSwitchAnimRunning ||
                     latestSwitchAnimRunning ||
-                    latestShortcutBlur > 0.01f ||
-                    latestManageBlur > 0.01f ||
+                    shortcutMenuBlurRadius.value > 0.01f ||
+                    managePageBlurRadius.value > 0.01f ||
                     // 非静止端点视为动画进行中
-                    (latestCutoutScale != 1f && latestCutoutScale != 0.75f) ||
-                    latestBackgroundScale != 1f ||
-                    latestSheetOffset != 0f ||
-                    (latestSwitchProgress != 0f && latestSwitchProgress != 1f) ||
-                    latestCustomizeExitScale != 1f ||
-                    latestCustomizeCoverScale != 1f ||
-                    latestCustomizeCoverAlpha != 1f ||
+                    (cutoutMainScale.value != 1f && cutoutMainScale.value != 0.75f) ||
+                    backgroundScale.value != 1f ||
+                    sheetOffsetY.value != 0f ||
+                    (switchAnimProgress.value != 0f && switchAnimProgress.value != 1f) ||
+                    customizeExitScale.value != 1f ||
+                    customizeCoverScale.value != 1f ||
+                    customizeCoverAlpha.value != 1f ||
                     // 拖拽课程卡片时像素每帧变
                     latestDraggingCard
             }
@@ -2613,9 +2621,6 @@ fun CourseScheduleApp() {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                // 半径为 0 时不必挂 blur：Modifier.blur 会为整棵主内容树额外建一个
-                // RenderEffect 图层，0 半径也照常走一遍离屏合成。
-                .then(mainContentBlurModifier)
                 .then(
                     if (mainLayerNeeded) {
                         Modifier.graphicsLayer {

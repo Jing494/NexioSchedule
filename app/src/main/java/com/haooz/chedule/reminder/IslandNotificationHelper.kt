@@ -254,8 +254,20 @@ object IslandNotificationHelper {
         ShizukuManager.init(context)
     }
 
+    /**
+     * 一次进程内只查一次。
+     *
+     * `persist.sys.feature.island` 是开机读入的持久属性，进程存活期间不会变；
+     * 而原实现每次都 `Class.forName` + `getMethod` + 反射 invoke（约几十~上百微秒 + 若干分配），
+     * 且它挂在刷新链的对账路径上（每次 hop 3~4 次）、每次闹钟也要判一次 ——
+     * 一天下来上千次纯重复反射。
+     */
+    @Volatile
+    private var islandSupportedCache: Boolean? = null
+
     fun isIslandSupported(context: Context): Boolean {
-        return try {
+        islandSupportedCache?.let { return it }
+        val result = try {
             val clazz = Class.forName("android.os.SystemProperties")
             val method = clazz.getMethod(
                 "getBoolean",
@@ -266,6 +278,8 @@ object IslandNotificationHelper {
         } catch (e: Exception) {
             false
         }
+        islandSupportedCache = result
+        return result
     }
 
     fun isShizukuAvailable(): Boolean {
@@ -808,7 +822,8 @@ object IslandNotificationHelper {
             if (courseName.isNotEmpty()) append(courseName)
             if (section.isNotEmpty()) append("｜").append(section)
             if (startTime.isNotEmpty()) append(" ").append(startTime)
-            if (isEmpty()) append("明天要上课，别忘了返校")
+            // 兜底文案不能说"明天要上课"：明天可能只是"要上学但没有课"，那样是假话
+            if (isEmpty()) append("明天返校，别忘了收拾东西")
         }
         // courseStartMillis = null → 静态岛（不画倒计时），左右槽位回落到课程名/教室
         val paramsRaw = buildIslandParamsJson(
