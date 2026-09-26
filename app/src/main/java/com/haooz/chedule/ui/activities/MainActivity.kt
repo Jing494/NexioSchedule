@@ -1178,8 +1178,12 @@ fun CourseScheduleApp() {
         }
     }
     val config = LocalConfiguration.current
+    // 内容布局仍按「当前宽度」判平板：横屏就是宽，该用宽排版就用
     val isTablet = config.screenWidthDp >= 600
-    val navBarStyle = if (isTablet) "rail" else "standard"
+    // 但**导航形态**按「最小宽度」判：手机的最小宽度是 411dp，横竖屏都不该继承平板的侧栏。
+    // 之前用 screenWidthDp，于是手机横屏（914dp）被当成平板走了 rail —— 既卡又别扭。
+    val isTabletNav = config.smallestScreenWidthDp >= 600
+    val navBarStyle = if (isTabletNav) "rail" else "standard"
     val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
     val density = LocalDensity.current
     val screenWPx = with(density) { config.screenWidthDp.dp.toPx() }
@@ -4160,6 +4164,19 @@ fun CourseScheduleApp() {
                                 }
                             }
                         }
+                        // 侧栏玻璃在「分页/滚动进行中」退化为不模糊：
+                        // 每帧一次全屏 12dp 模糊 + 内容层重录，是横屏侧栏「点着特别卡」的主因；
+                        // 面板本身已有 0.8 alpha 底色，视觉差异极小。
+                        // 用 derivedStateOf + lambda 让它在 draw 期被读取 —— 只失效绘制，不重组 chrome。
+                        val railGlassActive = remember {
+                            derivedStateOf {
+                                !(mainPagerState.isScrollInProgress ||
+                                    pagerState.isScrollInProgress ||
+                                    todayPagerState.isScrollInProgress ||
+                                    scheduleScrollState.isScrollInProgress ||
+                                    todayListScrollInProgress.value)
+                            }
+                        }
                         com.haooz.chedule.ui.components.LiquidNavigationRail(
                             selectedTab = selectedTab,
                             onTabSelected = onTabletTabSelected,
@@ -4195,6 +4212,7 @@ fun CourseScheduleApp() {
                                 }
                             },
                             modifier = Modifier.fillMaxSize().zIndex(22f),
+                            glassActive = { railGlassActive.value },
                         )
                     }
                     // 平板设置：标题与分界线画在顶栏模糊之上，跟设置页切页平移。

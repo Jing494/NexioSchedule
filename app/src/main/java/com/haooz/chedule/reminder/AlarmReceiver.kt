@@ -140,6 +140,41 @@ class AlarmReceiver : BroadcastReceiver() {
                     CourseReminderHelper.showReminderNotification(context, type, title, details)
                 }
 
+                // 明天是「返校日」（假期/周末最后一天、次日要上课）→ 顺带推一条超级岛。
+                // 复用既有岛发送路径（含 XMSF 绕白名单），这里只是多一个调用方。
+                val tomorrow = java.time.LocalDate.now().plusDays(1)
+                if (com.haooz.chedule.data.ReturnDayReminder.isReturnDay(context, tomorrow)) {
+                    val span = com.haooz.chedule.data.ReturnDayReminder
+                        .currentHolidaySpan(context, tomorrow)
+                    val firstReturnCourse = tomorrowCourses.firstOrNull()
+                    val returnName = firstReturnCourse?.name.orEmpty()
+                    val returnSection = firstReturnCourse?.getTimeDisplayText().orEmpty()
+                    val returnStart = firstReturnCourse?.let {
+                        CourseReminderHelper.getCourseStartTime(it, repository)
+                    }.orEmpty()
+                    val returnLabel = span?.name?.takeIf { it.isNotBlank() }?.let { "${it}最后一天" }
+                    if (useIsland) {
+                        IslandNotificationHelper.sendReturnDayIslandNotification(
+                            context = context,
+                            courseName = returnName,
+                            section = returnSection,
+                            startTime = returnStart,
+                            holidayLabel = returnLabel,
+                            progressPercent = span?.progressPercent,
+                        )
+                    } else {
+                        // 岛关闭时走原生实时动态：两个通道功能必须同步
+                        CourseReminderHelper.showReturnDayLiveNotification(
+                            context = context,
+                            courseName = returnName,
+                            section = returnSection,
+                            startTime = returnStart,
+                            holidayLabel = returnLabel,
+                            progressPercent = span?.progressPercent,
+                        )
+                    }
+                }
+
                 // 只补注册下一个次日闹钟，避免 cancel+重建全部课程闹钟
                 CourseReminderHelper.scheduleNextDayOnly(context)
                 CourseReminderHelper.onAlarmProcessed(context)

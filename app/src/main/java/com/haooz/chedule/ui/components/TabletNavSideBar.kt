@@ -429,6 +429,12 @@ fun TabletNavSideBar(
     showBackToNow: Boolean = false,
     onBackToNow: () -> Unit = {},
     modifier: Modifier = Modifier,
+    /**
+     * 侧栏玻璃是否生效。抽成 lambda 是为了让它在 **draw 期**读取：
+     * 分页/滚动进行中跳过全屏模糊（每帧一次 12dp 模糊 + 内容层重录是侧栏卡顿主因），
+     * 面板本身已有 0.8 alpha 底色，视觉差异极小；用 lambda 读取还能避免整块 chrome 重组。
+     */
+    glassActive: () -> Boolean = { true },
 ) {
     TabletNavExpandAnimator()
     val configuration = LocalConfiguration.current
@@ -523,8 +529,10 @@ fun TabletNavSideBar(
                                 backdrop = backdrop,
                                 shape = { ContinuousRoundedRectangle(sideCorner) },
                                 effects = {
-                                    vibrancy()
-                                    blur(12f.dp.toPx())
+                                    if (glassActive()) {
+                                        vibrancy()
+                                        blur(12f.dp.toPx())
+                                    }
                                 },
                                 highlight = null,
                                 onDrawSurface = { drawRect(containerColor) },

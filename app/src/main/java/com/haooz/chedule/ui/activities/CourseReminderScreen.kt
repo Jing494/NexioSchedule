@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -588,13 +589,46 @@ fun CourseReminderScreen(
                             ) {
                                 SwitchPreference(
                                     title = "小米超级岛",
-                                    summary = if (islandNotification) "已开启，课程提醒将以超级岛样式显示" else "关闭后使用实时动态通知",
-                                    checked = islandNotification,
+                                    summary = when {
+                                        !isIslandSupported ->
+                                            "本机不支持超级岛，将使用实时动态通知"
+                                        islandNotification -> "已开启，课程提醒将以超级岛样式显示"
+                                        else -> "关闭后使用实时动态通知"
+                                    },
+                                    enabled = isIslandSupported,
+                                    checked = islandNotification && isIslandSupported,
                                     onCheckedChange = {
                                         rlog("island_switch", "on=$it supported=$isIslandSupported")
                                         settingsViewModel.setIslandNotification(it)
                                     }
                                 )
+                                // 只有实际走「实时动态」那条路时才显示（岛开着时走的是超级岛，
+                                // 显示这个开关会让人以为改它有用，属于误导）
+                                if (!(isIslandSupported && islandNotification)) {
+                                    // 实时动态样式降级开关：ProgressStyle 观感好但部分机型不激活，
+                                    // 用户可一键退回 NotificationCompat + setProgress 那套
+                                    val liveStyleContext = LocalContext.current
+                                    var liveProgressStyle by remember {
+                                        mutableStateOf(
+                                            com.haooz.chedule.data.CourseRepository(liveStyleContext)
+                                                .getLiveProgressStyle()
+                                        )
+                                    }
+                                    SwitchPreference(
+                                        title = "实时动态用进度组件",
+                                        summary = if (liveProgressStyle) {
+                                            "通知栏看不到进度条就关掉它（部分机型不支持）"
+                                        } else {
+                                            "已退回普通进度条"
+                                        },
+                                        checked = liveProgressStyle,
+                                        onCheckedChange = { checked ->
+                                            liveProgressStyle = checked
+                                            com.haooz.chedule.data.CourseRepository(liveStyleContext)
+                                                .setLiveProgressStyle(checked)
+                                        }
+                                    )
+                                }
                                 AnimatedVisibility(
                                     visible = islandNotification,
                                     enter = expandVertically(animationSpec = tween(250)) + fadeIn(animationSpec = tween(200)),

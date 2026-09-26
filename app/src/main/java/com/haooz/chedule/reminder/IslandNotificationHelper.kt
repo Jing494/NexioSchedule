@@ -44,6 +44,9 @@ object IslandNotificationHelper {
     // 课中提醒模板6 独立 ID：与「已上课」两条路径完全分开，不在同一条通知里 if/else
     const val ISLAND_IN_CLASS_NOTIFICATION_ID = 1005
     const val ISLAND_IN_CLASS_TEST_NOTIFICATION_ID = 5002
+
+    /** 「明天返校」岛（返校日前一晚一次性提醒），与课程岛 ID 隔开，互不干扰 */
+    const val ISLAND_RETURN_DAY_NOTIFICATION_ID = 1006
     // 到点后由精确闹钟自动收起，不依赖每分钟对账
     const val ISLAND_STARTED_VISIBLE_MS = 15_000L
     private const val ISLAND_DISMISS_RC_BASE = 72000
@@ -342,6 +345,7 @@ object IslandNotificationHelper {
         manager.cancel(ISLAND_NOTIFICATION_ID)
         manager.cancel(ISLAND_STARTED_NOTIFICATION_ID)
         manager.cancel(ISLAND_IN_CLASS_NOTIFICATION_ID)
+        manager.cancel(ISLAND_RETURN_DAY_NOTIFICATION_ID)
         for (id in LEGACY_ISLAND_NOTIFICATION_IDS) manager.cancel(id)
         manager.cancel(ISLAND_TEST_NOTIFICATION_ID)
         manager.cancel(ISLAND_STARTED_TEST_NOTIFICATION_ID)
@@ -780,6 +784,72 @@ object IslandNotificationHelper {
         scope.launch {
             withShizukuBypass(context, notificationId, notification, useShizukuBypass)
         }
+    }
+
+    /**
+     * 「明天返校」超级岛（返校日前一晚）。
+     *
+     * 复用课前倒计时同一套模板与发送路径（模板2：文本组件2 + 识别图形组件1），
+     * 只换成静态文案、不带倒计时。**不新开通道，也不触碰 XMSF 绕白名单那段逻辑。**
+     */
+    fun sendReturnDayIslandNotification(
+        context: Context,
+        courseName: String,
+        section: String,
+        startTime: String,
+        notificationId: Int = ISLAND_RETURN_DAY_NOTIFICATION_ID,
+        /** 形如 "中秋最后一天"；有则在标题里点明是哪段假期 */
+        holidayLabel: String? = null,
+        /** 非空时注入进度组件，凑成模板6（文本组件2 + 识别图形组件1 + 进度组件2） */
+        progressPercent: Int? = null,
+    ) {
+        val title = if (holidayLabel.isNullOrBlank()) "明天返校" else "明天返校 · $holidayLabel"
+        val content = buildString {
+            if (courseName.isNotEmpty()) append(courseName)
+            if (section.isNotEmpty()) append("｜").append(section)
+            if (startTime.isNotEmpty()) append(" ").append(startTime)
+            if (isEmpty()) append("明天要上课，别忘了返校")
+        }
+        // courseStartMillis = null → 静态岛（不画倒计时），左右槽位回落到课程名/教室
+        val paramsRaw = buildIslandParamsJson(
+            context = context,
+            title = title,
+            content = content,
+            courseName = title,
+            section = section,
+            startTime = startTime,
+            classroom = "返校",
+            courseStartMillis = null,
+        )
+        // 进度组件2（纯净版）：只传 progress/颜色，不传任何 picXXX 字段即为模板库的「进度组件2」
+        val params = if (progressPercent == null) {
+            paramsRaw
+        } else {
+            runCatching {
+                val root = JSONObject(paramsRaw)
+                root.optJSONObject("param_v2")?.put(
+                    "progressInfo",
+                    JSONObject().apply {
+                        put("progress", progressPercent.coerceIn(0, 100))
+                        put("colorProgress", "#FF7C4DFF")
+                        put("colorProgressEnd", "#FF2196F3")
+                    },
+                )
+                root.toString()
+            }.getOrDefault(paramsRaw)
+        }
+        sendIslandNotification(
+            context = context,
+            notificationId = notificationId,
+            title = title,
+            content = content,
+            courseName = title,
+            section = section,
+            startTime = startTime,
+            classroom = "返校",
+            courseStartMillis = null,
+            islandParamsOverride = params,
+        )
     }
 
     // courseStartMillis 是倒计时/文案/"已上课"切换的统一时间戳；courseEndMillis=0 时按 15 秒兜底
