@@ -241,7 +241,10 @@ fun MainScheduleScreen(
     var specialItemSelectedDays by remember { mutableStateOf(setOf<Int>()) }
     val hapticFeedback = LocalHapticFeedback.current
     val configuration = LocalConfiguration.current
-    val isTablet = configuration.screenWidthDp >= 600
+    // 必须与 MainActivity 的 navBarStyle 同源：只有「真平板」（最小宽度 ≥600dp）才有侧栏，
+    // 而这里 isTablet 是用来给侧栏留位的（+24dp +56dp）。用 screenWidthDp 的话，
+    // 手机横屏（914dp）会被判成平板 → navBarStyle 已改走底部栏，网格却仍留 80dp 左侧空白。
+    val isTablet = configuration.smallestScreenWidthDp >= 600
     val density = LocalDensity.current
     // 沉浸式：滚动视口不避开底栏。底部留白写进滚动 layout 高度，避免被测量链裁掉
     val scheduleEndSpacer = 175.dp
@@ -971,6 +974,7 @@ fun MainScheduleScreen(
                                 isHoliday = isHoliday,
                                 holidayExemptCourseIds = holidayExemptCourseIds,
                                 isWorkSwap = isWorkSwap,
+                                exemptSections = dayFlags.exemptSections,
                                 pendingDay = pendingDay,
                                 pendingSection = pendingSection,
                                 onPendingChange = onPendingChange,

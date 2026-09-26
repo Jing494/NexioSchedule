@@ -449,6 +449,8 @@ fun LiquidNavigationRail(
     onSidebarExpandedChange: ((Boolean) -> Unit)? = null,
     showBackToNow: Boolean = false,
     onBackToNow: () -> Unit = {},
+    /** 见 [TabletNavSideBar] 的 glassActive：分页/滚动期间退化为不模糊 */
+    glassActive: () -> Boolean = { true },
 ) {
     var liquidSelectedTab by remember { mutableIntStateOf(selectedTab) }
     LaunchedEffect(selectedTab) { liquidSelectedTab = selectedTab }
@@ -464,5 +466,6 @@ fun LiquidNavigationRail(
         showBackToNow = showBackToNow,
         onBackToNow = onBackToNow,
         modifier = modifier,
+        glassActive = glassActive,
     )
 }

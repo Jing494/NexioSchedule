@@ -27,6 +27,8 @@ class WidgetRefreshReceiver : BroadcastReceiver() {
                 CourseReminderHelper.updateActiveCountdown(context)
                 // 上课勿扰对账：闹钟丢失/被系统清理时，靠刷新链兜底补上开关
                 ClassDndHelper.applyCurrentState(context)
+                // 假期余额 / 返校准备清单：搭在既有刷新链上，当天没发过才发（不新增闹钟类型）
+                CourseReminderHelper.checkDailyReturnDayNotifications(context)
             } finally {
                 // 链式调度下一次刷新放在 finally：即使上面任一步抛异常，
                 // 也要保证跨日重设与兜底补发不中断
