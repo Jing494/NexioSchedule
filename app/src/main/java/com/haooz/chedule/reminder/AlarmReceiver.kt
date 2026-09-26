@@ -115,6 +115,13 @@ class AlarmReceiver : BroadcastReceiver() {
                 CourseReminderHelper.onAlarmProcessed(context)
             }
 
+            CourseReminderHelper.TYPE_RETURN_DAILY_BALANCE,
+            CourseReminderHelper.TYPE_RETURN_DAILY_PREP -> {
+                // 精确闹钟到点：直接走同一套判定（内部有"当天只发一次"去重），并顺手排下一天
+                CourseReminderHelper.checkDailyReturnDayNotifications(context)
+                CourseReminderHelper.onAlarmProcessed(context)
+            }
+
             CourseReminderHelper.TYPE_NEXT_DAY -> {
                 // 学期未开始（未到开学日期所在周的周一）：不发送次日提醒
                 if (!CourseReminderHelper.isSemesterStarted(repository)) {
