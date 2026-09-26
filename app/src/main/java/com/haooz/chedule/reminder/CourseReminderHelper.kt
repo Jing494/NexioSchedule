@@ -92,6 +92,11 @@ object CourseReminderHelper {
     const val RETURN_DAY_LIVE_ID = 2100
 
     /** 假期余额 / 返校准备清单：普通通知 ID 与当日去重键 */
+    /** 余额/清单的精确闹钟类型与请求码（自续：到点发送后顺手排下一天） */
+    const val TYPE_RETURN_DAILY_BALANCE = 30
+    const val TYPE_RETURN_DAILY_PREP = 31
+    private const val RC_RETURN_BALANCE_ALARM = 8101
+    private const val RC_RETURN_PREP_ALARM = 8102
     private const val NOTIFY_ID_RETURN_BALANCE = 300
     private const val NOTIFY_ID_RETURN_PREP = 301
     private const val KEY_RETURN_BALANCE_DATE = "balance_date"
@@ -1362,6 +1367,76 @@ object CourseReminderHelper {
         }
 
         maybeUpdateReturnDayLiveNotification(context, repository)
+
+        // 精确闹钟（自续）：到点即发，不再依赖刷新链的下一跳（空闲时最坏晚约 30 分钟）。
+        // 刷新链那套保留作兜底 —— 闹钟被系统清掉/Doze 延迟时仍能补发。
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        if (repository.getReturnDayBalanceEnabled()) {
+            scheduleReturnDayExactAlarm(
+                context, alarmManager, RC_RETURN_BALANCE_ALARM, TYPE_RETURN_DAILY_BALANCE, balanceTarget,
+            )
+        } else {
+            cancelReturnDayExactAlarm(context, alarmManager, RC_RETURN_BALANCE_ALARM, TYPE_RETURN_DAILY_BALANCE)
+        }
+        if (repository.getReturnDayPrepEnabled()) {
+            scheduleReturnDayExactAlarm(
+                context,
+                alarmManager,
+                RC_RETURN_PREP_ALARM,
+                TYPE_RETURN_DAILY_PREP,
+                java.time.LocalTime.of(
+                    repository.getReturnDayPrepHour(),
+                    repository.getReturnDayPrepMinute(),
+                ),
+            )
+        } else {
+            cancelReturnDayExactAlarm(context, alarmManager, RC_RETURN_PREP_ALARM, TYPE_RETURN_DAILY_PREP)
+        }
+    }
+
+    /** 把余额/清单的精确闹钟排到「今天该时刻」；已过则排到明天（自续链的锚点）。 */
+    private fun scheduleReturnDayExactAlarm(
+        context: Context,
+        alarmManager: AlarmManager,
+        requestCode: Int,
+        type: Int,
+        target: java.time.LocalTime,
+    ) {
+        val intent = Intent(context, AlarmReceiver::class.java).apply {
+            putExtra(EXTRA_REMINDER_TYPE, type)
+        }
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val at = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, target.hour)
+            set(Calendar.MINUTE, target.minute)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DATE, 1)
+        }
+        setCourseBoundaryAlarm(alarmManager, at.timeInMillis, pendingIntent)
+    }
+
+    private fun cancelReturnDayExactAlarm(
+        context: Context,
+        alarmManager: AlarmManager,
+        requestCode: Int,
+        type: Int,
+    ) {
+        val intent = Intent(context, AlarmReceiver::class.java).apply {
+            putExtra(EXTRA_REMINDER_TYPE, type)
+        }
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        alarmManager.cancel(pendingIntent)
     }
 
     /**
