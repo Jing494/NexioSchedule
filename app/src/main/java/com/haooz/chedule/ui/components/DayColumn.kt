@@ -400,16 +400,23 @@ private fun CourseCardsLayer(
 
         // 自定义时间课按时间轴插值定位/定高，不按节次分段
         if (course.hasValidCustomTime()) {
-            val layout = computeCustomTimeLayout(
-                customStart = course.customStartTime,
-                customEnd = course.customEndTime,
-                morningSections = morningSections,
-                afternoonSections = afternoonSections,
-                eveningSections = eveningSections,
-                cardHeightPerSection = cardHeightPerSection,
-                sectionTimes = sectionTimes,
-                grid = grid
-            )
+            // 纯函数（内部对每个节次 split/parse），入参不变就不必每次重组重算
+            val layout = remember(
+                course.customStartTime, course.customEndTime,
+                morningSections, afternoonSections, eveningSections,
+                cardHeightPerSection, sectionTimes, grid
+            ) {
+                computeCustomTimeLayout(
+                    customStart = course.customStartTime,
+                    customEnd = course.customEndTime,
+                    morningSections = morningSections,
+                    afternoonSections = afternoonSections,
+                    eveningSections = eveningSections,
+                    cardHeightPerSection = cardHeightPerSection,
+                    sectionTimes = sectionTimes,
+                    grid = grid
+                )
+            }
             if (layout != null) {
                 Box(
                     modifier = Modifier
@@ -450,7 +457,9 @@ private fun CourseCardsLayer(
         }
 
         renderData.segments.forEachIndexed { idx, (segStartSection, segEndSection) ->
-            val displayCourse = remember(course.id, segStartSection, segEndSection) {
+            // course 必须进 key：只写 id 的话，改了课名/颜色/教室（id 与节次都不变）时
+            // 这里会一直返回第一次缓存的副本，分段渲染出来还是旧数据。
+            val displayCourse = remember(course, segStartSection, segEndSection) {
                 course.copy(startSection = segStartSection, endSection = segEndSection)
             }
             val segOffset = (grid.sectionTop[segStartSection] ?: 0f).toInt()

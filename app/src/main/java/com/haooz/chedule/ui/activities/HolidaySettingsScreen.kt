@@ -2041,8 +2041,12 @@ private fun sectionRangeTimeText(
     startSection: Int,
     endSection: Int,
 ): String {
-    val start = sectionTimeRange(repository, startSection)?.substringBefore("-")?.trim().orEmpty()
-    val end = sectionTimeRange(repository, endSection)?.substringAfter("-")?.trim().orEmpty()
+    val startRaw = sectionTimeRange(repository, startSection)
+    val endRaw = sectionTimeRange(repository, endSection)
+    // 只有真的含 "-" 才切分；否则 "08:00".substringAfter("-") 会原样返回 "08:00"，
+    // 摘要会变成毫无意义的 "08:00–08:00"
+    val start = startRaw?.substringBefore("-")?.trim().orEmpty()
+    val end = endRaw?.takeIf { it.contains('-') }?.substringAfter("-")?.trim().orEmpty()
     return when {
         start.isNotEmpty() && end.isNotEmpty() -> "$start–$end"
         start.isNotEmpty() -> start
@@ -2092,6 +2096,10 @@ private fun ReturnDayReminderCard() {
     var showWeekdayDialog by remember { mutableStateOf(false) }
     var prepEnabled by remember { mutableStateOf(repository.getReturnDayPrepEnabled()) }
     var prepText by remember { mutableStateOf(repository.getReturnDayPrepText()) }
+    // 清单时间也做成 state：原来摘要直接读 repository，改完时间要靠别的 state 变化
+    // 触发重组才刷新，读值与本地 state 混用容易看到旧值。
+    var prepHour by remember { mutableIntStateOf(repository.getReturnDayPrepHour()) }
+    var prepMinute by remember { mutableIntStateOf(repository.getReturnDayPrepMinute()) }
     var showPrepDialog by remember { mutableStateOf(false) }
     var showPrepTimeDialog by remember { mutableStateOf(false) }
     var balanceEnabled by remember { mutableStateOf(repository.getReturnDayBalanceEnabled()) }
@@ -2165,10 +2173,10 @@ private fun ReturnDayReminderCard() {
                 SwitchPreference(
                     title = "返校准备清单",
                     summary = if (prepEnabled) {
-                        "返校日 ${repository.getReturnDayPrepHour()}:" +
-                            "%02d".format(repository.getReturnDayPrepMinute()) + " 提醒要带的东西"
+                        "返校日 %02d:%02d 提醒要带的东西".format(prepHour, prepMinute)
                     } else {
-                        "返校日中午提醒要带的东西（默认关闭）"
+                        // 不能写死"中午"：提醒时间可自定义，关掉时也该反映真实时间
+                        "返校日 %02d:%02d 提醒要带的东西（默认关闭）".format(prepHour, prepMinute)
                     },
                     checked = prepEnabled,
                     onCheckedChange = { checked ->
@@ -2179,10 +2187,7 @@ private fun ReturnDayReminderCard() {
                 if (prepEnabled) {
                     ArrowPreference(
                         title = "提醒时间",
-                        summary = "%02d:%02d".format(
-                            repository.getReturnDayPrepHour(),
-                            repository.getReturnDayPrepMinute(),
-                        ),
+                        summary = "%02d:%02d".format(prepHour, prepMinute),
                         onClick = { showPrepTimeDialog = true },
                     )
                     ArrowPreference(
@@ -2350,7 +2355,7 @@ private fun ReturnDayReminderCard() {
         var draftText by remember(showPrepDialog) { mutableStateOf(prepText) }
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                "返校日中午推送这条内容，用 / 分隔要带的东西",
+                "返校日按上面设定的时间推送这条内容，用 / 分隔要带的东西",
                 style = MiuixTheme.textStyles.body1.copy(
                     fontSize = 14.sp,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
@@ -2436,10 +2441,12 @@ private fun ReturnDayReminderCard() {
     timePickerDialog(
         title = "清单提醒时间",
         show = showPrepTimeDialog,
-        hour = repository.getReturnDayPrepHour(),
-        minute = repository.getReturnDayPrepMinute(),
+        hour = prepHour,
+        minute = prepMinute,
         onDismiss = { showPrepTimeDialog = false },
         onConfirm = { h, m ->
+            prepHour = h
+            prepMinute = m
             repository.setReturnDayPrepHour(h)
             repository.setReturnDayPrepMinute(m)
             CourseReminderHelper.onHolidayDataChanged(context)

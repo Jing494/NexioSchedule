@@ -22,7 +22,17 @@ class AlarmReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val type = intent.getIntExtra(CourseReminderHelper.EXTRA_REMINDER_TYPE, 0)
-        Log.d("CourseReminder", "AlarmReceiver: type=$type ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}")
+        // 原实现在每次闹钟触发时都新建一个 SimpleDateFormat 并格式化当前时间，
+        // 纯粹为了打一条 debug 日志 —— release 包里完全是白烧 CPU。
+        // 改成：只在可调试包里做，并且按需构造格式化器。
+        if ((context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            Log.d(
+                "CourseReminder",
+                "AlarmReceiver: type=$type " +
+                    java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+                        .format(java.util.Date()),
+            )
+        }
         val repository = CourseRepository(context)
         val useIsland = repository.getIslandNotification() && IslandNotificationHelper.isIslandSupported(context)
 
@@ -149,8 +159,10 @@ class AlarmReceiver : BroadcastReceiver() {
 
                 // 明天是「返校日」（假期/周末最后一天、次日要上课）→ 顺带推一条超级岛。
                 // 复用既有岛发送路径（含 XMSF 绕白名单），这里只是多一个调用方。
+                // 注意用带 repository 的重载：它会一并检查「返校节次豁免」总开关，
+                // 否则用户关掉功能后仍会收到「明天返校」的岛 / 实时动态。
                 val tomorrow = java.time.LocalDate.now().plusDays(1)
-                if (com.haooz.chedule.data.ReturnDayReminder.isReturnDay(context, tomorrow)) {
+                if (com.haooz.chedule.data.ReturnDayReminder.isReturnDay(context, repository, tomorrow)) {
                     val span = com.haooz.chedule.data.ReturnDayReminder
                         .currentHolidaySpan(context, tomorrow)
                     val firstReturnCourse = tomorrowCourses.firstOrNull()

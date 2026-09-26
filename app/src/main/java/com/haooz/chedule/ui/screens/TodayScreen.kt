@@ -147,6 +147,7 @@ fun BlurCard(
                     )
                 }
             }
+
         Box(
             modifier = modifier
                 .clip(shape)
@@ -622,12 +623,20 @@ fun TodayScreen(
                         )
                     }
                 }
-                val coursePeriods = pageCourses.associateWith {
-                    it.periodIndex(sectionTimes, morningSections, afternoonSections)
+                // pageCourses 本身已 remember；这里的分组也是纯函数，别每次重组都重建
+                // 1 个 map + 3 个 list（今日页自己有 1Hz 计时，重组非常频繁）
+                val (morningCourses, afternoonCourses, eveningCourses) = remember(
+                    pageCourses, sectionTimes, morningSections, afternoonSections
+                ) {
+                    val periods = pageCourses.associateWith {
+                        it.periodIndex(sectionTimes, morningSections, afternoonSections)
+                    }
+                    Triple(
+                        pageCourses.filter { periods[it] == Course.PERIOD_MORNING },
+                        pageCourses.filter { periods[it] == Course.PERIOD_AFTERNOON },
+                        pageCourses.filter { periods[it] == Course.PERIOD_EVENING },
+                    )
                 }
-                val morningCourses = pageCourses.filter { coursePeriods[it] == Course.PERIOD_MORNING }
-                val afternoonCourses = pageCourses.filter { coursePeriods[it] == Course.PERIOD_AFTERNOON }
-                val eveningCourses = pageCourses.filter { coursePeriods[it] == Course.PERIOD_EVENING }
 
                 val holidayCountdownSnapshot = remember(
                     isPageToday,

@@ -35,8 +35,21 @@ object ReturnDayReminder {
 
     fun isRestDay(context: Context, date: LocalDate): Boolean = !isSchoolDay(context, date)
 
+    /** 纯日期口径的返校日判定，**不含**功能总开关。做日期推算时用它。 */
     fun isReturnDay(context: Context, date: LocalDate): Boolean =
         isRestDay(context, date) && isSchoolDay(context, date.plusDays(1))
+
+    /**
+     * 对外提醒口径的返校日：必须功能已开启。
+     *
+     * 修掉的一处逻辑漏洞：AlarmReceiver 与刷新链原来只调上面那个纯日期重载，
+     * 于是用户把「返校节次豁免」关掉之后，「明天返校」的超级岛 / 实时动态照样会推。
+     */
+    fun isReturnDay(
+        context: Context,
+        repository: CourseRepository,
+        date: LocalDate,
+    ): Boolean = repository.getReturnDayReminder() && isReturnDay(context, date)
 
     /**
      * 返校日当天不被假期清空的节次。
@@ -96,28 +109,41 @@ object ReturnDayReminder {
      */
     fun currentHolidaySpan(context: Context, date: LocalDate): HolidaySpan? {
         val key = date.toString()
-        val entry = (HolidayManager.load(context, date.year) +
-            HolidayManager.load(context, date.year - 1))
-            .firstOrNull { it.type == HolidayManager.TYPE_HOLIDAY && it.matches(key) }
-            ?: return null
+        var entry: HolidayManager.Entry? = null
+        for (year in intArrayOf(date.year, date.year - 1)) {
+            entry = HolidayManager.load(context, year).firstOrNull {
+                it.type == HolidayManager.TYPE_HOLIDAY && it.matches(key)
+            }
+            if (entry != null) break
+        }
+        val hit = entry ?: return null
         val last = runCatching {
-            LocalDate.parse(entry.endDate.ifBlank { entry.date })
+            LocalDate.parse(hit.endDate.ifBlank { hit.date })
         }.getOrNull() ?: return null
         if (last.isBefore(date)) return null
-        val first = runCatching { LocalDate.parse(entry.date) }.getOrNull() ?: date
+        val first = runCatching { LocalDate.parse(hit.date) }.getOrNull() ?: date
         return HolidaySpan(
-            name = entry.name.ifBlank { "假期" },
+            name = hit.name.ifBlank { "假期" },
             firstDate = if (first.isAfter(last)) last else first,
             lastDate = last,
             daysLeft = ChronoUnit.DAYS.between(date, last).toInt(),
         )
     }
 
+    /** 「今天 / 明天 / 那天」——文案里写死"今天"会在次日提醒、次日小部件上直接说错日子。 */
+    private fun dayLabel(date: LocalDate, today: LocalDate = LocalDate.now()): String =
+        when (ChronoUnit.DAYS.between(today, date)) {
+            0L -> "今天"
+            1L -> "明天"
+            -1L -> "昨天"
+            else -> "这天"
+        }
+
     /**
      * 今日页 / 小部件用的一句话状态。不适用时返回 null（调用方保持原样）。
      *
-     * - 返校日 → "今天返校"（假期最后一天会带上假期名）
-     * - 假期中 → "中秋还剩 2 天"
+     * - 返校日 → "今天/明天是中秋最后一天，返校啦"
+     * - 假期中（仅当天）→ "中秋还剩 2 天"
      */
     fun statusText(
         context: Context,
@@ -126,13 +152,17 @@ object ReturnDayReminder {
         returnCourseName: String? = null,
         returnStartTime: String? = null,
     ): String? {
+        val today = LocalDate.now()
+        val isToday = date == today
         val span = currentHolidaySpan(context, date)
         // 返校文案：受「返校节次豁免」总开关管
         if (repository.getReturnDayReminder() && isReturnDay(context, date)) {
-            val where = if (span != null) "今天是${span.name}最后一天" else "今天是周末最后一天"
+            val label = dayLabel(date, today)
+            // 注意：中文紧跟在 $label 后面会被当成标识符（$label是 不是 $label + 是），必须加花括号
+            val where = if (span != null) "${label}是${span.name}最后一天" else "${label}是周末最后一天"
             val what = returnCourseName?.takeIf { it.isNotBlank() }
             // 只有"今天"算倒计时才有意义（次日提醒等场景算出来是负数或几十小时）
-            val hours = if (date == LocalDate.now()) hoursUntil(returnStartTime) else null
+            val hours = if (isToday) hoursUntil(returnStartTime) else null
             return when {
                 hours != null && hours > 0 -> "$where，距返校${what ?: ""}还有 $hours 小时"
                 what != null && !returnStartTime.isNullOrBlank() ->
@@ -140,8 +170,10 @@ object ReturnDayReminder {
                 else -> "$where，返校啦"
             }
         }
-        // 假期余额：与总开关**解耦** —— 只要在假期内就显示（余额是假期信息，不是豁免功能的一部分）
-        if (span != null) {
+        // 假期余额：与总开关**解耦**（余额是假期信息，不是豁免功能的一部分）。
+        // 但只在「当天」显示 —— 在次日小部件上按明天算余额会说成"还剩 N 天"，
+        // 用户读到的是今天的信息，属于串味；非当天时返回 null 让调用方保持原样。
+        if (span != null && isToday) {
             return if (span.daysLeft > 0) {
                 "${span.name}还剩 ${span.daysLeft} 天"
             } else {

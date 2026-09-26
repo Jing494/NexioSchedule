@@ -591,12 +591,16 @@ fun CourseReminderScreen(
                                     title = "小米超级岛",
                                     summary = when {
                                         !isIslandSupported ->
-                                            "本机不支持超级岛，将使用实时动态通知"
+                                            "本机不支持超级岛，将使用实时动态通知（开关可保留为开启）"
                                         islandNotification -> "已开启，课程提醒将以超级岛样式显示"
                                         else -> "关闭后使用实时动态通知"
                                     },
-                                    enabled = isIslandSupported,
-                                    checked = islandNotification && isIslandSupported,
+                                    // 不能因为"不支持"就把开关 disable：那样 checked 显示成关闭、
+                                    // 又点不动，用户既关不掉也开不了 —— 设置项变成死开关。
+                                    // 支持与否只影响文案与实际发送路径（发送侧已统一按
+                                    // getIslandNotification() && isIslandSupported 判定）。
+                                    enabled = true,
+                                    checked = islandNotification,
                                     onCheckedChange = {
                                         rlog("island_switch", "on=$it supported=$isIslandSupported")
                                         settingsViewModel.setIslandNotification(it)

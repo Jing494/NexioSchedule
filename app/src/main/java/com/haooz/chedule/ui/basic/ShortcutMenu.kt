@@ -165,23 +165,33 @@ fun ShortcutMenu(
                 }
             }
     ) {
+        // drawBackdrop 的 effects / onDrawSurface 按**引用**比较，每次重组新建 lambda
+        // 会让毛玻璃与透镜重跑一遍（Menu 弹出期间正好在被拖动的动画帧上）。
+        val menuShape: () -> ContinuousRoundedRectangle = remember {
+            { ContinuousRoundedRectangle(18.dp) }
+        }
+        val menuEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit = remember {
+            {
+                vibrancy()
+                blur(4f.dp.toPx())
+                lens(12f.dp.toPx(), 12f.dp.toPx())
+            }
+        }
+        val onMenuSurface: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit =
+            remember(containerColor) {
+                { drawRect(containerColor) }
+            }
         Box(
             modifier = Modifier
                 .wrapContentSize()
                 .padding(ShadowPadding)
                 .drawBackdrop(
                     backdrop = backdrop,
-                    shape = { ContinuousRoundedRectangle(18.dp) },
-                    effects = {
-                        vibrancy()
-                        blur(4f.dp.toPx())
-                        lens(12f.dp.toPx(), 12f.dp.toPx())
-                    },
+                    shape = menuShape,
+                    effects = menuEffects,
                     highlight = null,
                     shadow = null,
-                    onDrawSurface = {
-                        drawRect(containerColor)
-                    }
+                    onDrawSurface = onMenuSurface
                 )
                 .edgeLight(shape = ContinuousRoundedRectangle(18.dp), edgeLight = rememberDefaultEdgeLight())
                 .clickable(

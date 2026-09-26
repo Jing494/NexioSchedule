@@ -473,6 +473,17 @@ object HolidayManager {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_VERSION, 0L)
     }
 
+    /**
+     * 让「假期相关设置」也参与版本号：返校节次豁免 / 假期余额 / 准备清单这些开关
+     * 并不经过 [save]，若不 bump 版本号，`semesterStartMonday`+`holidayVersion` 这类
+     * `remember(...)` 键不变 → 今日页状态卡与课表页豁免标记会一直显示旧状态。
+     */
+    fun notifyConfigChanged(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val prev = prefs.getLong(KEY_VERSION, 0L)
+        prefs.edit { putLong(KEY_VERSION, maxOf(System.currentTimeMillis(), prev + 1L)) }
+    }
+
     fun isHoliday(context: Context, date: LocalDate): Boolean {
         val hit = entriesForDate(loadAllByYear(context), date)
             .firstOrNull { it.type == TYPE_HOLIDAY }
