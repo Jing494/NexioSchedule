@@ -12,7 +12,7 @@
 |---|---|
 | **上游基线**（本定制栈的起点） | `1f46721` — `v1.5.6beta13` |
 | **本地分支** | `local/audit-v21`（worktree 就是本目录 `projects/nexio-schedule/src`） |
-| **栈深度** | 9 个本地提交 |
+| **栈深度** | 12 个本地提交 |
 | 包名 / versionCode | `com.haooz.chedule` / `156` |
 | versionName | `1.5.6-0926-audit`（更新判定只看 `MAJOR.MINOR.PATCH`，`-` 之后的后缀不影响更新） |
 
@@ -37,6 +37,9 @@
 | 7 | `5deac7b` | 2026-09-27 | v25：拖拽第二阶段 —— 落点格子对了，卡片仍吸附到偏高 1.5 格 | 1 |
 | 8 | `b39a0c4` | 2026-09-27 | v26：修「假期余额提醒」在假期最后一天永远不发 | 1 |
 | 9 | `2246fd2` | 2026-09-27 | v27：假期余额独立成卡 + 跟随豁免开关 + 只在最后N天 + 测试按钮 + 提醒体检 | 4 |
+| 10 | `8c9d098` | 2026-09-27 | docs: 加 LOCAL-CHANGES.md（本地定制清单 + 跟上上游的合并指南） | 1 |
+| 11 | `856261f` | 2026-09-27 | v28：流畅度 —— 预合成减半 / 整页重执行消除 / 轮询降到分钟节拍 / 滑动期毛玻璃降级 | 11 |
+| 12 | （docs 提交，SHA 见 `git log -1`） | 2026-09-27 | docs: LOCAL-CHANGES 补 v28（栈深度、主题索引、复算脚本、3 条新取舍） | 1 |
 
 > 一整条栈是**线性**的，直接 `git rebase --onto <新上游> 1f46721 local/audit-v21` 就能整体搬过去。
 
@@ -57,6 +60,10 @@
 | **节次几何单一真源**（拖拽落点 / 吸附位置 / 卡片高度都要用 `sectionTop`） | 6, 7 | `MainActivity.kt`（`computeDropTarget` / `sectionTopPx`）`MainScheduleScreen.kt`（`ScheduleGridGeometry`） |
 | `drawBackdrop` lambda 记忆化（避免每帧重建毛玻璃） | 3 | `TodayScreen.kt` `ShortcutMenu.kt` `CustomizeScheduleScreen.kt` |
 | 提醒设置页「提醒体检」自检 | 9 | `CourseReminderScreen.kt` |
+| **滑动/翻页期毛玻璃降级**（卡片 blur+lens / 边光描边；全局开关只在绘制期读） | 11 | `ui/utils/GlassPerf.kt`(新) `MainActivity.kt`(driver) `CourseCard.kt` `DayColumn.kt` `TodayScreen.kt` `EdgeLightModifier.kt` |
+| **轮询节拍**（助手/格言/课程行倒计时：分钟节拍；课程行按剩余秒数推跳变点） | 11 | `ui/utils/MinuteTick.kt`(新) `TodayAssistant.kt` `TodayScreen.kt` |
+| 预合成页数 / 页作用域内的 state 读取 / 壳 pager key lambda / 跨页 LazyListState | 11 | `MainScheduleScreen.kt` `MainActivity.kt` `TodayScreen.kt` |
+| 旧版残留闹钟 RC 的一次性清理标记 | 11 | `CourseReminderHelper.kt` |
 
 ---
 
@@ -69,7 +76,7 @@ cd projects/nexio-schedule/src
 git fetch origin                 # 或 git fetch github
 git branch backup/v27 HEAD       # 先留个后路
 
-# 把 1f46721 之后的本地 9 个提交整体搬到新上游上
+# 把 1f46721 之后的本地 12 个提交整体搬到新上游上
 git rebase --onto <新上游sha> 1f46721 local/audit-v21
 ```
 
@@ -99,7 +106,7 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 - 构建脚本：`$HOME/build-nexio.sh`（含 JDK21 / SDK / aapt2 override 等坑的规避，注释见 `FINAL-REPORT.md`）
 - 建议加资源限制，免得吃满手机：`nice -n 19 ./build-nexio.sh :app:assembleRelease --max-workers=2`
 - 签名：`$HOME/nexio-local.jks`，alias `nexio`。**口令不写在这里**（工作区禁止落密钥），见 `REVISION-v2.md`
-- 产物目录：`dist-v21/ … dist-v27/`，每次都是"同签名可直接覆盖安装"
+- 产物目录：`dist-v21/ … dist-v28/`，每次都是"同签名可直接覆盖安装"
 
 ---
 
@@ -107,6 +114,7 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 
 | 脚本 | 覆盖 |
 |---|---|
+| `dist-v28/verify_perf_v28.py` | 性能改动的离线复算：分钟节拍（24h 唤醒数/漂移/值域）+ 课程行取值窗口覆盖（15 相位×3 作息，skip=0/无跳档/末分钟秒级/唤醒 3300→115）+ 唤醒间隔值域 |
 | `dist-v27/verify_balance_v27.py` | 假期余额/清单：发不发 6 种条件 × 提前天数边界 × 文案矩阵（含豁免开关）× 25 项源码正则核对 |
 | `dist-v25/verify_droptarget.py` | 拖拽几何：落点在哪一格 + 那一格画在哪个 Y（旧模型 ±1.5 格） |
 | `dist-v24/verify_droptarget.py`、`dist-v22/`、`dist-v22/verify_logic_v22.py` | 早期版本的同名复算 |
@@ -133,3 +141,15 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 6. **测试按钮不能写"当天只发一次"去重键**，否则点一下就顶掉当天的正式提醒。
 7. 性能那批改动里有几处是"看起来能省、其实会破坏可靠性"的边界，见 `AUDIT-v21.md`
    第 3.1/3.2 节与 `AUDIT-v22.md` 第 4 节（例如刷新链**不能**降级成非精确闹钟）。
+8. **毛玻璃降级开关（`GlassPerf`）只能在绘制期读**（`effects` lambda / `DrawModifierNode.draw`），
+   **绝不能进 `remember` 的键**，也不要读进 composition：前者会让 `drawBackdrop` 的
+   `effects` 身份每次翻面都变、整块重建绘制缓存（v22 椭圆伪影同类），后者会让
+   四千行的壳 body 每次滑动起止重跑一遍（这正是本轮 ③ 修掉的东西）。
+   停滑后 180ms 再恢复是**故意的防抖**，去掉会在惯性尾部看到玻璃闪烁。
+   另：侧栏 `railGlassActive` 是同一套做法的先例，别合并成两份。
+9. **课程行倒计时的唤醒点必须从"当前剩余秒数"推**（`totalSeconds % 60 + 1`），
+   **不能**写成"睡到下一个整分"：显示用 floor 语义，进循环那一瞬若压在跳变点上
+   （"未开始"分支会睡到 `start`，正好是整分），会取到退化值并把那一分钟的文案整段跳过
+   （肉眼 45 → 43）。相反，助手/格言的文案是 ceil 语义，睡到整分才对 —— 两者**不能统一**。
+10. **`beyondViewportPageCount` 现在是 1**：调回 2 等于同时多养两页的组合/测量/布局，
+    是本轮最大的一笔白干。若上游为了别的原因改大，要连带评估课表页开销。
