@@ -67,14 +67,16 @@ jobs:
           mkdir -p /tmp/keep
           cp -r patches /tmp/keep/ 2>/dev/null || true
           cp -r .github /tmp/keep/ 2>/dev/null || true
+          cp -r tools /tmp/keep/ 2>/dev/null || true
           cp README.md /tmp/keep/ 2>/dev/null || true
           git reset --hard upstream/master
           cp -r /tmp/keep/patches ./patches 2>/dev/null || true
+          cp -r /tmp/keep/tools ./tools 2>/dev/null || true
           mkdir -p .github/workflows
           cp -r /tmp/keep/.github/workflows/. .github/workflows/ 2>/dev/null || true
           cp /tmp/keep/README.md ./README.md 2>/dev/null || true
           git add -A
-          git commit -q -m "sync: 对齐上游 $(git rev-parse --short upstream/master)（保留 patches/README/workflow）" --no-verify || true
+          git commit -q -m "sync: 对齐上游 $(git rev-parse --short upstream/master)（保留 patches/tools/README/workflow）" --no-verify || true
           git push --force origin master
 
       - name: 守卫｜补丁序列必须与源码分支一致
