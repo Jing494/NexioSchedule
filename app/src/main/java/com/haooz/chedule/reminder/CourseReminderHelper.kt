@@ -446,8 +446,15 @@ object CourseReminderHelper {
             lastServiceStartAt = now
         }
         // 启动路径自愈：上次给超级岛"绕白名单"时把小米推送服务断网，若进程在恢复前被杀，
-        // 网络会一直是关的。这里补一次恢复（没标记时是一次 SharedPreferences 读，代价可忽略）。
-        runCatching { com.haooz.chedule.shizuku.ShizukuManager.healPendingXmsfRestore(context) }
+        // 网络会一直是关的。这里补一次恢复。
+        //
+        // **必须避开正在进行的绕白名单窗口**：自愈会调 setXmsfNetworkingEnabled(true)，
+        // 若恰好落在"关网 → notify → 恢复"的窗口里就把窗口掀了 ——
+        // 那条通知是在"网已恢复"的状态下发出去的，不被当成焦点通知处理，
+        // 用户看到的就是**普通通知**而不是超级岛（连发多条时尤其容易踩上）。
+        if (!IslandNotificationHelper.isXmsfBypassInFlight()) {
+            runCatching { com.haooz.chedule.shizuku.ShizukuManager.healPendingXmsfRestore(context) }
+        }
         doStartReminderService(context, repository)
     }
 

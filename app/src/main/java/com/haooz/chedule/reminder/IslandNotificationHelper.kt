@@ -18,8 +18,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -55,9 +53,16 @@ object IslandNotificationHelper {
     // 历史版本遗留 ID：发送前清理，避免与当前岛重叠
     private val LEGACY_ISLAND_NOTIFICATION_IDS = intArrayOf(1001, 1002)
 
-    private val scope = CoroutineScope(Dispatchers.IO)
-    // 串行化 Shizuku bypass，避免并发导致 XMSF 网络状态错乱
-    private val shizukuBypassMutex = Mutex()
+    /**
+     * 岛相关操作**串行、按提交顺序**执行。
+     *
+     * 必须如此：测试按钮一次会连做「cancel(5001) / cancel(5002) / notify(5000)」，
+     * 而发送与取消现在都要经过 XMSF 绕白名单窗口；若丢到多线程池里并发跑，
+     * `cancel(5000)` 完全可能落在 `notify(5000)` **之后**，把刚发出去的岛又撤掉。
+     * limitedParallelism(1) 保证同一时刻只有一个在跑。
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val scope = CoroutineScope(Dispatchers.IO.limitedParallelism(1))
     // 课中倒计时由系统 Chronometer 自刷；ticker 已退役，仅保留 stop 以兼容清理路径
     private var inClassTickJob: Job? = null
     private val inClassTickLock = Any()
@@ -208,53 +213,116 @@ object IslandNotificationHelper {
         }
     }
 
-    // Mutex 串行化 disable→notify→enable；finally 保证 XMSF 网络一定恢复。
+    // ===== XMSF 绕白名单：**批量窗口** =====
     //
-    // 但 finally **只在进程还活着时**才执行：如果这 100ms 窗口内进程被系统杀掉
-    // （HyperOS 后台清理、崩溃），小米推送服务的网络就会一直处于被封状态。
-    // 所以 disable 之前先落一个"待恢复"标记，恢复成功才清；启动路径上做自愈
-    // （见 ShizukuManager.healPendingXmsfRestore，由 startReminderService 调用）。
+    // 为什么不再用"每条通知各自 disable→notify→100ms→enable"：
+    //
+    // 1) **连续通知会踩空**。测试按钮一次要连做「2 次 cancel + 1 次 send + kickWidgetRefresh」；
+    //    每条各自开一次窗口的话，前一条 restore 之后、后一条 disable 之前有一个真实的空档，
+    //    系统又是异步处理通知的 —— 落在这个空档里的那条就不是"断网态下发出去的"，
+    //    表现就是**焦点通知被降级成普通通知**（用户实测："一起发过来"时出现）。
+    // 2) **取消也必须走同一个窗口**。岛是在断网态下发出去的，只用普通 `cancel(id)` 有时
+    //    清不掉焦点通知那一份，于是下课时岛消失了、通知栏里却留着一张普通通知
+    //    —— 这就是"回落成普通通知"。
+    //
+    // 所以改成：一批操作**共用同一个关网窗口**，第一条负责关，之后每条只把关闭时间往后推，
+    // 最后一条之后静默 BYPASS_QUIET_MS 才恢复；并有 BYPASS_MAX_HOLD_MS 硬上限，绝不长期断网。
+    // 关网前落"待恢复"标记，恢复成功才清；进程被杀由启动路径自愈。
+    private const val BYPASS_QUIET_MS = 400L
+    private const val BYPASS_MAX_HOLD_MS = 3_000L
+
+    private val bypassLock = Any()
+    private var bypassWindowOpen = false
+    private var bypassDepth = 0
+    private var bypassOpenedAt = 0L
+    private var bypassCloseJob: Job? = null
+
+    /**
+     * 在"XMSF 网络关闭"的窗口里执行 [block]（发送**或**取消都走这里）。
+     * 连续调用共用同一个窗口。
+     */
+    private suspend fun <T> withXmsfBypass(
+        context: Context,
+        useBypass: Boolean,
+        block: () -> T
+    ): T {
+        if (!useBypass || !isShizukuAvailable()) return block()
+        synchronized(bypassLock) {
+            bypassDepth++
+            if (!bypassWindowOpen) {
+                bypassCloseJob?.cancel()
+                bypassCloseJob = null
+                val ok = try {
+                    ShizukuManager.markXmsfRestorePending(context)
+                    ShizukuManager.setXmsfNetworkingEnabled(context, false)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to disable XMSF networking", e)
+                    false
+                }
+                bypassWindowOpen = ok
+                bypassOpenedAt = System.currentTimeMillis()
+                if (!ok) {
+                    // 没真的断网就没有"待恢复"这回事
+                    ShizukuManager.clearXmsfRestorePending(context)
+                    Log.w(TAG, "XMSF bypass window not opened, running without bypass")
+                }
+            }
+        }
+        try {
+            return block()
+        } finally {
+            synchronized(bypassLock) {
+                bypassDepth--
+                if (bypassDepth <= 0) {
+                    bypassDepth = 0
+                    scheduleBypassClose(context)
+                }
+            }
+        }
+    }
+
+    /** 静默期后再恢复；超过硬上限则立刻恢复。 */
+    private fun scheduleBypassClose(context: Context) {
+        if (!bypassWindowOpen) return
+        val held = System.currentTimeMillis() - bypassOpenedAt
+        val wait = if (held >= BYPASS_MAX_HOLD_MS) {
+            0L
+        } else {
+            minOf(BYPASS_QUIET_MS, BYPASS_MAX_HOLD_MS - held)
+        }
+        bypassCloseJob?.cancel()
+        bypassCloseJob = scope.launch {
+            if (wait > 0) delay(wait)
+            closeBypassWindow(context)
+        }
+    }
+
+    private fun closeBypassWindow(context: Context) {
+        synchronized(bypassLock) {
+            if (!bypassWindowOpen || bypassDepth > 0) return
+            try {
+                ShizukuManager.setXmsfNetworkingEnabled(context, true)
+                ShizukuManager.clearXmsfRestorePending(context)
+                Log.d(TAG, "XMSF networking restored")
+            } catch (e: Exception) {
+                // 保留"待恢复"标记，交给启动路径自愈
+                Log.e(TAG, "CRITICAL: Failed to restore XMSF networking!", e)
+            }
+            bypassWindowOpen = false
+        }
+    }
+
+    /** 正在绕白名单窗口里吗？自愈逻辑用它避免把窗口中途掀掉。 */
+    fun isXmsfBypassInFlight(): Boolean = synchronized(bypassLock) { bypassWindowOpen || bypassDepth > 0 }
+
     private suspend fun withShizukuBypass(
         context: Context,
         notificationId: Int,
         notification: Notification,
         useShizukuBypass: Boolean
     ) {
-        if (!useShizukuBypass || !isShizukuAvailable()) {
+        withXmsfBypass(context, useShizukuBypass) {
             sendNotificationDirect(context, notificationId, notification)
-            return
-        }
-        shizukuBypassMutex.withLock {
-            val disabled = try {
-                ShizukuManager.markXmsfRestorePending(context)
-                ShizukuManager.setXmsfNetworkingEnabled(context, false)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to disable XMSF networking", e)
-                ShizukuManager.clearXmsfRestorePending(context)
-                sendNotificationDirect(context, notificationId, notification)
-                return@withLock
-            }
-            if (!disabled) {
-                Log.w(TAG, "Failed to disable XMSF networking, sending notification anyway")
-                // 没真的断网就没有"待恢复"这回事
-                ShizukuManager.clearXmsfRestorePending(context)
-                sendNotificationDirect(context, notificationId, notification)
-                return@withLock
-            }
-            try {
-                Log.d(TAG, "XMSF networking disabled, sending notification")
-                sendNotificationDirect(context, notificationId, notification)
-                delay(100.milliseconds)
-            } finally {
-                try {
-                    ShizukuManager.setXmsfNetworkingEnabled(context, true)
-                    ShizukuManager.clearXmsfRestorePending(context)
-                    Log.d(TAG, "XMSF networking restored")
-                } catch (e: Exception) {
-                    // 保留"待恢复"标记，交给启动路径自愈
-                    Log.e(TAG, "CRITICAL: Failed to restore XMSF networking!", e)
-                }
-            }
         }
     }
 
@@ -361,22 +429,49 @@ object IslandNotificationHelper {
 
     // 收起指定岛态，并连带收起同课其它态，避免残留
     fun cancelIslandState(context: Context, notificationId: Int) {
+        val siblings = siblingIdsFor(notificationId)
+        cancelIdsWithBypassRetry(
+            context,
+            IntArray(1 + siblings.size).also {
+                it[0] = notificationId
+                siblings.copyInto(it, 1)
+            },
+        )
+    }
+
+    /**
+     * 同步撤一次（保证 UI 立刻响应、不依赖 Shizuku），再用**与发送同一个绕白名单窗口**补撤一次。
+     *
+     * 岛/焦点通知是在"XMSF 断网"状态下发出去的，只用普通 cancel 有时清不掉焦点通知那一份：
+     * 表现就是岛从状态栏消失了、通知栏里却留着一张普通通知 ——
+     * 也就是用户实测的"下课后回落成普通通知"。
+     */
+    private fun cancelIdsWithBypassRetry(context: Context, ids: IntArray) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.cancel(notificationId)
-        for (id in siblingIdsFor(notificationId)) manager.cancel(id)
+        for (id in ids) manager.cancel(id)
+        if (!isShizukuAvailable()) return
+        scope.launch {
+            withXmsfBypass(context, useBypass = true) {
+                for (id in ids) manager.cancel(id)
+            }
+        }
     }
 
     fun cancelIslandNotifications(context: Context) {
         stopInClassTicker()
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.cancel(ISLAND_NOTIFICATION_ID)
-        manager.cancel(ISLAND_STARTED_NOTIFICATION_ID)
-        manager.cancel(ISLAND_IN_CLASS_NOTIFICATION_ID)
-        manager.cancel(ISLAND_RETURN_DAY_NOTIFICATION_ID)
-        for (id in LEGACY_ISLAND_NOTIFICATION_IDS) manager.cancel(id)
-        manager.cancel(ISLAND_TEST_NOTIFICATION_ID)
-        manager.cancel(ISLAND_STARTED_TEST_NOTIFICATION_ID)
-        manager.cancel(ISLAND_IN_CLASS_TEST_NOTIFICATION_ID)
+        cancelIdsWithBypassRetry(
+            context,
+            intArrayOf(
+                ISLAND_NOTIFICATION_ID,
+                ISLAND_STARTED_NOTIFICATION_ID,
+                ISLAND_IN_CLASS_NOTIFICATION_ID,
+                ISLAND_RETURN_DAY_NOTIFICATION_ID,
+                *LEGACY_ISLAND_NOTIFICATION_IDS,
+                ISLAND_TEST_NOTIFICATION_ID,
+                ISLAND_STARTED_TEST_NOTIFICATION_ID,
+                ISLAND_IN_CLASS_TEST_NOTIFICATION_ID,
+            ),
+        )
     }
 
     // 只清理历史遗留 ID，避免与本次倒计时岛并存
@@ -436,6 +531,12 @@ object IslandNotificationHelper {
         val paramV2 = JSONObject().apply {
             put("business", BUSINESS_TAG)
             put("protocol", 1)
+            // timeout：**焦点通知**的自动消失时间，单位 min（规范默认 720 = 12 小时）。
+            // 不设的后果：一旦"下课取消"没完全生效（岛是在绕白名单断网态下发出的），
+            // 通知栏里那张回落出来的普通通知会**挂满 12 小时**。
+            // 按这节课的时间线给一个刚够用的值：倒计时态 = 距上课分钟数 + 3；
+            // 静态「已上课」态 15 秒后就该收起，给 5 分钟余量。
+            put("timeout", if (counting) (minutesUntil + 3).coerceAtLeast(3) else 5)
             if (counting) {
                 put("enableFloat", true)
             } else {
@@ -521,7 +622,10 @@ object IslandNotificationHelper {
 
             val paramIsland = JSONObject().apply {
                 put("islandProperty", 1)
-                put("islandTimeout", 3600)
+                // islandTimeout：**岛**自动消失的时间，单位 **s**（规范默认 3600 = 60 分钟）。
+                // 写死 3600 的话，超过 1 小时的课（晚自习两节连排）岛会中途自己消失。
+                // 按这节课的时间线给：距上课秒数 + 120s 余量；静态「已上课」仍用 3600。
+                put("islandTimeout", if (counting) (((remainMs ?: 0L) / 1000L).toInt() + 120).coerceAtLeast(120) else 3600)
 
                 val bigIsland = JSONObject().apply {
                     put("templateNo", 2)
@@ -618,6 +722,18 @@ object IslandNotificationHelper {
         val paramV2 = JSONObject().apply {
             put("business", BUSINESS_TAG)
             put("protocol", 1)
+            // timeout：**焦点通知**的自动消失时间，单位 min（规范默认 720 = 12 小时）。
+            // 不设的后果：一旦"下课取消"没完全生效（岛是在绕白名单断网态下发出的），
+            // 通知栏里那张回落出来的普通通知会**挂满 12 小时**。
+            // 这里给"这节课结束就够"的值。
+            put(
+                "timeout",
+                if (courseEndMillis > now) {
+                    (((courseEndMillis - now) / 60_000L).toInt() + 5).coerceAtLeast(5)
+                } else {
+                    5
+                }
+            )
             // 课中岛挂到下课，不反复弹悬浮窗（与课前「已上课」同策略）
             put("islandFirstFloat", true)
             put("enableFloat", false)
@@ -694,7 +810,11 @@ object IslandNotificationHelper {
             // 缩略态：模板2，与课前同构；A区课程名，B区可在「正在上课」与距下课倒计时间自选
             put("param_island", JSONObject().apply {
                 put("islandProperty", 1)
-                put("islandTimeout", 3600)
+                // 同课前：按"距下课秒数 + 120"给，避免晚自习这种长课在 60 分钟处被系统收岛
+                put(
+                    "islandTimeout",
+                    if (counting) (((courseEndMillis - now) / 1000L).toInt() + 120).coerceAtLeast(120) else 3600
+                )
                 put("bigIslandArea", JSONObject().apply {
                     put("templateNo", 2)
                     // A区：课程名称
@@ -873,6 +993,12 @@ object IslandNotificationHelper {
             val root = JSONObject(paramsRaw)
             val paramV2 = root.optJSONObject("param_v2") ?: return@runCatching paramsRaw
             paramV2.remove("hintInfo")
+            // timeout 的语义是"焦点通知多久后消失"（min）。静态提醒走的是 counting=false 分支，
+            // 那里给的是 5 分钟（给「已上课」15 秒收起留的余量）—— 对"明天返校"太短了，
+            // 这里单独放宽到 4 小时：当晚提醒，到第二天早上自动清掉。
+            paramV2.put("timeout", 240)
+            // 岛也放宽到 12 小时：这是"明天返校"的当晚提醒，不该 60 分钟就掉
+            paramV2.optJSONObject("param_island")?.put("islandTimeout", 12 * 60 * 60)
             paramV2.optJSONObject("param_island")
                 ?.optJSONObject("bigIslandArea")
                 ?.optJSONObject("textInfo")
@@ -1128,8 +1254,9 @@ object IslandNotificationHelper {
             } else {
                 // 「距下课」未进窗或无有效下课时间：只收倒计时，不发已上课；
                 // 标记 switched 交给对账，进窗后再切课中（不可因 end>start 就提前挂卡）
-                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                manager.cancel(countdownIdFor(notificationId))
+                // 走绕白名单窗口撤：倒计时岛也是"断网态"发出去的，
+                // 普通 cancel 清不掉的话它会作为普通通知留在通知栏里
+                cancelIdsWithBypassRetry(context, intArrayOf(countdownIdFor(notificationId)))
                 IslandState.markSwitched(context, testMode = effectiveTestMode)
             }
             return
@@ -1171,10 +1298,12 @@ object IslandNotificationHelper {
             return
         }
 
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.cancel(countdownId)
-        // 收起可能残留的课中岛
-        manager.cancel(activeIdFor(notificationId, inClass = true))
+        // 走绕白名单窗口撤：否则上一态（倒计时/课中）的焦点通知可能清不干净，
+        // 变成一张普通通知留在通知栏里
+        cancelIdsWithBypassRetry(
+            context,
+            intArrayOf(countdownId, activeIdFor(notificationId, inClass = true)),
+        )
 
         val title = if (startTime.isNotEmpty()) "$courseName $startTime" else courseName
         val content = buildString {
@@ -1228,9 +1357,11 @@ object IslandNotificationHelper {
             return
         }
 
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.cancel(countdownId)
-        manager.cancel(activeIdFor(notificationId, inClass = false))
+        // 同 sendClassStartedNotification：撤上一态也走绕白名单窗口
+        cancelIdsWithBypassRetry(
+            context,
+            intArrayOf(countdownId, activeIdFor(notificationId, inClass = false)),
+        )
 
         val params = buildInClassIslandParamsJson(
             context = context,
