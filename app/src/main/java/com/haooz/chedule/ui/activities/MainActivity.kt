@@ -68,6 +68,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -141,6 +142,7 @@ import com.haooz.chedule.ui.screens.TabletCourseManagePane
 import com.haooz.chedule.ui.screens.TabletSwitchSchedulePane
 import com.haooz.chedule.ui.screens.TodayScreen
 import com.haooz.chedule.ui.theme.CourseScheduleTheme
+import com.haooz.chedule.ui.utils.GlassPerf
 import com.haooz.chedule.ui.utils.LocalForcedDarkTheme
 import com.haooz.chedule.ui.utils.applyNavigationBarIsDark
 import com.haooz.chedule.ui.utils.applyThemeAwareSystemBars
@@ -158,6 +160,8 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.capsule.ContinuousRoundedRectangle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -2556,6 +2560,37 @@ fun CourseScheduleApp() {
             showSwitchSchedule && switchOverlayActive -> 0f
             else -> 1f
         }
+        /*
+         * 毛玻璃降级：滑动/翻页进行中把 blur + lens 关掉，停下 180ms 再恢复。
+         *
+         * 这里特意用 snapshotFlow 而不是在 composition 里读这些 isScrollInProgress ——
+         * 那会让整个四千多行的 body 在每次滑动开始/结束时重跑一遍。
+         * 真正"读"这个开关的地方是各卡片 effects lambda 的**绘制期**，所以翻面只失效绘制层，
+         * 一次重组都不会产生。
+         *
+         * 180ms 的滞后是为了防抖：惯性滑动尾部会连续开关几次，没有滞后就会看到玻璃闪烁。
+         */
+        LaunchedEffect(
+            scheduleScrollState, pagerState, todayPagerState, mainPagerState, todayListScrollInProgress
+        ) {
+            snapshotFlow {
+                scheduleScrollState.isScrollInProgress ||
+                    pagerState.isScrollInProgress ||
+                    todayPagerState.isScrollInProgress ||
+                    mainPagerState.isScrollInProgress ||
+                    todayListScrollInProgress.value
+            }
+                .distinctUntilChanged()
+                .collectLatest { scrolling ->
+                    if (scrolling) {
+                        GlassPerf.enabled.value = false
+                    } else {
+                        delay(180)
+                        GlassPerf.enabled.value = true
+                    }
+                }
+        }
+
         // 主内容模糊**不在 composition 里读半径**。
         //
         // 原来这里写成 `Modifier.blur(半径.dp)`，半径取自两个 Animatable（长按拖动 /
@@ -3257,8 +3292,13 @@ fun CourseScheduleApp() {
                             val mainPagerModifier = Modifier
                                 .fillMaxSize()
                                 .nestedScroll(mainContentNestedScroll)
-                            val mainPagerPageKey: (Int) -> String = { page ->
-                                if (isShiftMode) "shift-$page" else "main-$page"
+                            // remember：这个 key lambda 只依赖 isShiftMode。
+                            // 它原来每次壳重执行都新建，而壳在动画/滚动帧上会反复重执行 →
+                            // pager 每次拿到新 lambda 都会使 LazyLayout 的 item provider 失效。
+                            // 注：同处的 mainPagerPageContent 捕获了大量会变的局部量，
+                            // 不能安全 remember（会把值冻住），只能保持现状。
+                            val mainPagerPageKey: (Int) -> String = remember(isShiftMode) {
+                                { page -> if (isShiftMode) "shift-$page" else "main-$page" }
                             }
                             val mainPagerPageContent: @Composable (Int) -> Unit = { page ->
                                 if (!isShiftMode) {

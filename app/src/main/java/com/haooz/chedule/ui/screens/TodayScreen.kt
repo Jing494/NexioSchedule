@@ -29,6 +29,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.haooz.chedule.ui.utils.millisToNextMinute
 import com.haooz.chedule.data.CardRefractionLevel
 import com.haooz.chedule.data.Course
 import com.haooz.chedule.data.CourseRepository
@@ -65,6 +67,7 @@ import com.haooz.chedule.ui.basic.collapsibleTopInset
 import com.haooz.chedule.ui.effects.edgelight.edgeLight
 import com.haooz.chedule.ui.effects.edgelight.rememberCardEdgeLight
 import com.haooz.chedule.ui.effects.edgelight.rememberDefaultEdgeLight
+import com.haooz.chedule.ui.utils.glassBlurEnabled
 import com.haooz.chedule.ui.utils.isAppDarkTheme
 import com.haooz.chedule.ui.utils.overScrollVertical
 import com.haooz.chedule.ui.utils.pagerAxisTakeoverGesture
@@ -132,9 +135,14 @@ fun BlurCard(
         val glassEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
             remember(refraction, blurPx) {
                 {
-                    blur(blurPx)
-                    if (refraction != CardRefractionLevel.OFF) {
-                        lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
+                    // 滑动/翻页进行中降级：跳过 blur + lens（每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器）。
+                    // 只在**绘制期**读开关，绝不进 remember 的键 —— 否则 lambda 身份翻面即变，
+                    // drawBackdrop 会判不等并整块重建绘制缓存（v22 那个椭圆伪影是同一类坑）。
+                    if (glassBlurEnabled()) {
+                        blur(blurPx)
+                        if (refraction != CardRefractionLevel.OFF) {
+                            lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
+                        }
                     }
                 }
             }
@@ -247,6 +255,10 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
         }
         while (true) {
             val now = LocalTime.now()
+            // 下一次唤醒间隔。原来固定 1s：一屏几十行就是几十次/秒的
+            // LocalTime.now + Duration.between + 三四次状态比较，纯空转；
+            // 而文案粒度本来就是分钟（只有最后一分钟才显示秒）。
+            var nextTickMs = 1_000L
             when {
                 startTime == null || endTime == null -> {
                     if (courseStatus != "未知") courseStatus = "未知"
@@ -255,6 +267,10 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
                 }
                 now.isBefore(startTime) -> {
                     if (courseStatus != "未开始") courseStatus = "未开始"
+                    // 睡到开课时刻，但上限 60s —— 保持与改造前"跨天/日期变化最多晚 1 分钟
+                    // 才发现"完全一致的边界行为，不引入新的跨日语义。
+                    val untilStart = java.time.Duration.between(now, startTime).toMillis()
+                    nextTickMs = untilStart.coerceIn(1_000L, 60_000L)
                 }
                 now.isAfter(endTime) -> {
                     if (courseStatus != "已结束") courseStatus = "已结束"
@@ -263,9 +279,24 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
                 }
                 else -> {
                     if (courseStatus != "进行中") courseStatus = "进行中"
+                    // 仅值变化时写入，避免每秒触发重组
+                    if (newMinutes != remainingMinutes) remainingMinutes = newMinutes
+                    // 秒数只在最后一分钟文案使用
+                    if (newMinutes <= 0 && newSeconds != remainingSeconds) remainingSeconds = newSeconds
+                    // 关键：下一次唤醒**从当前剩余秒数推**，不要从"下一个整分"推。
+                    //
+                    // 显示用的是 floor 语义（totalSeconds / 60），分钟值 v 的窗口是
+                    // (end-60(v+1), end-60v]，所以下一个跳变点距现在恰好 totalSeconds % 60 + 1 秒。
+                    // 而"睡到下一个整分"在**进入循环的瞬间恰好压在跳变点上**时会取到退化值：
+                    // 此时 floor(end-now) 还是旧的一档（例如开课那一刻算出来仍是 45，
+                    // 可 40ms 后就是 44），于是那一分钟（44）会被整个跳过，肉眼看到 45 → 43。
+                    // 未开始分支正好睡到 start（整分），必然踩到这个边界，所以必须这样推。
+                    // +1 秒是为了跨过跳变点那一瞬间本身；落在退化点上时下一轮会自愈。
+                    nextTickMs = if (newMinutes <= 0) 1_000L
+                    else ((totalSeconds % 60 + 1) * 1_000L)
                 }
             }
-            delay(1000L.milliseconds)
+            delay(nextTickMs)
         }
     }
 
@@ -551,7 +582,11 @@ fun TodayScreen(
                     .pagerAxisTakeoverGesture(pagerState = pagerState),
                 userScrollEnabled = false,
             ) { page ->
-                val pageListState = remember(page) { LazyListState() }
+                // rememberSaveable + Saver：Today pager 会回收视口外的页，
+                // 用裸 remember 的话每次回收重建都要把整列重新测量一遍（滚动位置也没了）。
+                val pageListState = rememberSaveable(page, saver = LazyListState.Saver) {
+                    LazyListState()
+                }
                 // 只把当前页的滚动状态报给 Activity（顶栏折叠 / 液态玻璃重录）
                 LaunchedEffect(pageListState, page) {
                     snapshotFlow {
@@ -1618,7 +1653,9 @@ private fun QuoteCard(
             if (nextScene != scene) scene = nextScene
             val nextHour = LocalTime.now().hour
             if (nextHour != hour) hour = nextHour
-            delay(1_000L.milliseconds)
+            // 场景由课节边界决定、hour 由整点决定，都是分钟对齐的：
+            // 不必每秒重算 computeQuoteScene（内部同样要建时间区间），睡到下一个整分。
+            delay(millisToNextMinute().milliseconds)
         }
     }
 
@@ -1678,9 +1715,14 @@ private fun CourseSectionTitle(
         val titleEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
             remember(refraction, blurPx) {
                 {
-                    blur(blurPx)
-                    if (refraction != CardRefractionLevel.OFF) {
-                        lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
+                    // 滑动/翻页进行中降级：跳过 blur + lens（每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器）。
+                    // 只在**绘制期**读开关，绝不进 remember 的键 —— 否则 lambda 身份翻面即变，
+                    // drawBackdrop 会判不等并整块重建绘制缓存（v22 那个椭圆伪影是同一类坑）。
+                    if (glassBlurEnabled()) {
+                        blur(blurPx)
+                        if (refraction != CardRefractionLevel.OFF) {
+                            lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
+                        }
                     }
                 }
             }
