@@ -13,7 +13,12 @@ name: 同步上游并构建 Release APK
 on:
   schedule:
     - cron: '0 */6 * * *'      # 每 6 小时**只体检上游**（有新提交就开 Issue 提醒 rebase），不自动出包
-  workflow_dispatch: {}        # 手动触发 = 真正出包（改了补丁/基准后跑这个）
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '只构建不发布（升级基准/改补丁时用：跑完守卫就停，不占版本号、不产生 Release）'
+        type: boolean
+        default: false
 
 permissions:
   contents: write              # 发 Release / 推送 master 同步
@@ -117,10 +122,20 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: |
           # 这些条目全部来自本地踩过的坑（岛 B 区联动 / 折射宽度恒定 / 日子词唯一 /
-          # 次日文案共享 / 余额最后一天 / sectionTopDp 单一真源 …），不过就红叉。
+          # 次日文案共享 / 余额最后一天 / sectionTopDp 单一真源 / 下载源只认带包的版本 …）。
           # tools/ 也只在 master 上；同样从 master ref 取出来再跑
+          #
+          # ★ 必须 set -o pipefail：bash 里管道的退出码是**最后一个命令**的，
+          #   写成 `python3 ci_check.py . | tee log` 时 python 的失败会被 tee 吞掉、步骤照样绿。
+          #   这个坑真实存在过：ci_check.py 根本不在仓库里（python 报 can't open file），
+          #   门禁却一路 success，Release 说明还写着"质量门禁：全部通过"。别删这一行。
+          set -euo pipefail
           rm -rf /tmp/tools && mkdir -p /tmp/tools
           git archive origin/master tools | tar -x -C /tmp
+          if [ ! -f /tmp/tools/tools/ci_check.py ]; then
+            echo "::error::tools/ci_check.py 不在 master 上 —— 门禁脚本缺失，直接挡住发版（宁可不发，也不要假绿灯）"
+            exit 1
+          fi
           python3 /tmp/tools/tools/ci_check.py . | tee /tmp/ci_check.log
 
       - name: 设置 JDK 21
@@ -156,7 +171,12 @@ jobs:
           VNAME=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
           MAINVER=$(echo "$VNAME" | sed 's/-.*//')
           VC=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
-          GH_COUNT=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 2>/dev/null | grep -cE "^v${MAINVER}(\.[0-9]+)?-gh" || true)
+          # 序号 = **全仓库**历史 gh 发布数 + 1（不是"同 MAINVER 下的第几个"）。
+          #   为什么要全局计数：分母用 MAINVER 的话，基准一升级（1.5.6 → 1.6.0.1）
+          #   计数会从 5 掉回 0，FORK_CODE = VC*100+1 = 15601 < 已有的 15605，
+          #   既触发不了"覆盖安装"，也会被下面的单调性守卫拦下。全局计数天然单调。
+          GH_COUNT=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
+            --jq '.[].tag_name' 2>/dev/null | sed 's/.*-gh//' | grep -cE '^[0-9]+$' || true)
           GH_N=$((GH_COUNT + 1))
           FORK_CODE=$((VC * 100 + GH_N))
           # 版本号用第 4 段递增：1.5.6.1-gh1 / 1.5.6.2-gh2 …
@@ -245,7 +265,8 @@ jobs:
           path: app/build/outputs/final/Nexio.v*.apk*
 
       - name: 发布 GitHub Release
-        if: github.event_name == 'workflow_dispatch'
+        # dry_run=true = 只验证构建与守卫，不发版、不占版本号（升级基准 / 改补丁时先用它验证）
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run != true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -323,7 +344,7 @@ jobs:
       - name: 同步发布到 Gitee（可选：配了 GITEE_TOKEN 才执行）
         # 非关键路径：Gitee 抖动不该让整条流水线红叉（GitHub 那边已经发好了）
         continue-on-error: true
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run != true
         env:
           GT: ${{ secrets.GITEE_TOKEN }}
           GITEE_REPO: ${{ vars.GITEE_REPO }}
@@ -357,9 +378,32 @@ jobs:
             [ -n "$RID" ] || echo "::warning::按 tag 查也拿不到 id，原始响应：$RESP2"
           fi
           if [ -z "$RID" ]; then echo "::warning::Gitee release 创建/查询失败，跳过附件上传"; exit 0; fi
+          # 上传附件并**核验真的挂上了**。
+          #
+          # 为什么必须核验（真机踩过）：Gitee 建 release 时会自动挂上源码 zip，
+          # 而 .apk 是这一步之后才 attach 上去的，实测两者相差 8 分钟。
+          # 这段窗口里"最新 release"是个**没有安装包**的版本 —— App 选中它，
+          # 下载按钮就只会弹「未找到下载链接」。所以：
+          #   · 上传失败必须重试（跨国上传会抖）；
+          #   · 三次都不行就**删掉这条 release**，宁可"暂时没有新版"，
+          #     也不要留一个"最新但没包"的坑（App 侧虽已只认带包的版本，这是双保险）。
           echo "Gitee release id=$RID，上传附件…"
-          curl -s -X POST "$API/releases/$RID/attach_files" -F "access_token=$GT" -F "file=@$APK" | head -c 300
-          echo "✅ Gitee 附件上传完成"
+          ATTACHED=0
+          for attempt in 1 2 3; do
+            curl -s -X POST "$API/releases/$RID/attach_files" \
+              -F "access_token=$GT" -F "file=@$APK" -o /tmp/attach.json || true
+            head -c 200 /tmp/attach.json; echo
+            APK_N=$(curl -s "$API/releases/$RID?access_token=$GT" | python3 -c "import json,sys;d=json.load(sys.stdin);print(sum(1 for a in (d.get('assets') or []) if str(a.get('name','')).endswith('.apk')) if isinstance(d,dict) else 0)" 2>/dev/null || echo 0)
+            if [ "${APK_N:-0}" != "0" ]; then ATTACHED=1; echo "  核验：该 release 已有 .apk 附件（第 $attempt 次）"; break; fi
+            echo "::warning::第 $attempt 次上传后仍看不到 .apk 附件，5 秒后重试…"
+            sleep 5
+          done
+          if [ "$ATTACHED" != "1" ]; then
+            echo "::error::Gitee .apk 附件上传失败 —— 删除这条 release，避免 App 选中「最新但没有安装包」的版本"
+            curl -s -X DELETE "$API/releases/$RID?access_token=$GT" | head -c 200; echo
+            exit 1
+          fi
+          echo "✅ Gitee 附件上传完成并已核验（.apk 在附件里）"
 
       - name: 同步代码到 Gitee（可选：镜像 master 与源码分支）
         continue-on-error: true
