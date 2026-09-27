@@ -1695,10 +1695,40 @@ object CourseReminderHelper {
             courseName = first.name,
             section = first.getTimeDisplayText(),
             startTime = startTime,
+            targetDate = targetDate,
             holidayLabel = span?.name?.takeIf { it.isNotBlank() }?.let { "${it}最后一天" },
             progressPercent = span?.progressPercent,
         )
         prefs.edit { putLong(KEY_RETURN_LIVE_PUSH, now) }
+    }
+
+    /**
+     * 「返校」提醒里的那个日子词 —— **原生实时动态与超级岛共用这一份**。
+     *
+     * 为什么不能写死「明天返校」：目标日（正文所依据的那天）可能是**今天**。
+     * `ReturnDayReminder.isReturnDay(d) = isRestDay(d) && isSchoolDay(d+1)`，
+     * 所以「返校日」就是假期最后一天：被「返校节次豁免」放出来的课（例如第11节 18:30 晚自习）
+     * 是**今晚**的课。此时标题说「明天返校」、正文列今晚的课，自相矛盾
+     * （真机实测：标题「明天返校 · 中秋节最后一天」，正文「道法｜第11节 18:30」）。
+     * 而清单通知那边（prepNotificationTitle）一直说的是「今晚返校」 ——
+     * 同一天两条提醒说不同的话，本质就是这个写死造成的。
+     *
+     * 规则（16:00 口径与 prepNotificationTitle 保持一致）：
+     * - 目标日在今天之后 → 「明天返校」（次日提醒走这条，正文列的也正是明天的课）
+     * - 目标日就是今天、首节在 16:00 之后 → 「今晚返校」
+     * - 目标日就是今天、但首节更早 → 「今天返校」（人其实已经回校了，说「今晚」会晚一天）
+     * - 其它（理论不可达）→ 「返校」
+     */
+    internal fun returnDayVerb(
+        targetDate: java.time.LocalDate,
+        firstStartTime: String?,
+        today: java.time.LocalDate = java.time.LocalDate.now(),
+    ): String {
+        val days = java.time.temporal.ChronoUnit.DAYS.between(today, targetDate)
+        if (days > 0L) return "明天返校"
+        if (days < 0L) return "返校"
+        val hour = firstStartTime?.substringBefore(':')?.trim()?.toIntOrNull()
+        return if (hour != null && hour < 16) "今天返校" else "今晚返校"
     }
 
     /**
@@ -1713,19 +1743,23 @@ object CourseReminderHelper {
         courseName: String,
         section: String,
         startTime: String,
+        /** 正文字段所依据的日期（可能今天、可能明天）—— 日子词由它决定，不能写死 */
+        targetDate: java.time.LocalDate,
         holidayLabel: String?,
         /** 非空且 API 36+ 时用 ProgressStyle 显示假期进度（复用课中那套实时动态规范） */
         progressPercent: Int? = null,
     ) {
         ensureNotificationChannels(context)
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val title = if (holidayLabel.isNullOrBlank()) "明天返校" else "明天返校 · $holidayLabel"
+        // 日子词必须跟着「正文列的是哪天的课」走：目标日就是今天时说「明天返校」会与正文矛盾
+        val verb = returnDayVerb(targetDate, startTime)
+        val title = if (holidayLabel.isNullOrBlank()) verb else "$verb · $holidayLabel"
         val content = buildString {
             if (courseName.isNotEmpty()) append(courseName)
             if (section.isNotEmpty()) append("｜").append(section)
             if (startTime.isNotEmpty()) append(" ").append(startTime)
             // 兜底文案不能说"明天要上课"：明天可能只是"要上学但没有课"，那样是假话
-            if (isEmpty()) append("明天返校，别忘了收拾东西")
+            if (isEmpty()) append("$verb，别忘了收拾东西")
         }
         val contentIntent = PendingIntent.getActivity(
             context,
@@ -1765,7 +1799,7 @@ object CourseReminderHelper {
                 )
             }
             promotedCatching("returnDay.setRequestPromotedOngoing") { styleBuilder.setRequestPromotedOngoing(true) }
-            promotedCatching("returnDay.setShortCriticalText") { styleBuilder.setShortCriticalText("明天返校") }
+            promotedCatching("returnDay.setShortCriticalText") { styleBuilder.setShortCriticalText(verb) }
             manager.notify(
                 RETURN_DAY_LIVE_ID,
                 styleBuilder.build().apply {
@@ -1790,7 +1824,7 @@ object CourseReminderHelper {
                     Notification.CATEGORY_REMINDER
                 }
             )
-            .setShortCriticalText("明天返校")
+            .setShortCriticalText(verb)
             .setRequestPromotedOngoing(true)
             .setTimeoutAfter(timeoutMs)
         if (progressPercent != null) {

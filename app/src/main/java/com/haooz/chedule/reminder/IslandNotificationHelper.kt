@@ -940,7 +940,8 @@ object IslandNotificationHelper {
     }
 
     /**
-     * 「明天返校」超级岛（返校日前一晚）。
+     * 「返校」超级岛。日子词由 targetDate 决定（可能是「今晚返校」/「明天返校」/「今天返校」），
+     * 不要写死 —— 它必须与正文所依据的那一天一致。
      *
      * 复用课前倒计时的组件与发送路径。注意课前/已上课那套其实是
      * **模板9**（文本组件2 + 识别图形组件1 + 按钮组件2），不是模板2；
@@ -952,6 +953,8 @@ object IslandNotificationHelper {
         courseName: String,
         section: String,
         startTime: String,
+        /** 正文字段所依据的日期（可能今天、可能明天）—— 日子词由它决定，不能写死 */
+        targetDate: java.time.LocalDate,
         notificationId: Int = ISLAND_RETURN_DAY_NOTIFICATION_ID,
         /** 形如 "中秋最后一天"；有则在标题里点明是哪段假期 */
         holidayLabel: String? = null,
@@ -961,13 +964,15 @@ object IslandNotificationHelper {
          */
         progressPercent: Int? = null,
     ) {
-        val title = if (holidayLabel.isNullOrBlank()) "明天返校" else "明天返校 · $holidayLabel"
+        // 与原生实时动态**共用同一份日子词**（本项目已有「文案只有一份实现」的取舍，别在这里再写一套）
+        val verb = CourseReminderHelper.returnDayVerb(targetDate, startTime)
+        val title = if (holidayLabel.isNullOrBlank()) verb else "$verb · $holidayLabel"
         val content = buildString {
             if (courseName.isNotEmpty()) append(courseName)
             if (section.isNotEmpty()) append("｜").append(section)
             if (startTime.isNotEmpty()) append(" ").append(startTime)
             // 兜底文案不能说"明天要上课"：明天可能只是"要上学但没有课"，那样是假话
-            if (isEmpty()) append("明天返校，别忘了收拾东西")
+            if (isEmpty()) append("$verb，别忘了收拾东西")
         }
         // courseStartMillis = null → 静态岛（不画倒计时），左右槽位回落到课程名/教室
         val paramsRaw = buildIslandParamsJson(
@@ -984,7 +989,7 @@ object IslandNotificationHelper {
         // 传 courseStartMillis=null 会落到"已上课"态，于是：
         //   · hintInfo 的 title/content 被写成「已上课 / 现在」（模板库里它是描述"当前状况"的组件）
         //   · B 区 textInfo.title 也被写成「已上课」
-        // 这两处都不是"明天返校"该有的文案；而且 hintInfo 是"圆头图文按钮"组件，对静态提醒没有意义。
+        // 这两处都不是「返校」该有的文案；而且 hintInfo 是"圆头图文按钮"组件，对静态提醒没有意义。
         // 处理：去掉 hintInfo，并把 B 区标题换成节次 —— 组件组合正好变成模板库里的
         // **模板6（文本组件2 + 识别图形组件1 + 进度组件2）**，
         // 而不是原来那个"文本2 + 图形1 + 按钮2 + 进度"的四组件、模板清单里不存在的组合。
@@ -994,10 +999,10 @@ object IslandNotificationHelper {
             val paramV2 = root.optJSONObject("param_v2") ?: return@runCatching paramsRaw
             paramV2.remove("hintInfo")
             // timeout 的语义是"焦点通知多久后消失"（min）。静态提醒走的是 counting=false 分支，
-            // 那里给的是 5 分钟（给「已上课」15 秒收起留的余量）—— 对"明天返校"太短了，
+            // 那里给的是 5 分钟（给「已上课」15 秒收起留的余量）—— 对「返校」提醒太短了，
             // 这里单独放宽到 4 小时：当晚提醒，到第二天早上自动清掉。
             paramV2.put("timeout", 240)
-            // 岛也放宽到 12 小时：这是"明天返校"的当晚提醒，不该 60 分钟就掉
+            // 岛也放宽到 12 小时：这是「返校」的当晚提醒，不该 60 分钟就掉
             paramV2.optJSONObject("param_island")?.put("islandTimeout", 12 * 60 * 60)
             paramV2.optJSONObject("param_island")
                 ?.optJSONObject("bigIslandArea")
