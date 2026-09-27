@@ -85,11 +85,9 @@ jobs:
           git fetch -q origin local-audit-v21
           BASE="$UPSTREAM_BASE"   # 补丁就是对着这个基准生成的，显式用它
           rm -rf /tmp/regen && git format-patch "$BASE..origin/local-audit-v21" -o /tmp/regen --quiet
-          if ! diff -r /tmp/regen patches/series > /tmp/patchdiff.txt 2>&1; then
-            echo "::error::patches/series 与 local-audit-v21 不一致 —— 请重新 git format-patch 生成后提交"
-            head -40 /tmp/patchdiff.txt
-            exit 1
-          fi
+          # 用 tools/check_patches.py 比对：它会归一化掉 format-patch 尾部的 git 版本号与 [PATCH NN/total] 计数，
+          # 否则两边 git 版本不同（本机 vs GitHub runner）会误报。
+          python3 tools/check_patches.py patches/series /tmp/regen
           echo "✅ 补丁序列与源码分支一致（$BASE..origin/local-audit-v21）"
 
       - name: 从干净的上游代码逐个应用定制补丁
