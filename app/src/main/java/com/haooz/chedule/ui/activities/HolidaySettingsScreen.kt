@@ -608,7 +608,6 @@ fun HolidaySettingsScreen(
                     )
                 }
             }
-            }
 
             item {
                 SectionTitleRow(
