@@ -95,8 +95,12 @@ jobs:
       - name: 从干净的上游代码逐个应用定制补丁
         if: github.event_name == 'workflow_dispatch'
         run: |
+          # 补丁只存在于 master 上；一旦 checkout 到基准 commit，工作树里就没有 patches/ 了，
+          # 所以先从 master ref 把它们取到 /tmp（git archive 保留 patches/ 路径）。
+          rm -rf /tmp/patches && mkdir -p /tmp/patches
+          git archive origin/master patches | tar -x -C /tmp
+          ls /tmp/patches/series | wc -l | sed 's/^/  从 master 取出补丁数：/'
           git checkout -B build-snapshot "$UPSTREAM_BASE"
-          cp -r patches /tmp/patches
           echo "构建基准（钉住）：$UPSTREAM_BASE"
           for p in /tmp/patches/series/*.patch; do
             echo "── 应用 $(basename "$p")"
@@ -114,7 +118,10 @@ jobs:
         run: |
           # 这些条目全部来自本地踩过的坑（岛 B 区联动 / 折射宽度恒定 / 日子词唯一 /
           # 次日文案共享 / 余额最后一天 / sectionTopDp 单一真源 …），不过就红叉。
-          python3 tools/ci_check.py . | tee /tmp/ci_check.log
+          # tools/ 也只在 master 上；同样从 master ref 取出来再跑
+          rm -rf /tmp/tools && mkdir -p /tmp/tools
+          git archive origin/master tools | tar -x -C /tmp
+          python3 /tmp/tools/tools/ci_check.py . | tee /tmp/ci_check.log
 
       - name: 设置 JDK 21
         if: github.event_name == 'workflow_dispatch'
