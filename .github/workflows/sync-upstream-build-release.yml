@@ -337,6 +337,21 @@ jobs:
           curl -s -X POST "$API/releases/$RID/attach_files" -F "access_token=$GT" -F "file=@$APK" | head -c 300
           echo "✅ Gitee 附件上传完成"
 
+      - name: 同步代码到 Gitee（可选：镜像 master 与源码分支）
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GT: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: ${{ vars.GITEE_REPO }}
+        run: |
+          if [ -z "$GT" ] || [ -z "$GITEE_REPO" ]; then
+            echo "未配置 GITEE_TOKEN / GITEE_REPO，跳过代码镜像"; exit 0
+          fi
+          GURL="https://oauth2:$GT@gitee.com/$GITEE_REPO.git"
+          git fetch -q origin master
+          git fetch -q origin local-audit-v21 || true
+          if git push "$GURL" origin/master:refs/heads/master; then echo "✅ master 已镜像到 Gitee"; else echo "::warning::master 镜像失败（Gitee 侧可能已分叉）"; fi
+          if git push "$GURL" origin/local-audit-v21:refs/heads/local-audit-v21 2>/dev/null; then echo "✅ local-audit-v21 已镜像到 Gitee"; else echo "::warning::源码分支镜像失败（可忽略）"; fi
+
       - name: 失败时开 Issue 提醒（补丁冲突等）
         if: failure()
         env:
