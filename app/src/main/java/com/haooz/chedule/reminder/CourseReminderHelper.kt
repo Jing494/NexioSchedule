@@ -1788,7 +1788,11 @@ object CourseReminderHelper {
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle(courseName)
                 .setContentText(infoLine)
+                // BigTextStyle 随后会被 ProgressStyle 覆盖，expandedText（含教室）会整个丢掉 ——
+                // 降级路径（NotificationCompat + BigTextStyle）是带教室的，两条路观感不一致。
+                // subText 正是"展开视图第三行"的官方位置，用它把教室补回来。
                 .setStyle(Notification.BigTextStyle().bigText(expandedText))
+                .apply { if (classroom.isNotBlank()) setSubText(classroom) }
                 .setContentIntent(contentIntent)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)

@@ -2225,6 +2225,38 @@ fun CourseScheduleApp() {
         val relY = firstSectionCenterY - topY
         if (relY < 0f) return null
         val sectionH = geom.sectionHeightPx
+
+        /*
+         * 优先用**渲染实际用的 sectionTop** 反查落点。
+         *
+         * computeSpecialGridLayout 会让特殊块（自习 / 自定义时间块）在它的时间起点占位，
+         * 把下方节次整体下移：sectionTop[g] = origSectionTop[g] + 该节以上所有特殊块高度。
+         * 而下面那段"均匀高度 + 两个 24dp 分界带"的推算是**没有这层偏移**的 ——
+         * 于是只要课表里有特殊块（截图里那个「自习 12:50–13:50」就是），
+         * 第 7 节往下的落点就会整体偏下约一格：拖到空格子，阴影却落在下面那格（有课的那格），
+         * 松手就变成"是否与下面这节课合并"。
+         *
+         * 空白格点击的反查本来就用 sectionTop（见 DayColumn 的 detectTapGestures），
+         * 这里之前是漏的，属于同一份几何两套口径 —— 对齐之后就一致了。
+         */
+        val tops = geom.sectionTopDp
+        if (tops.isNotEmpty()) {
+            val totalSections = geom.morningSections + geom.afternoonSections + geom.eveningSections
+            // 压在特殊块上不是有效落点
+            for ((bandTopDp, bandHeightDp) in geom.specialBandRangesDp) {
+                val bt = with(density) { bandTopDp.dp.toPx() }
+                val bh = with(density) { bandHeightDp.dp.toPx() }
+                if (bh > 0f && relY >= bt && relY < bt + bh) return null
+            }
+            for (s in 1..totalSections) {
+                val topDp = tops[s] ?: continue
+                val topPx = with(density) { topDp.dp.toPx() }
+                if (relY >= topPx && relY < topPx + sectionH) return day to s
+            }
+            return null
+        }
+
+        // 兜底：拿不到实际 sectionTop 时退回均匀模型（旧行为）
         val dividerH = with(density) { 24.dp.toPx() }
         var cursor = 0f
         for (s in 1..geom.morningSections) {

@@ -147,7 +147,17 @@ data class ScheduleGridGeometry(
     val morningSections: Int,
     val afternoonSections: Int,
     val eveningSections: Int,
-    val showBreakDividers: Boolean
+    val showBreakDividers: Boolean,
+    /**
+     * 渲染**实际**用的「节次 → 顶部（dp）」表。
+     *
+     * 必须带上它：computeSpecialGridLayout 会让特殊块（自习、自定义块）在时间起点占位，
+     * 把下方节次整体下移（sectionTop[g] = origSectionTop[g] + 特殊块高度之和）。
+     * 拖拽落点如果按"均匀高度"自己推，有特殊块时就会整体偏下。
+     */
+    val sectionTopDp: Map<Int, Float> = emptyMap(),
+    /** 特殊块占位区间 (topDp, heightDp)；落在这里不算有效落点 */
+    val specialBandRangesDp: List<Pair<Float, Float>> = emptyList()
 )
 
 @SuppressLint("ConfigurationScreenWidthHeight")
@@ -1092,7 +1102,9 @@ fun MainScheduleScreen(
                                         morningSections = morningSections,
                                         afternoonSections = afternoonSections,
                                         eveningSections = eveningSections,
-                                        showBreakDividers = showBreakDividers
+                                        showBreakDividers = showBreakDividers,
+                                        sectionTopDp = specialGrid.sectionTop,
+                                        specialBandRangesDp = specialGrid.specialBands.map { it.top to it.height }
                                     )
                                 )
                             }
