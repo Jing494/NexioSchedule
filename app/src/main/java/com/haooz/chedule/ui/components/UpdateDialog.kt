@@ -150,7 +150,7 @@ internal fun UpdateDialog(liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = nu
      * 对应的自动构建流水线见仓库 master 的 .github/workflows/sync-upstream-build-release.yml
      * （全程在 GitHub Actions 构建、用 fork keystore 签名）。
      */
-    private fun openForkReleases() {
+    fun openForkReleases() {   // 局部函数不能加 private（CI 报 Modifier 'private' is not applicable to 'local function'）
         val url = "https://github.com/Jing494/NexioSchedule/releases/latest"
         val ok = runCatching {
             context.startActivity(
