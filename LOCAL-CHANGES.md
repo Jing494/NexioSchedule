@@ -10,11 +10,11 @@
 
 | 项 | 值 |
 |---|---|
-| **上游基线**（本定制栈的起点） | `1f46721` — `v1.5.6beta13` |
-| **本地分支** | `local/audit-v21`（worktree 就是本目录 `projects/nexio-schedule/src`） |
-| **栈深度** | 22 个本地提交 |
-| 包名 / versionCode | `com.haooz.chedule` / `156` |
-| versionName | `1.5.6-0926-audit`（更新判定只看 `MAJOR.MINOR.PATCH`，`-` 之后的后缀不影响更新） |
+| **上游基线**（本定制栈的起点） | `f2c4ab6` — `v1.6.0.1`（2026-09-27 升；旧基线 `1f46721` = `v1.5.6beta13`） |
+| **本地分支** | `local/audit-v22`（rebase 后；`tmp-pub2` 是等内容的发布栈，只少了 docs 提交） |
+| **栈深度** | 本地 28 笔 / 发布栈 21 个补丁 |
+| 包名 / versionCode | `com.haooz.chedule` / 上游 `156`；发版码 = `156×100 + gh序号` |
+| versionName | **跟随上游**（`1.6.0.1-0924`），CI 发版时覆写为 `1.6.0.1.N-ghN`（序号全局计数，跨基准也单调） |
 
 远端（都只是**只读参考**，本地定制一律**不推上游**）：
 
@@ -198,3 +198,32 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 
 10. **`beyondViewportPageCount` 现在是 1**：调回 2 等于同时多养两页的组合/测量/布局，
     是本轮最大的一笔白干。若上游为了别的原因改大，要连带评估课表页开销。
+
+
+---
+
+## 八、升基准记录（1f46721 → f2c4ab6，2026-09-27）
+
+上游在 3 天里推了 62 笔提交、68 个文件、+8947/−1817；与本地 26 笔定制提交**重叠 22 个文件**。
+真正的工作量不在"解冲突"，而在**上游自己实现了同一批功能**，需要判断谁留谁走：
+
+| 功能 | 上游的实现 | 处置 |
+|---|---|---|
+| 假期末日课程例外 | `data/HolidayCourseExclusion.kt` + `HolidayManager.load/saveEndCourseExclusion` + `HolidayDayCourseResolution`，贯通 resolveDaySchedule / 今日页 / 课表页 / 格子；设置入口在假期设置页的「**节假日末期课程排除**」（开关 + 节次范围） | **采用上游**。我原来的「返校节次豁免」（`ReturnDayReminder` 的 exempt 那套 + 自有偏好 + 自有卡片）变成 dead code，设置入口已删；提醒层的「已开启」门槛改为认上游那个开关（任一开着都算开） |
+| 底栏避让导航栏 | `ScheduleBottomBar` 里 `maxOf(24.dp, navBarBottomInset + 8.dp)` | **删我的**（写法几乎相同） |
+| 横滑手势 | `HorizontalPagerGesture` 大改 279 行（加 overscroll / 橡皮筋） | **取上游**；我的"同一帧合并 scrollBy"性能补丁未落（待在新结构上重新评估） |
+| 教学周重组 | `TeachingWeekReorganization`（+ 假期设置页入口与规则列表） | 上游独有，保留 |
+| 课表页预合成 | 未动 | 我的 `beyondViewportPageCount = 1` 保留 |
+
+**仍然保留的本地定制**：假期余额提醒、返校准备清单、返校日子词（`returnDayVerb`）、
+超级岛/实时动态的规范修正与 XMSF 绕白名单、毛玻璃系数降级与折射宽度恒定、
+分钟节拍轮询、通知与超级岛测试独立页、下载源只认带 APK 的版本、应用内跳本 fork Releases。
+
+### 两个操作教训（别再踩）
+
+1. **`git rebase` 里冲突标记是反的**：`<<<<<<< HEAD` 段是**上游**，`=======` 之后才是我的提交。
+   第一次全取反了；本机 `~/.pick.py <file> up|mine [块号]` 就是为此写的。
+2. **`concurrency.cancel-in-progress` 会在下一轮 dispatch 时取消正在跑的那轮**：
+   gh6 就是在 Gitee 附件上传中途被取消，留下一条"有 release 没有 APK"的记录
+   （App 侧会跳过它；workflow 已加 `cancelled() || failure()` 的收尾清理步骤）。
+   发版期间**不要连发两次 dispatch**。
