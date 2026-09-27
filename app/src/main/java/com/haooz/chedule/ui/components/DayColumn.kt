@@ -90,7 +90,6 @@ fun DayColumn(
     holidayExemptCourseIds: Set<String> = emptySet(),
     isWorkSwap: Boolean = false,
     /** 返校日豁免节次：这些节次的课不算假期，按正常课渲染（不变灰、不打「假」标） */
-    exemptSections: Set<Int> = emptySet(),
     pendingDay: Int = -1,
     pendingSection: Int = -1,
     onPendingChange: (day: Int, section: Int) -> Unit = { _, _ -> },
@@ -260,7 +259,6 @@ fun DayColumn(
                 isHoliday = isHoliday,
                 holidayExemptCourseIds = holidayExemptCourseIds,
                 isWorkSwap = isWorkSwap,
-                exemptSections = exemptSections,
                 showBreakDividers = showBreakDividers,
                 morningSections = morningSections,
                 afternoonSections = afternoonSections,
@@ -304,7 +302,6 @@ private fun CourseCardsLayer(
     holidayExemptCourseIds: Set<String>,
     isWorkSwap: Boolean,
     /** 返校日豁免节次：这些节次的课按正常课渲染（不变灰、不打「假」标） */
-    exemptSections: Set<Int> = emptySet(),
     showBreakDividers: Boolean,
     morningSections: Int,
     afternoonSections: Int,
@@ -396,8 +393,11 @@ private fun CourseCardsLayer(
         val course = renderData.course
         val isCurrentWeekCourse = renderData.isCurrentWeekCourse
         val isDragging = course.id in draggingCourseIds && isCurrentWeekCourse
-        // 返校日豁免：落在豁免节次的课不算假期，按正常课渲染（恢复课程色、不打「假」标）
-        val courseIsHoliday = isHoliday && !ReturnDayReminder.isExempt(course, exemptSections)
+        // 假期末日豁免：落在豁免节次的课不算假期，按正常课渲染（恢复课程色、不打「假」标）。
+        // 判定统一用上游的 holidayExemptCourseIds（由 HolidayCourseExclusion 算出），
+        // 不再另走一套 ReturnDayReminder.exemptSections —— 两套判定并存时，
+        // 同一张卡在"课程卡路径"与"格子路径"上会一个打假标、一个不打。
+        val courseIsHoliday = isHoliday && course.id !in holidayExemptCourseIds
 
         // 自定义时间课按时间轴插值定位/定高，不按节次分段
         if (course.hasValidCustomTime()) {

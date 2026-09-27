@@ -29,7 +29,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
@@ -559,6 +558,9 @@ fun HolidaySettingsScreen(
                 SectionTitleRow(
                     text = "教学周重组",
                     description = "• 长假可能带来教学周的重组，并引发后续教学周的顺延更改\n• 可在此进行教学周重组，后续教学周将重新分配计算",
+                    liquidGlassBackdrop = liquidGlassBackdrop,
+                )
+                SectionTitleRow(
                     text = "假期余额提醒",
                     description = "• 假期期间每天一条，含假期最后一天（不占超级岛/实时动态的位置）\n" +
                         "• 独立开关：不再挂在「返校节次豁免」下面 —— 关掉豁免不会连带关掉余额提醒",
