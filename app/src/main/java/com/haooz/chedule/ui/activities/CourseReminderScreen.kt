@@ -57,7 +57,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.haooz.chedule.reminder.ClassDndHelper
 import com.haooz.chedule.reminder.CourseReminderHelper
 import com.haooz.chedule.reminder.IslandNotificationHelper
-import com.haooz.chedule.reminder.ReminderTestScenario
 import com.haooz.chedule.shizuku.ShizukuManager
 import com.haooz.chedule.ui.basic.CollapsibleTopAppBarDefaults
 import com.haooz.chedule.ui.basic.OverlayDropdownMenu
@@ -321,12 +320,6 @@ fun CourseReminderScreen(
                     ),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // 提醒体检：把"设了却收不到"的常见系统原因直接摆出来
-                    item { ReminderHealthCard() }
-
-                    // 超级岛 / 实时动态 测试：单独一块，不动原有板块
-                    item { ReminderTestCard() }
-
                     // 开启提醒
                     item {
                         Card(
@@ -365,6 +358,9 @@ fun CourseReminderScreen(
                             )
                         }
                     }
+
+                    // 提醒体检：默认一行粗略状态（放在总开关下面，先看"开没开"，再看"系统放不放行"）
+                    item { ReminderHealthCard() }
 
                     // 提醒详情
                     item {
@@ -1426,10 +1422,18 @@ private fun buildReminderHealth(context: android.content.Context): List<Reminder
     return out
 }
 
+/**
+ * 提醒体检：**默认只显示一行粗略状态**，点一下才展开成明细。
+ *
+ * 原来是四五项一直摊开，占掉小半屏；而绝大多数时候用户只需要知道"有没有问题"。
+ * 现在概览行本身可点（右侧给「展开 / 收起」字样，不是靠猜），展开时会重新检查一次，
+ * 免得展开看到的是进页面那一刻的旧状态。
+ */
 @Composable
 private fun ReminderHealthCard() {
     val context = LocalContext.current
     var tick by remember { mutableIntStateOf(0) }
+    var expanded by remember { mutableStateOf(false) }
     val items = remember(tick) { buildReminderHealth(context) }
     val badCount = items.count { !it.ok }
 
@@ -1440,7 +1444,14 @@ private fun ReminderHealthCard() {
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        // 展开时重查一次，保证看到的是当前状态
+                        if (!expanded) tick++
+                        expanded = !expanded
+                    }
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             ) {
                 Text(
@@ -1458,7 +1469,15 @@ private fun ReminderHealthCard() {
                         androidx.compose.ui.graphics.Color(0xFFE07A2B)
                     },
                 )
+                Text(
+                    text = if (expanded) "收起" else "展开",
+                    style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
+                    color = MiuixTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 10.dp),
+                )
             }
+            AnimatedVisibility(visible = expanded) {
+            Column(modifier = Modifier.fillMaxWidth()) {
             items.forEach { item ->
                 Row(
                     modifier = Modifier
@@ -1511,71 +1530,16 @@ private fun ReminderHealthCard() {
                 { tick++ },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             )
-        }
-    }
-}
-
-/**
- * 「超级岛 / 实时动态」测试板块 —— **单独一块，原有板块一行没动**。
- *
- * 原来全项目只有一个悬浮按钮、只有一种时序（课前 70 秒 + 课中 2 分钟），
- * 覆盖不到「到点自动切课中」「课中距下课倒计时」「长课不中途收岛」这些真实分支，
- * 所以像"上课倒计时正常、下课倒计时没了"这种问题只能靠碰。
- *
- * 这里每个场景都调用**主路径那几支发送函数**，只换时序，不复制发送逻辑 ——
- * 避免"测的那套"和"跑的那套"分叉（本项目已经踩过文案分叉的坑）。
- */
-@Composable
-private fun ReminderTestCard() {
-    val context = LocalContext.current
-    var channel by remember { mutableStateOf(ReminderTestScenario.channelLabel(context)) }
-
-    Card(
-        cornerRadius = 20.dp,
-        modifier = Modifier.fillMaxWidth(),
-        insideMargin = PaddingValues(0.dp),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            ) {
+            }
+            }
+            if (!expanded && badCount > 0) {
                 Text(
-                    text = "超级岛 / 实时动态 测试",
-                    style = MiuixTheme.textStyles.body1.copy(
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
-                    ),
-                    color = MiuixTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                Text(
-                    text = "当前通道：$channel",
+                    text = "点这一行展开，能看到是哪几项、并直接跳去设置",
                     style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
                 )
             }
-            Text(
-                text = "每个场景都按当前通道发（岛开着走岛，关掉走原生实时动态），" +
-                    "并留足时间让你看着它走完。点一下即可，不写去重键、不影响真实提醒。",
-                style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
-            ReminderTestScenario.entries.forEach { scenario ->
-                ArrowPreference(
-                    title = scenario.label,
-                    summary = scenario.detail,
-                    onClick = {
-                        ReminderTestScenario.send(context, scenario)
-                        Toast.makeText(context, "已发送：${scenario.label}", Toast.LENGTH_SHORT).show()
-                    },
-                )
-            }
-            TextButton(
-                "重新读取通道",
-                { channel = ReminderTestScenario.channelLabel(context) },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            )
         }
     }
 }

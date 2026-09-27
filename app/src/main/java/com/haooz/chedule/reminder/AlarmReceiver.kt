@@ -10,16 +10,6 @@ import com.haooz.chedule.data.CourseRepository
 class AlarmReceiver : BroadcastReceiver() {
 
     /** 把 1..23 的整数转成中文数字（如 8 -> "八"，23 -> "二十三"），用于"早八"式文案 */
-    private fun chineseNumberHour(n: Int): String {
-        if (n <= 0 || n > 23) return n.toString()
-        val digit = listOf("", "一", "二", "三", "四", "五", "六", "七", "八", "九")
-        return when {
-            n < 10 -> digit[n]
-            n < 20 -> "十" + digit[n - 10]
-            else -> digit[n / 10] + "十" + digit[n % 10]
-        }
-    }
-
     override fun onReceive(context: Context, intent: Intent) {
         val type = intent.getIntExtra(CourseReminderHelper.EXTRA_REMINDER_TYPE, 0)
         // 原实现在每次闹钟触发时都新建一个 SimpleDateFormat 并格式化当前时间，
@@ -140,23 +130,13 @@ class AlarmReceiver : BroadcastReceiver() {
                     return
                 }
 
+                // 明天课表只解析一次：下面的返校岛也要用同一份
                 val tomorrowCourses = CourseReminderHelper.getTomorrowCourses(context)
 
-                if (tomorrowCourses.isEmpty()) {
-                    CourseReminderHelper.showReminderNotification(context, type, "明日无课", "明天没有课程安排")
-                } else {
-                    val title = "明天共${tomorrowCourses.size}节课"
-                    val firstCourse = tomorrowCourses.first()
-                    val firstStart = CourseReminderHelper.getCourseStartTime(firstCourse, repository)
-                    val firstHour = firstStart?.split(":")?.firstOrNull()?.toIntOrNull() ?: 9
-                    val details = when {
-                        firstHour < 9 -> "明早有早${chineseNumberHour(firstHour)}，${firstCourse.name}"
-                        firstHour < 12 -> "明早有课，${firstCourse.name} $firstStart"
-                        firstHour < 18 -> "下午有课，${firstCourse.name} $firstStart"
-                        else -> "晚上有课，${firstCourse.name} $firstStart"
-                    }
-                    CourseReminderHelper.showReminderNotification(context, type, title, details)
-                }
+                // 文案与测试页共用一份（CourseReminderHelper.nextDayReminderText）
+                val (nextDayTitle, nextDayBody) =
+                    CourseReminderHelper.nextDayReminderText(tomorrowCourses, repository)
+                CourseReminderHelper.showReminderNotification(context, type, nextDayTitle, nextDayBody)
 
                 // 明天是「返校日」（假期/周末最后一天、次日要上课）→ 顺带推一条超级岛。
                 // 复用既有岛发送路径（含 XMSF 绕白名单），这里只是多一个调用方。
