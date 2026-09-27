@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -317,6 +318,9 @@ fun CourseReminderScreen(
                     ),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // 提醒体检：把"设了却收不到"的常见系统原因直接摆出来
+                    item { ReminderHealthCard() }
+
                     // 开启提醒
                     item {
                         Card(
@@ -1303,6 +1307,177 @@ fun CourseReminderScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+// ===================== 提醒体检 =====================
+
+/** 体检的一条结果。fix 非空时点一下跳到对应系统设置页。 */
+private data class ReminderHealthItem(
+    val title: String,
+    val ok: Boolean,
+    val detail: String,
+    val fix: Intent?,
+)
+
+/**
+ * 逐项检查"提醒为什么可能发不出来"的系统侧开关。
+ *
+ * 全部只读查询，没有副作用；查不到（API 不支持）一律按"通过"处理，
+ * 避免把不确定的事报成故障吓人。
+ */
+private fun buildReminderHealth(context: android.content.Context): List<ReminderHealthItem> {
+    val out = mutableListOf<ReminderHealthItem>()
+    val nm = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE)
+        as android.app.NotificationManager
+
+    // ① 通知总开关
+    val notifOk = runCatching { nm.areNotificationsEnabled() }.getOrDefault(true)
+    val appNotifSettings = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+    out += ReminderHealthItem(
+        title = "通知权限",
+        ok = notifOk,
+        detail = if (notifOk) "已允许" else "被关闭了，所有提醒都发不出来",
+        fix = appNotifSettings,
+    )
+
+    // ② 电池优化白名单（HyperOS 上最常见的"闹钟不响"原因）
+    val pm = context.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager
+    val batteryOk = runCatching { pm.isIgnoringBatteryOptimizations(context.packageName) }
+        .getOrDefault(true)
+    out += ReminderHealthItem(
+        title = "后台不受限",
+        ok = batteryOk,
+        detail = if (batteryOk) "已加入电池优化白名单" else "未加入白名单，锁屏久了提醒可能被系统压下",
+        fix = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+    )
+
+    // ③ 精确闹钟
+    val am = context.getSystemService(android.content.Context.ALARM_SERVICE)
+        as android.app.AlarmManager
+    val exactOk = if (android.os.Build.VERSION.SDK_INT >= 31) {
+        runCatching { am.canScheduleExactAlarms() }.getOrDefault(true)
+    } else true
+    out += ReminderHealthItem(
+        title = "精确闹钟",
+        ok = exactOk,
+        detail = if (exactOk) "可用，提醒能对准分钟" else "不可用，提醒会漂移甚至不发",
+        fix = if (android.os.Build.VERSION.SDK_INT >= 31) {
+            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                .setData("package:${context.packageName}".toUri())
+        } else null,
+    )
+
+    // ④ 三个通道有没有被单独关掉
+    val channelIds = listOf(
+        com.haooz.chedule.reminder.CourseReminderHelper.CHANNEL_REMINDER_ID,
+        com.haooz.chedule.reminder.CourseReminderHelper.CHANNEL_HOLIDAY_ID,
+        com.haooz.chedule.reminder.CourseReminderHelper.CHANNEL_LIVE_ID,
+    )
+    val blockedCount = channelIds.count { id ->
+        val ch = runCatching { nm.getNotificationChannel(id) }.getOrNull()
+        ch == null || ch.importance == android.app.NotificationManager.IMPORTANCE_NONE
+    }
+    out += ReminderHealthItem(
+        title = "提醒通道",
+        ok = blockedCount == 0,
+        detail = if (blockedCount == 0) {
+            "课前提醒 / 假期与返校 / 实时动态 都开着"
+        } else {
+            "有 $blockedCount 个通道被停用，对应提醒不会显示"
+        },
+        fix = appNotifSettings,
+    )
+    return out
+}
+
+@Composable
+private fun ReminderHealthCard() {
+    val context = LocalContext.current
+    var tick by remember { mutableIntStateOf(0) }
+    val items = remember(tick) { buildReminderHealth(context) }
+    val badCount = items.count { !it.ok }
+
+    Card(
+        cornerRadius = 20.dp,
+        modifier = Modifier.fillMaxWidth(),
+        insideMargin = PaddingValues(0.dp),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "提醒体检",
+                    style = MiuixTheme.textStyles.body1.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                    color = MiuixTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = if (badCount == 0) "全部通过" else "$badCount 项待处理",
+                    style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
+                    color = if (badCount == 0) {
+                        MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    } else {
+                        androidx.compose.ui.graphics.Color(0xFFE07A2B)
+                    },
+                )
+            }
+            items.forEach { item ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !item.ok && item.fix != null) {
+                            item.fix?.let {
+                                runCatching {
+                                    context.startActivity(
+                                        it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            }
+                        }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (item.ok) "\u2713" else "\u2715",
+                        style = MiuixTheme.textStyles.body1.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
+                        color = if (item.ok) {
+                            androidx.compose.ui.graphics.Color(0xFF3BA55D)
+                        } else {
+                            androidx.compose.ui.graphics.Color(0xFFD7263D)
+                        },
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = item.title,
+                            style = MiuixTheme.textStyles.body1,
+                            color = MiuixTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = item.detail,
+                            style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                    if (!item.ok && item.fix != null) {
+                        Text(
+                            text = "去设置",
+                            style = MiuixTheme.textStyles.body1.copy(fontSize = 13.sp),
+                            color = MiuixTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+            TextButton(
+                "重新检查",
+                { tick++ },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            )
         }
     }
 }
