@@ -219,7 +219,13 @@ fun CourseCard(
                                 blur(blurPx * glassFactor)
                             }
                             if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
-                                lens(lensRadiusPx * glassFactor, lensStrengthPx * glassFactor)
+                            // 折射：**宽度（refractionHeight）保持不变，只淡强度（refractionAmount）**。
+                            // 库实现（effects/Lens.kt）里 refractionHeight 是高光环的宽度：
+                            // 把它一起乘系数，光环会随系数向卡片边缘**收拢/扫过**，
+                            // 观感就是"蹭的一下冒出来"（实测反馈）；而且 padding 也按
+                            // padding - refractionHeight 每帧变，几何跟着抖。
+                            // 只淡强度则是位移在原地均匀衰减，无论 1→0 还是 0→1 都不会有扫动。
+                                lens(lensRadiusPx, lensStrengthPx * glassFactor)
                             }
                         }
                     }
