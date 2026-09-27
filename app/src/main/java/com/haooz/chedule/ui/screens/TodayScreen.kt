@@ -145,8 +145,11 @@ fun BlurCard(
                     if (glassFactor > 0.01f) {
                         blur(blurPx * glassFactor)
                         if (refraction != CardRefractionLevel.OFF) {
+                            // 折射宽度不乘系数、只淡强度：乘宽度会让高光环向边缘收拢/扫过，
+                            // 观感是"蹭的一下冒出来"（库 effects/Lens.kt 里 refractionHeight
+                            // 是高光环宽度，refractionAmount 才是强度；padding 也按高度变）。
                             lens(
-                                refraction.lensRadiusDp.dp.toPx() * glassFactor,
+                                refraction.lensRadiusDp.dp.toPx(),
                                 refraction.lensStrengthDp.dp.toPx() * glassFactor
                             )
                         }
@@ -1732,8 +1735,11 @@ private fun CourseSectionTitle(
                     if (glassFactor > 0.01f) {
                         blur(blurPx * glassFactor)
                         if (refraction != CardRefractionLevel.OFF) {
+                            // 折射宽度不乘系数、只淡强度：乘宽度会让高光环向边缘收拢/扫过，
+                            // 观感是"蹭的一下冒出来"（库 effects/Lens.kt 里 refractionHeight
+                            // 是高光环宽度，refractionAmount 才是强度；padding 也按高度变）。
                             lens(
-                                refraction.lensRadiusDp.dp.toPx() * glassFactor,
+                                refraction.lensRadiusDp.dp.toPx(),
                                 refraction.lensStrengthDp.dp.toPx() * glassFactor
                             )
                         }
