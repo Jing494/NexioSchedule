@@ -159,13 +159,16 @@ jobs:
           GH_COUNT=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 2>/dev/null | grep -c "v${MAINVER}-gh" || true)
           GH_N=$((GH_COUNT + 1))
           FORK_CODE=$((VC * 100 + GH_N))
-          sed -i "s/versionName = \"[^\"]*\"/versionName = \"${MAINVER}-gh${GH_N}\"/" app/build.gradle.kts
+          # 版本号用第 4 段递增：1.5.6.1-gh1 / 1.5.6.2-gh2 …
+          # 这样 App 的更新检查（比较数字段）才能认出"有新版"，同时 MAJOR.MINOR.PATCH 与上游保持对齐。
+          FORK_VER="${MAINVER}.${GH_N}-gh${GH_N}"
+          sed -i "s/versionName = \"[^\"]*\"/versionName = \"${FORK_VER}\"/" app/build.gradle.kts
           sed -i "s/versionCode = [0-9]*/versionCode = ${FORK_CODE}/" app/build.gradle.kts
           {
             echo "MAINVER=$MAINVER"; echo "VNAME=$VNAME"; echo "VC=$VC"
-            echo "GH_N=$GH_N";     echo "FORK_CODE=$FORK_CODE"
+            echo "GH_N=$GH_N";     echo "FORK_CODE=$FORK_CODE"; echo "FORK_VER=$FORK_VER"
           } >> "$GITHUB_OUTPUT"
-          echo "本次构建：${MAINVER}-gh${GH_N}（versionCode=${FORK_CODE}，上游 ${VNAME}/${VC}）"
+          echo "本次构建：${FORK_VER}（versionCode=${FORK_CODE}，上游 ${VNAME}/${VC}）"
           chmod +x gradlew
           ./gradlew :app:assembleRelease --no-daemon
 
@@ -186,7 +189,7 @@ jobs:
           chmod 600 signing/fork.jks
           BT="$SDK_ROOT/build-tools/37.0.0"
           mkdir -p app/build/outputs/final
-          APK_NAME="Nexio.v${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}.apk"
+          APK_NAME="Nexio.v${{ steps.build.outputs.FORK_VER }}.apk"
           "$BT/zipalign" -f 4 app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/final/aligned.apk
           "$BT/apksigner" sign --ks signing/fork.jks --ks-key-alias "$KEY_ALIAS" \
             --ks-pass env:KS_PASS --key-pass env:KEY_PASS \
@@ -202,7 +205,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EXPECT_CERT: a7fdc7b704db284774a0124fb13495b5e6ee4a05f6430547ad8ec21aba5ac938
         run: |
-          APK="app/build/outputs/final/Nexio.v${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}.apk"
+          APK="app/build/outputs/final/Nexio.v${{ steps.build.outputs.FORK_VER }}.apk"
           BT="$SDK_ROOT/build-tools/37.0.0"
           # ① 签名指纹必须与"手机上现有那版"一致（否则装了也不能覆盖升级）
           CERT=$("$BT/apksigner" verify --print-certs "$APK" | grep -m1 -i 'SHA-256 digest' | sed 's/.*digest: //')
@@ -212,11 +215,14 @@ jobs:
           fi
           echo "✅ 签名指纹一致：$CERT"
           # ② 包内版本号必须等于本次算出的值（防止 sed 版本号没生效）
-          BADGING=$("$SDK_ROOT/cmdline-tools/latest/bin/apkanalyzer" manifest version-name "$APK" 2>/dev/null || true)
-          VCODE=$("$SDK_ROOT/cmdline-tools/latest/bin/apkanalyzer" manifest version-code "$APK" 2>/dev/null || true)
+          # 用 build-tools 的 aapt2 读包内版本号（apkanalyzer 在 runner 上不保证存在；
+          # 且 platformBuildVersionCode 也会被贪婪匹配到，所以只取第一处 versionCode）
+          PKG=$("$BT/aapt2" dump badging "$APK" | grep -m1 '^package:')
+          BADGING=$(printf '%s' "$PKG" | grep -o "versionName='[^']*'" | head -1 | cut -d"'" -f2)
+          VCODE=$(printf '%s' "$PKG" | grep -o "versionCode='[0-9]*'" | head -1 | cut -d"'" -f2)
           echo "包内：versionName=$BADGING versionCode=$VCODE"
-          if [ "$BADGING" != "${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}" ]              || [ "$VCODE" != "${{ steps.build.outputs.FORK_CODE }}" ]; then
-            echo "::error::包内版本号与预期不符（预期 ${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }} / ${{ steps.build.outputs.FORK_CODE }}）"
+          if [ "$BADGING" != "${{ steps.build.outputs.FORK_VER }}" ]              || [ "$VCODE" != "${{ steps.build.outputs.FORK_CODE }}" ]; then
+            echo "::error::包内版本号与预期不符（预期 ${{ steps.build.outputs.FORK_VER }} / ${{ steps.build.outputs.FORK_CODE }}）"
             exit 1
           fi
           # ③ versionCode 必须严格大于所有已发版本（保证能直接覆盖安装）
@@ -234,7 +240,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: Nexio-fork-release-${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}
+          name: Nexio-fork-release-${{ steps.build.outputs.FORK_VER }}
           path: app/build/outputs/final/Nexio.v*.apk*
 
       - name: 发布 GitHub Release
@@ -242,19 +248,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}"
+          TAG="v${{ steps.build.outputs.FORK_VER }}"
           UP_SHORT=$(git rev-parse --short "$UPSTREAM_BASE")
           LATEST_UP=$(git rev-parse --short upstream/master 2>/dev/null || echo unknown)
           UP_LOG=$(git log "$UPSTREAM_BASE"..upstream/master --oneline --no-merges -10 2>/dev/null | sed 's/^/- /')
           [ -n "$UP_LOG" ] || UP_LOG="（上游无新提交）"
           CUSTOM_LOG=$(git log "$UPSTREAM_BASE"..HEAD --format='- %s' | head -40)
           CERT=$("$SDK_ROOT/build-tools/37.0.0/apksigner" verify --print-certs \
-            "app/build/outputs/final/Nexio.v${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}.apk" 2>/dev/null \
+            "app/build/outputs/final/Nexio.v${{ steps.build.outputs.FORK_VER }}.apk" 2>/dev/null \
             | grep -m1 -i 'SHA-256 digest' | sed 's/.*digest: //')
           cat > /tmp/notes.md << MDEOF
           ### 📦 构建信息
           - **构建基准（钉住）**：HaoZai000/NexioSchedule@${UP_SHORT}（上游 versionName \`${{ steps.build.outputs.VNAME }}\` / versionCode \`${{ steps.build.outputs.VC }}\`）
-          - **本 fork 版本**：\`${TAG}\`（versionName \`${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}\` / versionCode \`${{ steps.build.outputs.FORK_CODE }}\`）
+          - **本 fork 版本**：\`${TAG}\`（versionName \`${{ steps.build.outputs.FORK_VER }}\` / versionCode \`${{ steps.build.outputs.FORK_CODE }}\`）
           - **签名证书 SHA-256**：\`${CERT}\`
           - **构建方式**：GitHub Actions 全程构建（本地不参与）；干净上游代码 + \`patches/series/*.patch\` 逐个应用
 
@@ -320,8 +326,8 @@ jobs:
             echo "未配置 GITEE_TOKEN / GITEE_REPO，跳过 Gitee 同步（不影响 GitHub 发布）"
             exit 0
           fi
-          TAG="v${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}"
-          APK="app/build/outputs/final/Nexio.v${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}.apk"
+          TAG="v${{ steps.build.outputs.FORK_VER }}"
+          APK="app/build/outputs/final/Nexio.v${{ steps.build.outputs.FORK_VER }}.apk"
           API="https://gitee.com/api/v5/repos/$GITEE_REPO"
           echo "同步到 Gitee: $GITEE_REPO $TAG"
           # 建 release（已存在则取回 id）
