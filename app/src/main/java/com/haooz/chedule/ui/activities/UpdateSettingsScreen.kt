@@ -193,8 +193,11 @@ fun UpdateSettingsScreen(
         }
     }
 
-    // 切换更新通道时清除缓存，下次自动检查重新拉取
-    LaunchedEffect(updateChannel) {
+    // 切换更新通道 / 下载源时清除缓存，下次自动检查重新拉取。
+    // 下载源也必须算进来：Gitee 与 GitHub 的发布时间、附件状态都不同，
+    // 只按通道清缓存的话，换源后拿到的还是上一个源的结果
+    //（实测"两个下载源都报未找到下载链接"就是这么来的）。
+    LaunchedEffect(effectiveDownloadSource, updateChannel) {
         hasUpdate = false
         latestRelease = null
         prefs.edit {
@@ -315,7 +318,10 @@ fun UpdateSettingsScreen(
                                 },
                                 onClick = {
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
-                                    if (hasUpdate && latestRelease != null) {
+                                    // 只有"确实拿到了下载地址"才直接开对话框。
+                                    // 缓存里地址为空（撞上 Gitee 附件还没传完的窗口期，或被旧版本写坏过）
+                                    // 时必须重查，否则点「开始下载」只会弹一句「未找到下载链接」。
+                                    if (hasUpdate && latestRelease != null && latestRelease!!.apkUrl.isNotBlank()) {
                                         val tag = latestRelease!!.tagName
                                         if (UpdateInstaller.hasValidApk(context, tag)) {
                                             downloadedFile = UpdateInstaller.apkFile(context, tag)
