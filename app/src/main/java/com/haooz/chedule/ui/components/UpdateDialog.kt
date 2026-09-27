@@ -139,7 +139,37 @@ internal fun UpdateDialog(liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = nu
         }
     }
 
+    /**
+     * 「去下载」：**打开本 fork 的 Releases 页**，不再内嵌下载上游原版。
+     *
+     * 为什么必须这样：应用内更新检查查到的是**上游**（HaoZai000 / gitee）的版本，
+     * 而上游 APK 与本 fork 的签名不同 —— 直接下载安装会失败（或要求卸载重装、丢数据）。
+     * 本 fork 的包一律发布在自己的 Releases 里，所以这里改成跳转，让用户下载"签名一致、
+     * 可直接覆盖安装"的那一份。
+     *
+     * 对应的自动构建流水线见仓库 master 的 .github/workflows/sync-upstream-build-release.yml
+     * （全程在 GitHub Actions 构建、用 fork keystore 签名）。
+     */
+    private fun openForkReleases() {
+        val url = "https://github.com/Jing494/NexioSchedule/releases/latest"
+        val ok = runCatching {
+            context.startActivity(
+                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }.isSuccess
+        if (!ok) {
+            android.widget.Toast.makeText(context, "打不开浏览器，请手动访问：$url", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
     fun startDownload() {
+        // 上游原版与本 fork 签名不同，内嵌下载会装不上 —— 改为跳到本 fork 的 Releases
+        openForkReleases()
+        showUpdateDialog = false
+        return
+
+        @Suppress("UNREACHABLE_CODE")
         val tag = updateTagName
         val apkUrl = updatePrefs.getString("latest_apk_url", "") ?: ""
         if (tag.isBlank() || apkUrl.isBlank()) {
