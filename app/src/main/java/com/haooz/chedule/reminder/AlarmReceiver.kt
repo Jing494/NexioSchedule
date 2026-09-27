@@ -47,14 +47,22 @@ class AlarmReceiver : BroadcastReceiver() {
                 // 避免用户改时间后旧闹钟带着旧 startTime 算 dedupId，与 checkPending
                 // 用新 startTime 算的 dedupId 双发（均落入不同 dedupId，互相不拦截）。
                 // 如果回查失败再退化为闹钟里快照的 name+section+time。
-                val matchedEarly = CourseReminderHelper.getTodayCourses(context).firstOrNull { course ->
-                    if (courseId.isNotEmpty()) course.id == courseId
-                    else course.name == courseName && course.getTimeDisplayText() == section
-                }
+                // 当前课表只解析**一次**：原来这里和下面各调一次 getTodayCourses()，
+                // 也就是一次课前闹钟要把当天课表解析两遍（假期查询 + 逐课时间 + 排序）。
+                val todayCourses = CourseReminderHelper.getTodayCourses(context)
+                fun matchCourse(course: com.haooz.chedule.data.Course): Boolean =
+                    if (courseId.isNotEmpty()) {
+                        course.id == courseId
+                    } else {
+                        // 旧版闹钟没有 courseId，退化为按课程名+节次匹配
+                        course.name == courseName && course.getTimeDisplayText() == section
+                    }
+
+                val matchedEarly = todayCourses.firstOrNull { matchCourse(it) }
                 val dedupId = if (matchedEarly != null) {
                     val freshStart = CourseReminderHelper.getCourseStartTime(
                         matchedEarly,
-                        CourseRepository(context)
+                        repository
                     ) ?: startTime
                     "${matchedEarly.name}|${matchedEarly.getTimeDisplayText()}|$freshStart"
                 } else {
@@ -78,14 +86,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 // 关键：闹钟里携带的是"注册那一刻"的课程快照。
                 // 课程可能已被删除、改了时间/教室、或因换课表/云同步换了 ID，
                 // 若直接照快照发送就会弹出旧数据提醒。这里一律以当前课表为准重新解析。
-                val matched = CourseReminderHelper.getTodayCourses(context).firstOrNull { course ->
-                    if (courseId.isNotEmpty()) {
-                        course.id == courseId
-                    } else {
-                        // 旧版闹钟没有 courseId，退化为按课程名+节次匹配
-                        course.name == courseName && course.getTimeDisplayText() == section
-                    }
-                }
+                val matched = todayCourses.firstOrNull { matchCourse(it) }
                 if (matched == null) {
                     // 课表可能已变更：全量重注册，清掉过期闹钟
                     Log.d("AlarmReceiver", "Stale alarm: $courseName($startTime) no longer in today's schedule")
