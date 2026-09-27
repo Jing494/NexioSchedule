@@ -156,7 +156,7 @@ jobs:
           VNAME=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
           MAINVER=$(echo "$VNAME" | sed 's/-.*//')
           VC=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
-          GH_COUNT=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 2>/dev/null | grep -c "v${MAINVER}-gh" || true)
+          GH_COUNT=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 2>/dev/null | grep -cE "^v${MAINVER}(\.[0-9]+)?-gh" || true)
           GH_N=$((GH_COUNT + 1))
           FORK_CODE=$((VC * 100 + GH_N))
           # 版本号用第 4 段递增：1.5.6.1-gh1 / 1.5.6.2-gh2 …
