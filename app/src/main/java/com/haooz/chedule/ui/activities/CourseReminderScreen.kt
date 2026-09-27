@@ -57,6 +57,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.haooz.chedule.reminder.ClassDndHelper
 import com.haooz.chedule.reminder.CourseReminderHelper
 import com.haooz.chedule.reminder.IslandNotificationHelper
+import com.haooz.chedule.reminder.ReminderTestScenario
 import com.haooz.chedule.shizuku.ShizukuManager
 import com.haooz.chedule.ui.basic.CollapsibleTopAppBarDefaults
 import com.haooz.chedule.ui.basic.OverlayDropdownMenu
@@ -130,8 +131,10 @@ fun CourseReminderScreen(
     // 超级岛息屏显示：0=课程名称，1=上课地点
     var islandAodMode by remember { mutableIntStateOf(reminderPrefs.getInt("island_aod_mode", 0)) }
     // 课中岛缩略态右侧：0=正在上课，1=距下课倒计时（仅超级岛生效）
+    // 用 effectiveInClassRightMode 而不是裸读 prefs：没显式选过时它跟随课前 B 区，
+    // 否则会出现"上课前同一块区域在跳秒、上课后变成静态文案"（实测反馈的那条）
     var islandInClassRightMode by remember {
-        mutableIntStateOf(reminderPrefs.getInt("island_in_class_right_mode", 0))
+        mutableIntStateOf(IslandNotificationHelper.effectiveInClassRightMode(reminderPrefs))
     }
     // 课中提醒：超级岛 / 原生实况共用同一开关
     var inClassEnabled by remember {
@@ -320,6 +323,9 @@ fun CourseReminderScreen(
                 ) {
                     // 提醒体检：把"设了却收不到"的常见系统原因直接摆出来
                     item { ReminderHealthCard() }
+
+                    // 超级岛 / 实时动态 测试：单独一块，不动原有板块
+                    item { ReminderTestCard() }
 
                     // 开启提醒
                     item {
@@ -1503,6 +1509,71 @@ private fun ReminderHealthCard() {
             TextButton(
                 "重新检查",
                 { tick++ },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
+    }
+}
+
+/**
+ * 「超级岛 / 实时动态」测试板块 —— **单独一块，原有板块一行没动**。
+ *
+ * 原来全项目只有一个悬浮按钮、只有一种时序（课前 70 秒 + 课中 2 分钟），
+ * 覆盖不到「到点自动切课中」「课中距下课倒计时」「长课不中途收岛」这些真实分支，
+ * 所以像"上课倒计时正常、下课倒计时没了"这种问题只能靠碰。
+ *
+ * 这里每个场景都调用**主路径那几支发送函数**，只换时序，不复制发送逻辑 ——
+ * 避免"测的那套"和"跑的那套"分叉（本项目已经踩过文案分叉的坑）。
+ */
+@Composable
+private fun ReminderTestCard() {
+    val context = LocalContext.current
+    var channel by remember { mutableStateOf(ReminderTestScenario.channelLabel(context)) }
+
+    Card(
+        cornerRadius = 20.dp,
+        modifier = Modifier.fillMaxWidth(),
+        insideMargin = PaddingValues(0.dp),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "超级岛 / 实时动态 测试",
+                    style = MiuixTheme.textStyles.body1.copy(
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+                    ),
+                    color = MiuixTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = "当前通道：$channel",
+                    style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
+            Text(
+                text = "每个场景都按当前通道发（岛开着走岛，关掉走原生实时动态），" +
+                    "并留足时间让你看着它走完。点一下即可，不写去重键、不影响真实提醒。",
+                style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+            ReminderTestScenario.entries.forEach { scenario ->
+                ArrowPreference(
+                    title = scenario.label,
+                    summary = scenario.detail,
+                    onClick = {
+                        ReminderTestScenario.send(context, scenario)
+                        Toast.makeText(context, "已发送：${scenario.label}", Toast.LENGTH_SHORT).show()
+                    },
+                )
+            }
+            TextButton(
+                "重新读取通道",
+                { channel = ReminderTestScenario.channelLabel(context) },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }

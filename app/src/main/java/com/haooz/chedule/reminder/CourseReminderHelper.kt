@@ -2263,15 +2263,41 @@ object CourseReminderHelper {
      * 测试实时活动：与超级岛测试同一套固定课程，不依赖真实课表。
      * 课前 70 秒倒计时 + 课中 120 秒，便于验证倒计时 / 已上课 / 课中进度全链路。
      */
-    fun sendTestLiveNotification(context: Context) {
+    fun sendTestLiveNotification(
+        context: Context,
+        /** 距"上课"还有多久（0 = 已经上课了） */
+        startDelayMs: Long = 70_000L,
+        /** 课时长度 */
+        durationMs: Long = 120_000L,
+        /** 直接落到哪个状态；COUNTDOWN 走完整时序 */
+        phase: ReminderTestPhase = ReminderTestPhase.COUNTDOWN,
+    ) {
         val courseName = "大学英语Ⅱ"
         val classroom = "博A201"
         val section = "第3~4节"
-        val startMillis = System.currentTimeMillis() + 70_000L
-        val endMillis = startMillis + 120_000L
-        val startTime = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-            .format(java.util.Date(startMillis))
-        showPreClassCountdownNotification(
+        val startMillis = System.currentTimeMillis() + startDelayMs
+        val endMillis = startMillis + durationMs
+        val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+        val startTime = fmt.format(java.util.Date(startMillis))
+        val endTime = fmt.format(java.util.Date(endMillis))
+
+        if (phase == ReminderTestPhase.COUNTDOWN) {
+            showPreClassCountdownNotification(
+                context = context,
+                courseName = courseName,
+                classroom = classroom,
+                section = section,
+                startTime = startTime,
+                startMillis = startMillis,
+                endMillis = endMillis,
+                testMode = true
+            )
+            return
+        }
+
+        // 「已上课 / 课中」两态都读 countdown_state（对账、下课收起、进度都靠它），
+        // 所以先落一份与主路径同构的状态，再直接进对应状态（绕过用户开关）。
+        writeTestCountdownState(
             context = context,
             courseName = courseName,
             classroom = classroom,
@@ -2279,10 +2305,57 @@ object CourseReminderHelper {
             startTime = startTime,
             startMillis = startMillis,
             endMillis = endMillis,
-            testMode = true
         )
         // 测试课也要走「上课自动开启、下课自动关闭」，否则勿扰链路在测试里跑不到
         ClassDndHelper.syncTestClassDndAlarms(context)
+        if (phase == ReminderTestPhase.STARTED) {
+            showStartedLiveNotification(
+                context = context,
+                courseName = courseName,
+                classroom = classroom,
+                startTime = startTime,
+                testMode = true
+            )
+        } else {
+            showOrUpdateInClassLiveNotification(
+                context = context,
+                courseName = courseName,
+                classroom = classroom,
+                endTime = endTime,
+                startMillis = startMillis,
+                endMillis = endMillis,
+                countdownNotificationId = liveCountdownId(true),
+                testMode = true,
+            )
+        }
+    }
+
+    /** 测试用：写与 showPreClassCountdownNotification 同构的倒计时状态（键名必须一致） */
+    private fun writeTestCountdownState(
+        context: Context,
+        courseName: String,
+        classroom: String,
+        section: String,
+        startTime: String,
+        startMillis: Long,
+        endMillis: Long,
+    ) {
+        context.getSharedPreferences("countdown_state", Context.MODE_PRIVATE).edit {
+            putBoolean("active", true)
+                .putBoolean("test_mode", true)
+                .putBoolean("in_class_active", false)
+                .putString("courseName", courseName)
+                .putString("classroom", classroom)
+                .putString("section", section)
+                .putString("startTime", startTime)
+                .putLong("startMillis", startMillis)
+                .putLong("endMillis", endMillis)
+                .putInt("notificationId", liveCountdownId(true))
+                .remove("last_displayed_minutes")
+                .remove("last_in_class_minutes")
+                .remove("last_in_class_progress")
+                .remove("started_shown")
+        }
     }
 
     // 每分钟由 WidgetRefreshReceiver 驱动；同 notifyId 重复 notify 无痕更新
