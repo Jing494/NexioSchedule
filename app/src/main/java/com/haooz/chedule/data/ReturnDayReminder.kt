@@ -49,7 +49,13 @@ object ReturnDayReminder {
         context: Context,
         repository: CourseRepository,
         date: LocalDate,
-    ): Boolean = repository.getReturnDayReminder() && isReturnDay(context, date)
+    ): Boolean {
+        // 「已开启」以上游设置页为准（节假日末期课程排除 HolidayEndCourseExclusion.enabled），
+        // 同时兼容本 fork 早期的自有开关 —— 两处任一开着都算开启。
+        // 否则用户在上游那个设置项里打开了排除，返校提醒却因为读的是旧偏好而不跟。
+        val upstreamEnabled = HolidayManager.loadEndCourseExclusion(context).enabled
+        return (upstreamEnabled || repository.getReturnDayReminder()) && isReturnDay(context, date)
+    }
 
     /**
      * 返校日当天不被假期清空的节次。
