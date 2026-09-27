@@ -140,18 +140,18 @@ internal fun UpdateDialog(liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = nu
     }
 
     /**
-     * 「去下载」：**打开本 fork 的 Releases 页**，不再内嵌下载上游原版。
+     * 拿不到 APK 直链时的兜底：**打开本 fork 的下载页**（国内优先 Gitee）。
      *
-     * 为什么必须这样：应用内更新检查查到的是**上游**（HaoZai000 / gitee）的版本，
-     * 而上游 APK 与本 fork 的签名不同 —— 直接下载安装会失败（或要求卸载重装、丢数据）。
-     * 本 fork 的包一律发布在自己的 Releases 里，所以这里改成跳转，让用户下载"签名一致、
-     * 可直接覆盖安装"的那一份。
+     * 正常路径是应用内直接下载安装：更新源已经是**本 fork 自己的仓库**
+     *（GitHub Jing494/NexioSchedule + Gitee jing494/nexio-schedule_fork），
+     * 发布的包用同一把 keystore 签名，能直接覆盖安装、不丢数据。
      *
      * 对应的自动构建流水线见仓库 master 的 .github/workflows/sync-upstream-build-release.yml
      * （全程在 GitHub Actions 构建、用 fork keystore 签名）。
      */
     fun openForkReleases() {   // 局部函数不能加 private（CI 报 Modifier 'private' is not applicable to 'local function'）
-        val url = "https://github.com/Jing494/NexioSchedule/releases/latest"
+        // 国内优先 Gitee（快），GitHub 作为备选
+        val url = "https://gitee.com/jing494/nexio-schedule_fork/releases"
         val ok = runCatching {
             context.startActivity(
                 android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
@@ -164,16 +164,12 @@ internal fun UpdateDialog(liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = nu
     }
 
     fun startDownload() {
-        // 上游原版与本 fork 签名不同，内嵌下载会装不上 —— 改为跳到本 fork 的 Releases
-        openForkReleases()
-        showUpdateDialog = false
-        return
-
-        @Suppress("UNREACHABLE_CODE")
         val tag = updateTagName
         val apkUrl = updatePrefs.getString("latest_apk_url", "") ?: ""
         if (tag.isBlank() || apkUrl.isBlank()) {
-            android.widget.Toast.makeText(context, "未找到下载链接", android.widget.Toast.LENGTH_SHORT).show()
+            // 拿不到直链：退化为打开本 fork 的下载页（国内优先 Gitee）
+            openForkReleases()
+            showUpdateDialog = false
             return
         }
         isDownloading = true
