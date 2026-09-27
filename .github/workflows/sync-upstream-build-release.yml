@@ -237,6 +237,7 @@ jobs:
           echo "✅ versionCode 单调：本次 ${{ steps.build.outputs.FORK_CODE }}（序号 $N > 历史 $MAX）"
 
       - name: 上传构建产物（Actions 页面可下载）
+        continue-on-error: true
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
@@ -286,6 +287,7 @@ jobs:
             || echo "Release 已存在或创建失败（忽略）"
 
       - name: 上游有新提交时开 Issue 提醒（不阻塞出包）
+        continue-on-error: true
         if: (steps.check.outputs.has_update == 'true' || github.event_name == 'workflow_dispatch') && success()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -317,6 +319,8 @@ jobs:
           fi
 
       - name: 同步发布到 Gitee（可选：配了 GITEE_TOKEN 才执行）
+        # 非关键路径：Gitee 抖动不该让整条流水线红叉（GitHub 那边已经发好了）
+        continue-on-error: true
         if: github.event_name == 'workflow_dispatch'
         env:
           GT: ${{ secrets.GITEE_TOKEN }}
@@ -344,6 +348,7 @@ jobs:
           echo "✅ Gitee 附件上传完成"
 
       - name: 同步代码到 Gitee（可选：镜像 master 与源码分支）
+        continue-on-error: true
         if: github.event_name == 'workflow_dispatch'
         env:
           GT: ${{ secrets.GITEE_TOKEN }}
@@ -359,6 +364,7 @@ jobs:
           if git push "$GURL" origin/local-audit-v21:refs/heads/local-audit-v21 2>/dev/null; then echo "✅ local-audit-v21 已镜像到 Gitee"; else echo "::warning::源码分支镜像失败（可忽略）"; fi
 
       - name: 失败时开 Issue 提醒（补丁冲突等）
+        continue-on-error: true
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
