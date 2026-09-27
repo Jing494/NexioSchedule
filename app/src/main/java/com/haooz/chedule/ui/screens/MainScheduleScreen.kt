@@ -109,6 +109,7 @@ import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.isRenderEffectSupported
 import com.kyant.capsule.ContinuousRoundedRectangle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -763,7 +764,11 @@ fun MainScheduleScreen(
             }
         }
 
-
+// beyondViewportPageCount=1：只保留紧邻 1 页预合成。
+// 原来是 2 → 同时组合+测量+布局 5 个周页，而每页是「verticalScroll + 节次列 + 7 个 DayColumn × 数十张卡」，
+// 5 页就是 5 倍节点量与布局量，且每次跨越页作用域的重组都要乘 5。
+// 代价：极快的「多周连滑」时，第二页可能晚一帧就绪（第一页仍然预合成，正常滑动无感）。
+// 若以后要更激进，可以按"是否正在跳周"动态切换 1/2，但那要动 pager 参数、会触发 pager 重组，暂不做。
     HorizontalPager(
         state = pagerState,
         modifier = Modifier
@@ -824,10 +829,19 @@ fun MainScheduleScreen(
                 Box(modifier = Modifier.fillMaxWidth()) {
                     val dayBoundsArray = remember { arrayOfNulls<FloatArray>(8) }
                     var lastDayBoundsVersion by remember { mutableIntStateOf(0) }
-                    val isScheduleScrolling by scheduleScrollInProgress
-                    LaunchedEffect(isScheduleScrolling) {
-                        // 停滑后冲刷：滑动中 onGloballyPositioned 只写数组不递增版本号
-                        if (!isScheduleScrolling) lastDayBoundsVersion++
+                    // 停滑后冲刷：滑动中 onGloballyPositioned 只写数组不递增版本号。
+                    //
+                    // 这里**不能**写 `val isScheduleScrolling by scheduleScrollInProgress` ——
+                    // 那是在 pager 的**页作用域**里读 state，于是每次滑动开始/停止，
+                    // 已组合的每一页（现在 3 页）body 都要整块重执行一遍：Modifier 链、
+                    // remember 键求值、两种 BreakDivider、SideEffect 全部重来。
+                    // 改走 snapshotFlow：不在 composition 里读，只在停滑时把版本号 +1。
+                    LaunchedEffect(scheduleScrollInProgress) {
+                        snapshotFlow { scheduleScrollInProgress.value }
+                            .distinctUntilChanged()
+                            .collect { scrolling ->
+                                if (!scrolling) lastDayBoundsVersion++
+                            }
                     }
                     // 提升到 Row 之外：特殊横带按同一套列宽切分内部星期子块
                     val pageDayRange = remember(weekendDaysByWeek, week) {

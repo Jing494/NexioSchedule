@@ -46,6 +46,7 @@ import com.haooz.chedule.data.Course
 import com.haooz.chedule.data.ReturnDayReminder
 import com.haooz.chedule.ui.effects.edgelight.edgeLight
 import com.haooz.chedule.ui.effects.edgelight.rememberCourseCardEdgeLight
+import com.haooz.chedule.ui.utils.glassBlurEnabled
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.SharedBlurBackdrop
 import com.kyant.backdrop.drawBackdrop
@@ -745,11 +746,14 @@ fun SpecialBandOverlay(
             val bandEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
                 remember(isSharedBlur, blurPx, lensRadiusPx, lensStrengthPx, cardRefraction) {
                     {
-                        if (!isSharedBlur) {
-                            blur(blurPx)
-                        }
-                        if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
-                            lens(lensRadiusPx, lensStrengthPx)
+                        // 特殊块卡片同 CourseCard：滑动中降级 blur+lens（绘制期读、不进键）
+                        if (glassBlurEnabled()) {
+                            if (!isSharedBlur) {
+                                blur(blurPx)
+                            }
+                            if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
+                                lens(lensRadiusPx, lensStrengthPx)
+                            }
                         }
                     }
                 }

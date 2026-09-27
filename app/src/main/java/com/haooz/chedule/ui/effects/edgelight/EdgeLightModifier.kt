@@ -112,6 +112,12 @@ internal class EdgeLightNode(
 
         drawContent()
 
+        // 滑动/翻页进行中降级：跳过边光描边。
+        // 它是"每张卡每帧一次的前景 RuntimeShader + 一次 native SkMaskFilter"，
+        // 与 blur/lens 同属每帧每卡的开销。读的是同一个全局开关 ——
+        // DrawModifierNode.draw 里的快照读会登记成绘制期依赖，翻面只失效绘制、不触发重组。
+        if (!com.haooz.chedule.ui.utils.glassBlurEnabled()) return
+
         val edgeLightLayer = edgeLightLayer
         if (edgeLightLayer != null) {
             val size = size

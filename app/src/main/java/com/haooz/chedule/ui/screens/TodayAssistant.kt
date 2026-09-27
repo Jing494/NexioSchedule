@@ -49,6 +49,7 @@ import androidx.core.content.edit
 import androidx.core.graphics.createBitmap
 import com.google.gson.Gson
 import com.haooz.chedule.R
+import com.haooz.chedule.ui.utils.millisToNextMinute
 import com.haooz.chedule.data.Course
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -488,7 +489,8 @@ private fun rememberCourseStatus(
             val newStatus = CourseStatus(current?.course, next?.course, message, current?.end)
             // 文案未变化时不写状态，避免每秒重组
             if (newStatus != status) status = newStatus
-            delay(1000L.milliseconds)
+            // 文案只到「分钟」粒度（formatCountdownMinutes 不显示秒），睡到下一个整分即可
+            delay(millisToNextMinute(now).milliseconds)
         }
     }
     return status
@@ -849,9 +851,11 @@ fun TodayAssistantCard(
             val newTip = generateSmartTip(
                 courses, tomorrowCourses, sectionTimes, morningSections, afternoonSections
             ).orEmpty()
-            // 与顶部倒计时同频轮询；文案未变化时不写状态，避免每秒重组
+            // 文案未变化时不写状态，避免每秒重组
             if (newTip != smartTip) smartTip = newTip
-            delay(1_000L.milliseconds)
+            // generateSmartTip 是最贵的一处：内部两遍 buildCourseTimeRanges + 解析 + 排序。
+            // 而它的输出粒度是分钟，所以从「每秒重算」改成「睡到下一个整分」。
+            delay(millisToNextMinute().milliseconds)
         }
     }
 

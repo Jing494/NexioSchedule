@@ -1370,7 +1370,34 @@ private fun buildReminderHealth(context: android.content.Context): List<Reminder
         } else null,
     )
 
-    // ④ 三个通道有没有被单独关掉
+    // ④ 后台自启动 / 后台运行限制
+    //
+    // 说实话的一行：Android 没有查询「自启动」的公开接口（HyperOS 把它放在安全中心里，
+    // 非 MIUI 根本没有这个概念），所以这里只读 AOSP 的后台限制标志，
+    // 读不到就按"通过"处理，再按厂商补充一句手动确认的提示 ——
+    // 不做「一定是没开自启动」这种看似确定、实则误导的判定。
+    val activityManager = context.getSystemService(android.content.Context.ACTIVITY_SERVICE)
+        as android.app.ActivityManager
+    val bgRestricted = runCatching { activityManager.isBackgroundRestricted() }
+        .getOrDefault(false)
+    val manufacturer = (android.os.Build.MANUFACTURER ?: "").lowercase()
+    val isXiaomiLike = manufacturer.contains("xiaomi") ||
+        manufacturer.contains("redmi") || manufacturer.contains("poco")
+    out += ReminderHealthItem(
+        title = "后台自启动",
+        ok = !bgRestricted,
+        detail = when {
+            bgRestricted -> "系统已限制后台运行，锁屏久了提醒可能被压住"
+            isXiaomiLike -> "系统未限制后台；自启动需在应用信息里手动确认"
+            else -> "系统未限制后台运行"
+        },
+        fix = if (bgRestricted) {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                .setData("package:${context.packageName}".toUri())
+        } else null,
+    )
+
+    // ⑤ 三个通道有没有被单独关掉
     val channelIds = listOf(
         com.haooz.chedule.reminder.CourseReminderHelper.CHANNEL_REMINDER_ID,
         com.haooz.chedule.reminder.CourseReminderHelper.CHANNEL_HOLIDAY_ID,

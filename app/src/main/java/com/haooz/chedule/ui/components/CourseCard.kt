@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.haooz.chedule.data.Course
+import com.haooz.chedule.ui.utils.glassBlurEnabled
 import com.haooz.chedule.ui.utils.isAppDarkTheme
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.SharedBlurBackdrop
@@ -205,11 +206,17 @@ fun CourseCard(
             val backdropEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
                 remember(isSharedBlur, blurPx, lensRadiusPx, lensStrengthPx, cardRefraction) {
                     {
-                        if (!isSharedBlur) {
-                            blur(blurPx)
-                        }
-                        if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
-                            lens(lensRadiusPx, lensStrengthPx)
+                        // 滑动/翻页进行中降级：跳过 blur + lens。
+                        // 这两项是课表页最贵的两笔 —— 每帧 × 每张可见卡各一次 GPU 模糊 + 一次 AGSL 着色器。
+                        // 只在**绘制期**读开关，绝不进 remember 的键：否则 lambda 身份每次翻面都变，
+                        // drawBackdrop 会判不等并整块重建绘制缓存（那正是 v22 椭圆伪影的同一类坑）。
+                        if (glassBlurEnabled()) {
+                            if (!isSharedBlur) {
+                                blur(blurPx)
+                            }
+                            if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
+                                lens(lensRadiusPx, lensStrengthPx)
+                            }
                         }
                     }
                 }

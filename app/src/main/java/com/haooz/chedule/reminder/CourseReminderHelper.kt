@@ -215,12 +215,24 @@ object CourseReminderHelper {
     // 只按课程取消会残留孤儿闹钟（到点弹旧数据）
     private const val PREF_ALARM_REGISTRY = "reminder_alarm_registry"
     private const val KEY_PRE_CLASS_RCS = "pre_class_rcs"
+    // 一次性迁移标记：旧版按课程名 hash 派生的到点闹钟 RC 已清理完毕
+    private const val KEY_LEGACY_RC_CLEANED = "legacy_rc_cleaned_v1"
     private const val KEY_EXPAND_RCS = "expand_rcs"
     private const val PI_FLAGS = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
     private fun readRcSet(context: Context, key: String): Set<Int> {
         val prefs = context.getSharedPreferences(PREF_ALARM_REGISTRY, Context.MODE_PRIVATE)
         return (prefs.getStringSet(key, emptySet()) ?: emptySet()).mapNotNull { it.toIntOrNull() }.toSet()
+    }
+
+    private fun hasCleanedLegacyAlarmRcs(context: Context): Boolean =
+        context.getSharedPreferences(PREF_ALARM_REGISTRY, Context.MODE_PRIVATE)
+            .getBoolean(KEY_LEGACY_RC_CLEANED, false)
+
+    private fun markLegacyAlarmRcsCleaned(context: Context) {
+        context.getSharedPreferences(PREF_ALARM_REGISTRY, Context.MODE_PRIVATE).edit {
+            putBoolean(KEY_LEGACY_RC_CLEANED, true)
+        }
     }
 
     private fun writeRcSet(context: Context, key: String, rcs: Set<Int>) {
@@ -661,16 +673,26 @@ object CourseReminderHelper {
             )
             alarmManager.cancel(pending)
         }
-        // 旧版按课程名 hash 派生 RC 的残留
-        val allCourses = CourseRepository(context).getAllCourses()
-        for (course in allCourses) {
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                10000 + course.name.hashCode(),
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            alarmManager.cancel(pendingIntent)
+        // 旧版按课程名 hash 派生 RC 的残留。
+        //
+        // 这是一次性迁移，不是常规维护：现版本到点闹钟用的是固定 ID
+        // （LIVE_COUNTDOWN_ID / LIVE_TEST_COUNTDOWN_ID，见 sendCourseStartNotification）。
+        // 而这里的每个 RC 都要 getBroadcast(FLAG_UPDATE_CURRENT) + cancel ——
+        // 后者在没命中已有闹钟时会「先建再删」，一门课 2 次 binder 往返；
+        // 60 门课就是 120 次，而且每次全量重排（启动 App / 改设置 / 开机 / 跨日）都要重走一遍。
+        // 迁移完成后置位标记，之后就再也不用为已经不存在的旧 RC 付这笔开销。
+        if (!hasCleanedLegacyAlarmRcs(context)) {
+            val allCourses = CourseRepository(context).getAllCourses()
+            for (course in allCourses) {
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    10000 + course.name.hashCode(),
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                alarmManager.cancel(pendingIntent)
+            }
+            markLegacyAlarmRcsCleaned(context)
         }
     }
 
