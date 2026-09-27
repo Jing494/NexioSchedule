@@ -1,4 +1,4 @@
-From 62e717dadbe72cf9d39e58cec06b09213d3ab112 Mon Sep 17 00:00:00 2001
+From b59876f9f7c009d08752f41af3a4d3076943337d Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 13:39:57 +0800
 Subject: [PATCH 14/19] =?UTF-8?q?v32:=20=E4=BF=AE=E8=AF=BE=E4=B8=AD?=
@@ -41,6 +41,8 @@ Content-Transfer-Encoding: 8bit
 验证：verify_islandtest_v32.py 25 项全过（5 组模式判定 + 5 项"只有一份判定" +
 14 项场景板约束，含"老按钮与默认参数未被改动""UI 不自己拼发送逻辑"）；
 assembleRelease 通过；签名与 sha256 通过；dex 内新符号全部 FOUND。
+
+(cherry picked from commit cc52fc6761cb8cdb1463b5242a11d919b0ed8034)
 ---
  .../chedule/reminder/CourseReminderHelper.kt  | 87 ++++++++++++++++--
  .../reminder/IslandNotificationHelper.kt      | 70 +++++++++++++--
@@ -50,10 +52,10 @@ assembleRelease 通过；签名与 sha256 通过；dex 内新符号全部 FOUND�
  create mode 100644 app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
 
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 35e42a0..3833b4d 100644
+index 2130fe0..bdc1363 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-@@ -2035,15 +2035,41 @@ object CourseReminderHelper {
+@@ -2218,15 +2218,41 @@ object CourseReminderHelper {
       * 测试实时活动：与超级岛测试同一套固定课程，不依赖真实课表。
       * 课前 70 秒倒计时 + 课中 120 秒，便于验证倒计时 / 已上课 / 课中进度全链路。
       */
@@ -101,12 +103,14 @@ index 35e42a0..3833b4d 100644
              context = context,
              courseName = courseName,
              classroom = classroom,
-@@ -2051,8 +2077,55 @@ object CourseReminderHelper {
+@@ -2234,10 +2260,57 @@ object CourseReminderHelper {
              startTime = startTime,
              startMillis = startMillis,
              endMillis = endMillis,
 -            testMode = true
          )
+         // 测试课也要走「上课自动开启、下课自动关闭」，否则勿扰链路在测试里跑不到
+         ClassDndHelper.syncTestClassDndAlarms(context)
 +        if (phase == ReminderTestPhase.STARTED) {
 +            showStartedLiveNotification(
 +                context = context,
@@ -159,7 +163,7 @@ index 35e42a0..3833b4d 100644
  
      // 每分钟由 WidgetRefreshReceiver 驱动；同 notifyId 重复 notify 无痕更新
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
-index 04fae65..57f510e 100644
+index aba68b4..5f1bc4d 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 @@ -396,6 +396,26 @@ object IslandNotificationHelper {
@@ -189,7 +193,7 @@ index 04fae65..57f510e 100644
      fun isIslandTestId(notificationId: Int): Boolean =
          notificationId == ISLAND_TEST_NOTIFICATION_ID ||
              notificationId == ISLAND_STARTED_TEST_NOTIFICATION_ID ||
-@@ -705,8 +725,8 @@ object IslandNotificationHelper {
+@@ -701,8 +721,8 @@ object IslandNotificationHelper {
          val prefs = context.getSharedPreferences("course_reminder_prefs", Context.MODE_PRIVATE)
          val expandGlowEnabled = prefs.getBoolean(KEY_ISLAND_EXPAND_GLOW_ENABLED, true)
          val aodMode = prefs.getInt("island_aod_mode", 0)
@@ -200,7 +204,7 @@ index 04fae65..57f510e 100644
  
          val now = System.currentTimeMillis()
          val counting = courseEndMillis > now
-@@ -1112,7 +1132,15 @@ object IslandNotificationHelper {
+@@ -1108,7 +1128,15 @@ object IslandNotificationHelper {
          )
      }
  
@@ -217,7 +221,7 @@ index 04fae65..57f510e 100644
          if (!isIslandSupported(context)) {
              Log.w(TAG, "Island not supported on this device")
              return
-@@ -1126,9 +1154,9 @@ object IslandNotificationHelper {
+@@ -1122,9 +1150,9 @@ object IslandNotificationHelper {
          val testNotificationId = ISLAND_TEST_NOTIFICATION_ID
  
          // 时间串也由这两个时间戳派生，否则岛上显示与倒计时对不上，无法判断是否正确
@@ -230,9 +234,9 @@ index 04fae65..57f510e 100644
          val startTime = formatClock(courseStartTimestamp)
          val endTime = formatClock(courseEndTimestamp)
  
-@@ -1151,6 +1179,36 @@ object IslandNotificationHelper {
-         )
-         kickWidgetRefresh(context)
+@@ -1149,6 +1177,36 @@ object IslandNotificationHelper {
+         // 测试课也要走「上课自动开启、下课自动关闭」，否则勿扰链路在测试里跑不到
+         ClassDndHelper.syncTestClassDndAlarms(context)
  
 +        // 场景要直接落到「已上课」/「课中」：走主路径那两支函数本身，
 +        // 只是**绕过用户开关**（测试工具的意义就是把某一条分支单独验出来）。
@@ -364,7 +368,7 @@ index 0000000..8f4190c
 +    }
 +}
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
-index a122982..432ca15 100644
+index 23cecf5..ae24bf5 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 @@ -57,6 +57,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
@@ -397,7 +401,7 @@ index a122982..432ca15 100644
                      // 开启提醒
                      item {
                          Card(
-@@ -1506,3 +1512,68 @@ private fun ReminderHealthCard() {
+@@ -1507,3 +1513,68 @@ private fun ReminderHealthCard() {
          }
      }
  }

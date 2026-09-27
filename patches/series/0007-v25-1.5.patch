@@ -1,4 +1,4 @@
-From 6194bb788fa9330995344ff01adaa6d772c69aff Mon Sep 17 00:00:00 2001
+From 5c815b86ba0f7e4980f1047f244b70b951eda538 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 08:31:41 +0800
 Subject: [PATCH 07/19] =?UTF-8?q?v25=EF=BC=9A=E6=8B=96=E6=8B=BD=E7=AC=AC?=
@@ -30,15 +30,17 @@ sectionTopPx() 同样是**均匀模型**（没有特殊块偏移），而它是�
 
 离线复算（dist-v25/verify_droptarget.py）新增"吸附位置"一节：
   第 1~6 节 old==new；第 7~12 节 old 固定偏 -1.50 格（向上），new 全部正确。
+
+(cherry picked from commit e82760065d3b91e7770cdb0c65880e86067b4272)
 ---
  .../chedule/ui/activities/MainActivity.kt     | 44 ++++++++++++++++---
  1 file changed, 38 insertions(+), 6 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-index 7c93045..a0adacd 100644
+index a117561..9455cf9 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-@@ -1846,9 +1846,21 @@ fun CourseScheduleApp() {
+@@ -1853,9 +1853,21 @@ fun CourseScheduleApp() {
      fun dividerPxFor(geom: ScheduleGridGeometry): Float =
          if (geom.showBreakDividers) with(density) { 24.dp.toPx() } else 0f
  
@@ -60,7 +62,7 @@ index 7c93045..a0adacd 100644
          val morning = geom.morningSections
          val afternoon = geom.afternoonSections
          return when {
-@@ -3342,11 +3354,21 @@ fun CourseScheduleApp() {
+@@ -3372,11 +3384,21 @@ fun CourseScheduleApp() {
                                                  // 落点仅跨格时写 state，避免逐帧重组课表
                                                  val course = draggedCardCourse
                                                  if (course != null) {
@@ -86,7 +88,7 @@ index 7c93045..a0adacd 100644
                                                      val centerX = draggedCardPosition.x + offsetX
                                                      val cardTopY =
                                                          draggedCardPosition.y + offsetY - cardHeightPx / 2f
-@@ -4242,10 +4264,20 @@ fun CourseScheduleApp() {
+@@ -4312,10 +4334,20 @@ fun CourseScheduleApp() {
                          val centerX = swapFlightOriginCenter.x + swapFlightOffsetX.value
                          val centerY = swapFlightOriginCenter.y + swapFlightOffsetY.value
                          val widthPx = swapFlightWidth

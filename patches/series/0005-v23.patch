@@ -1,4 +1,4 @@
-From c6283979e20b5e43dd4ea43996b5e19197cb319a Mon Sep 17 00:00:00 2001
+From cdcf78b00e66307e341f13ffbf68ff8fdc0ca3aa Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 08:00:24 +0800
 Subject: [PATCH 05/19] =?UTF-8?q?v23=EF=BC=9A=E4=BF=AE=E8=B6=85=E7=BA=A7?=
@@ -45,16 +45,18 @@ Content-Transfer-Encoding: 8bit
   已上课=5、课中=剩余分钟+5、明天返校=240。
 - islandTimeout 写死 3600s（岛消失时间，单位 s）→ 晚自习这种 >60 分钟的课会中途收岛。
   现在同样按时间线给（距上课/下课秒数 + 120），明天返校放宽到 12 小时。
+
+(cherry picked from commit 24106c0eb1f424c63b6d9c0a4ec44a9d75397e19)
 ---
  .../chedule/reminder/CourseReminderHelper.kt  |  11 +-
  .../reminder/IslandNotificationHelper.kt      | 263 +++++++++++++-----
  2 files changed, 206 insertions(+), 68 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 480d1e7..52dcab9 100644
+index 417d573..089502a 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-@@ -402,8 +402,15 @@ object CourseReminderHelper {
+@@ -416,8 +416,15 @@ object CourseReminderHelper {
              lastServiceStartAt = now
          }
          // 启动路径自愈：上次给超级岛"绕白名单"时把小米推送服务断网，若进程在恢复前被杀，
@@ -73,7 +75,7 @@ index 480d1e7..52dcab9 100644
      }
  
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
-index 0cdf674..aacc9bf 100644
+index 38ac3bc..3bed194 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 @@ -18,8 +18,6 @@ import kotlinx.coroutines.Dispatchers
@@ -335,7 +337,7 @@ index 0cdf674..aacc9bf 100644
              if (counting) {
                  put("enableFloat", true)
              } else {
-@@ -525,7 +626,10 @@ object IslandNotificationHelper {
+@@ -521,7 +622,10 @@ object IslandNotificationHelper {
  
              val paramIsland = JSONObject().apply {
                  put("islandProperty", 1)
@@ -347,7 +349,7 @@ index 0cdf674..aacc9bf 100644
  
                  val bigIsland = JSONObject().apply {
                      put("templateNo", 2)
-@@ -622,6 +726,18 @@ object IslandNotificationHelper {
+@@ -618,6 +722,18 @@ object IslandNotificationHelper {
          val paramV2 = JSONObject().apply {
              put("business", BUSINESS_TAG)
              put("protocol", 1)
@@ -366,7 +368,7 @@ index 0cdf674..aacc9bf 100644
              // 课中岛挂到下课，不反复弹悬浮窗（与课前「已上课」同策略）
              put("islandFirstFloat", true)
              put("enableFloat", false)
-@@ -698,7 +814,11 @@ object IslandNotificationHelper {
+@@ -694,7 +810,11 @@ object IslandNotificationHelper {
              // 缩略态：模板2，与课前同构；A区课程名，B区可在「正在上课」与距下课倒计时间自选
              put("param_island", JSONObject().apply {
                  put("islandProperty", 1)
@@ -379,7 +381,7 @@ index 0cdf674..aacc9bf 100644
                  put("bigIslandArea", JSONObject().apply {
                      put("templateNo", 2)
                      // A区：课程名称
-@@ -877,6 +997,12 @@ object IslandNotificationHelper {
+@@ -873,6 +993,12 @@ object IslandNotificationHelper {
              val root = JSONObject(paramsRaw)
              val paramV2 = root.optJSONObject("param_v2") ?: return@runCatching paramsRaw
              paramV2.remove("hintInfo")
@@ -392,7 +394,7 @@ index 0cdf674..aacc9bf 100644
              paramV2.optJSONObject("param_island")
                  ?.optJSONObject("bigIslandArea")
                  ?.optJSONObject("textInfo")
-@@ -1130,8 +1256,9 @@ object IslandNotificationHelper {
+@@ -1128,8 +1254,9 @@ object IslandNotificationHelper {
              } else {
                  // 「距下课」未进窗或无有效下课时间：只收倒计时，不发已上课；
                  // 标记 switched 交给对账，进窗后再切课中（不可因 end>start 就提前挂卡）
@@ -404,7 +406,7 @@ index 0cdf674..aacc9bf 100644
                  IslandState.markSwitched(context, testMode = effectiveTestMode)
              }
              return
-@@ -1173,10 +1300,12 @@ object IslandNotificationHelper {
+@@ -1171,10 +1298,12 @@ object IslandNotificationHelper {
              return
          }
  
@@ -421,7 +423,7 @@ index 0cdf674..aacc9bf 100644
  
          val title = if (startTime.isNotEmpty()) "$courseName $startTime" else courseName
          val content = buildString {
-@@ -1230,9 +1359,11 @@ object IslandNotificationHelper {
+@@ -1228,9 +1357,11 @@ object IslandNotificationHelper {
              return
          }
  

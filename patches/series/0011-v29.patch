@@ -1,4 +1,4 @@
-From c70f7201b322209067f1038439dc70f79eb07a4b Mon Sep 17 00:00:00 2001
+From f5af4021a0034aeb315cf04e217c6bc4364592f6 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 11:27:44 +0800
 Subject: [PATCH 11/19] =?UTF-8?q?v29:=20=E6=AF=9B=E7=8E=BB=E7=92=83?=
@@ -35,6 +35,8 @@ Content-Transfer-Encoding: 8bit
 驱动确实是 150-250-250 / 边光乘 alpha 未改 intensity / 极端系数不产生负半径）；
 assembleRelease BUILD SUCCESSFUL；apksigner + sha256 + badging 通过；
 dex 独立佐证 glassPerfFactor FOUND、glassBlurEnabled MISSING。
+
+(cherry picked from commit f1222c360da4833297177b7daf0557ac7f74fc57)
 ---
  .../chedule/ui/activities/MainActivity.kt     | 19 ++++---
  .../haooz/chedule/ui/components/CourseCard.kt | 12 +++--
@@ -45,10 +47,10 @@ dex 独立佐证 glassPerfFactor FOUND、glassBlurEnabled MISSING。
  6 files changed, 89 insertions(+), 53 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-index dbeb6e3..4739072 100644
+index 349fc7f..415b7ce 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-@@ -2547,14 +2547,15 @@ fun CourseScheduleApp() {
+@@ -2554,14 +2554,15 @@ fun CourseScheduleApp() {
              else -> 1f
          }
          /*
@@ -69,7 +71,7 @@ index dbeb6e3..4739072 100644
           */
          LaunchedEffect(
              scheduleScrollState, pagerState, todayPagerState, mainPagerState, todayListScrollInProgress
-@@ -2569,10 +2570,12 @@ fun CourseScheduleApp() {
+@@ -2576,10 +2577,12 @@ fun CourseScheduleApp() {
                  .distinctUntilChanged()
                  .collectLatest { scrolling ->
                      if (scrolling) {
@@ -119,7 +121,7 @@ index 8b60ff3..1143d68 100644
                          }
                      }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
-index 89a3707..d0397ec 100644
+index b3048e4..2dfb587 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 @@ -46,7 +46,7 @@ import com.haooz.chedule.data.Course
@@ -131,7 +133,7 @@ index 89a3707..d0397ec 100644
  import com.kyant.backdrop.Backdrop
  import com.kyant.backdrop.backdrops.SharedBlurBackdrop
  import com.kyant.backdrop.drawBackdrop
-@@ -743,12 +743,16 @@ fun SpecialBandOverlay(
+@@ -746,12 +746,16 @@ fun SpecialBandOverlay(
                  remember(isSharedBlur, blurPx, lensRadiusPx, lensStrengthPx, cardRefraction) {
                      {
                          // 特殊块卡片同 CourseCard：滑动中降级 blur+lens（绘制期读、不进键）
@@ -185,10 +187,10 @@ index e2dbb30..5829d18 100644
              translate(-1f, -1f) {
                  drawLayer(edgeLightLayer)
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-index b3c814c..1b48d75 100644
+index 27c5c2d..0e9648c 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-@@ -62,7 +62,7 @@ import com.haooz.chedule.ui.basic.collapsibleTopInset
+@@ -66,7 +66,7 @@ import com.haooz.chedule.ui.basic.collapsibleTopInset
  import com.haooz.chedule.ui.effects.edgelight.edgeLight
  import com.haooz.chedule.ui.effects.edgelight.rememberCardEdgeLight
  import com.haooz.chedule.ui.effects.edgelight.rememberDefaultEdgeLight
@@ -197,7 +199,7 @@ index b3c814c..1b48d75 100644
  import com.haooz.chedule.ui.utils.isAppDarkTheme
  import com.haooz.chedule.ui.utils.overScrollVertical
  import com.haooz.chedule.ui.utils.pagerAxisTakeoverGesture
-@@ -125,13 +125,20 @@ fun BlurCard(
+@@ -135,13 +135,20 @@ fun BlurCard(
          val cardEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
              remember(blurRadius, refraction) {
                  {
@@ -223,7 +225,7 @@ index b3c814c..1b48d75 100644
                          }
                      }
                  }
-@@ -1595,13 +1602,20 @@ private fun CourseSectionTitle(
+@@ -1743,13 +1750,20 @@ private fun CourseSectionTitle(
          val sectionEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
              remember(blurRadius, refraction) {
                  {

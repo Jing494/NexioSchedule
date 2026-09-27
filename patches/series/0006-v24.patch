@@ -1,4 +1,4 @@
-From 09aaa4e8de096767aeddb162c6777ae7b8de1522 Mon Sep 17 00:00:00 2001
+From d844ce4a64ce0e074c587adbae284a51485d5667 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 08:21:53 +0800
 Subject: [PATCH 06/19] =?UTF-8?q?v24=EF=BC=9A=E4=BF=AE=E8=AF=BE=E8=A1=A8?=
@@ -16,7 +16,7 @@ Content-Transfer-Encoding: 8bit
 把下方节次整体下移：sectionTop[g] = origSectionTop[g] + 该节以上所有特殊块高度。
 而 computeDropTarget 是按"均匀高度 + 两个 24dp 分界带"自己推的，完全没算这层偏移。
 两者是同一个提交 33620d9 v1.5.3beta9 引入的 —— 属于同一份几何两套口径。
-用户截图里「某个 1.5 格高的特殊块」= 1.5 格高，所以第 7 节起落点固定偏下 1.5 格；
+用户截图里「自习 12:50-13:50」= 1.5 格高，所以第 7 节起落点固定偏下 1.5 格；
 第 11/12 节更糟：均匀模型直接走空、返回 null，**那两行根本没法落点**。
 
 修：ScheduleGridGeometry 带上渲染实际用的 sectionTopDp 与特殊块占位区间；
@@ -32,13 +32,14 @@ computeDropTarget 改成用 sectionTop 反查（与 DayColumn 空白格点击的
   原实现仍会构造 Editor + commitToMemory + 抓 prefs 监视器，加会话键早退
 - 课中实况 ProgressStyle 分支：BigTextStyle 随后被 ProgressStyle 覆盖，
   expandedText（含教室）被整个丢掉，降级路径却有教室；用 setSubText 把教室补回来
+
+(cherry picked from commit 46d0629f1fe99050f6ca3c0d1a7b8c26ff950365)
 ---
  .../haooz/chedule/reminder/AlarmReceiver.kt   | 27 ++++++++--------
- .../haooz/chedule/reminder/ClassDndHelper.kt  | 10 +++++-
  .../chedule/reminder/CourseReminderHelper.kt  |  4 +++
  .../chedule/ui/activities/MainActivity.kt     | 32 +++++++++++++++++++
  .../chedule/ui/screens/MainScheduleScreen.kt  | 16 ++++++++--
- 5 files changed, 73 insertions(+), 16 deletions(-)
+ 4 files changed, 64 insertions(+), 15 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 index 397c142..f8d3d13 100644
@@ -88,32 +89,11 @@ index 397c142..f8d3d13 100644
                  if (matched == null) {
                      // 课表可能已变更：全量重注册，清掉过期闹钟
                      Log.d("AlarmReceiver", "Stale alarm: $courseName($startTime) no longer in today's schedule")
-diff --git a/app/src/main/java/com/haooz/chedule/reminder/ClassDndHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/ClassDndHelper.kt
-index 44a9488..7c8ccd2 100644
---- a/app/src/main/java/com/haooz/chedule/reminder/ClassDndHelper.kt
-+++ b/app/src/main/java/com/haooz/chedule/reminder/ClassDndHelper.kt
-@@ -212,7 +212,15 @@ object ClassDndHelper {
-     private fun handBack(context: Context, requireConsistency: Boolean) {
-         val p = prefs(context)
-         if (!p.getBoolean(KEY_APPLIED, false)) {
--            clearSession(context)
-+            // 早退：只有 KEY_APPLIED=false 且会话键还在时才真的需要清。
-+            // applyCurrentState 每分钟（刷新链）都会被调一次，而绝大多数时候这门功能
-+            // 从没接管过 —— 原实现每次都要构造一个 Editor、跑一遍 commitToMemory、
-+            // 抓一次 prefs 监视器，纯白做。
-+            if (p.contains(KEY_SET_STATE) || p.contains(KEY_APPLIED_MODE) ||
-+                p.contains(KEY_ORIGINAL_RINGER) || p.contains(KEY_ORIGINAL_FILTER)
-+            ) {
-+                clearSession(context)
-+            }
-             return
-         }
-         val mode = p.getInt(KEY_APPLIED_MODE, MODE_DND)
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 52dcab9..61fd25c 100644
+index 089502a..67a04b0 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-@@ -1561,7 +1561,11 @@ object CourseReminderHelper {
+@@ -1742,7 +1742,11 @@ object CourseReminderHelper {
                  .setSmallIcon(R.mipmap.ic_launcher)
                  .setContentTitle("$courseName | 上课中")
                  .setContentText(infoLine)
@@ -126,10 +106,10 @@ index 52dcab9..61fd25c 100644
                  .setOngoing(true)
                  .setOnlyAlertOnce(true)
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-index 62d7dd3..7c93045 100644
+index 09424c8..a117561 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-@@ -2211,6 +2211,38 @@ fun CourseScheduleApp() {
+@@ -2218,6 +2218,38 @@ fun CourseScheduleApp() {
          val relY = firstSectionCenterY - topY
          if (relY < 0f) return null
          val sectionH = geom.sectionHeightPx
@@ -140,7 +120,7 @@ index 62d7dd3..7c93045 100644
 +         * computeSpecialGridLayout 会让特殊块（自习 / 自定义时间块）在它的时间起点占位，
 +         * 把下方节次整体下移：sectionTop[g] = origSectionTop[g] + 该节以上所有特殊块高度。
 +         * 而下面那段"均匀高度 + 两个 24dp 分界带"的推算是**没有这层偏移**的 ——
-+         * 于是只要课表里有特殊块（截图里那个「某个 1.5 格高的特殊块」就是），
++         * 于是只要课表里有特殊块（截图里那个「自习 12:50–13:50」就是），
 +         * 第 7 节往下的落点就会整体偏下约一格：拖到空格子，阴影却落在下面那格（有课的那格），
 +         * 松手就变成"是否与下面这节课合并"。
 +         *
@@ -169,10 +149,10 @@ index 62d7dd3..7c93045 100644
          var cursor = 0f
          for (s in 1..geom.morningSections) {
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
-index 09ce3b6..2032a2c 100644
+index 1105ee5..d3f37bb 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
-@@ -164,7 +164,17 @@ data class ScheduleGridGeometry(
+@@ -147,7 +147,17 @@ data class ScheduleGridGeometry(
      val morningSections: Int,
      val afternoonSections: Int,
      val eveningSections: Int,
@@ -191,7 +171,7 @@ index 09ce3b6..2032a2c 100644
  )
  
  @SuppressLint("ConfigurationScreenWidthHeight")
-@@ -1043,7 +1053,9 @@ fun MainScheduleScreen(
+@@ -1086,7 +1096,9 @@ fun MainScheduleScreen(
                                          morningSections = morningSections,
                                          afternoonSections = afternoonSections,
                                          eveningSections = eveningSections,

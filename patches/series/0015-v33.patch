@@ -1,4 +1,4 @@
-From 61c214d5c740c26368c7117377be204688740654 Mon Sep 17 00:00:00 2001
+From 31b8f4712124a9a18dd18d294ced2f58adba97c1 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 14:04:18 +0800
 Subject: [PATCH 15/19] =?UTF-8?q?v33:=20=E6=B5=8B=E8=AF=95=E7=8B=AC?=
@@ -45,6 +45,8 @@ Kotlin 守护进程 →1536m；实测 BUILD SUCCESSFUL 11m34s（比 4G/双 worke
 
 验证：verify_testpage_v33.py 22 项全过（覆盖矩阵 / 独立成页 / 体检卡折叠与位置用下标比较 /
 次日文案只有一份实现）；编译、签名、sha256、badging、APK 内编译后 Manifest 均核验通过。
+
+(cherry picked from commit 9a1545664e43a3b0ca959404d3c64143ea076482)
 ---
  app/src/main/AndroidManifest.xml              |   7 +
  .../haooz/chedule/reminder/AlarmReceiver.kt   |  30 +-
@@ -127,11 +129,11 @@ index 9ab603e..dd6af7c 100644
                  // 明天是「返校日」（假期/周末最后一天、次日要上课）→ 顺带推一条超级岛。
                  // 复用既有岛发送路径（含 XMSF 绕白名单），这里只是多一个调用方。
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 3833b4d..cfd4c6d 100644
+index bdc1363..9d95b32 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-@@ -1117,6 +1117,55 @@ object CourseReminderHelper {
-         runCatching { checkDailyReturnDayNotifications(context) }
+@@ -1298,6 +1298,55 @@ object CourseReminderHelper {
+         }
      }
  
 +    /**
@@ -389,7 +391,7 @@ index 8f4190c..0575006 100644
              }
          }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
-index 432ca15..dee8b8d 100644
+index ae24bf5..ea4b9a4 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 @@ -57,7 +57,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
@@ -423,7 +425,7 @@ index 432ca15..dee8b8d 100644
                      // 提醒详情
                      item {
                          val masterEnabled = preClassReminder || nextDayReminder
-@@ -1424,10 +1420,18 @@ private fun buildReminderHealth(context: android.content.Context): List<Reminder
+@@ -1425,10 +1421,18 @@ private fun buildReminderHealth(context: android.content.Context): List<Reminder
      return out
  }
  
@@ -442,7 +444,7 @@ index 432ca15..dee8b8d 100644
      val items = remember(tick) { buildReminderHealth(context) }
      val badCount = items.count { !it.ok }
  
-@@ -1438,7 +1442,14 @@ private fun ReminderHealthCard() {
+@@ -1439,7 +1443,14 @@ private fun ReminderHealthCard() {
      ) {
          Column(modifier = Modifier.fillMaxWidth()) {
              Row(
@@ -458,7 +460,7 @@ index 432ca15..dee8b8d 100644
                  verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
              ) {
                  Text(
-@@ -1456,7 +1467,15 @@ private fun ReminderHealthCard() {
+@@ -1457,7 +1468,15 @@ private fun ReminderHealthCard() {
                          androidx.compose.ui.graphics.Color(0xFFE07A2B)
                      },
                  )
@@ -474,7 +476,7 @@ index 432ca15..dee8b8d 100644
              items.forEach { item ->
                  Row(
                      modifier = Modifier
-@@ -1509,71 +1528,16 @@ private fun ReminderHealthCard() {
+@@ -1510,71 +1529,16 @@ private fun ReminderHealthCard() {
                  { tick++ },
                  modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
              )
@@ -947,10 +949,10 @@ index 0000000..e78ee32
 +    )
 +}
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt
-index f3c445d..3e64687 100644
+index f63d22d..c0735b0 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt
-@@ -47,6 +47,7 @@ import com.haooz.chedule.data.Course
+@@ -49,6 +49,7 @@ import com.haooz.chedule.data.TeachingWeekReorganization
  import com.haooz.chedule.data.TimeConfig
  import com.haooz.chedule.ui.activities.AboutActivity
  import com.haooz.chedule.ui.activities.CourseReminderActivity
@@ -958,7 +960,7 @@ index f3c445d..3e64687 100644
  import com.haooz.chedule.ui.activities.CourseTimeSettingsActivity
  import com.haooz.chedule.ui.activities.HolidaySettingsActivity
  import com.haooz.chedule.ui.activities.PreferenceSettingsActivity
-@@ -390,6 +391,16 @@ fun SettingsScreen(
+@@ -397,6 +398,16 @@ fun SettingsScreen(
                                          reminderSettingsLauncher.launch(intent)
                                      }
                                  )

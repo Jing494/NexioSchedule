@@ -1,4 +1,4 @@
-From 94728e65cda4c1a291eae6b68be4ecf82aaeb5a5 Mon Sep 17 00:00:00 2001
+From 83b96162359934b5737982b8d39a846cde41ca51 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 11:44:20 +0800
 Subject: [PATCH 12/19] =?UTF-8?q?v30:=20=E4=BF=AE=E6=AF=9B=E7=8E=BB?=
@@ -32,6 +32,8 @@ Content-Transfer-Encoding: 8bit
 assembleRelease 通过；签名与 sha256 通过；
 包内容确实变了（v29 classes.dex sha71f4b93e… → v30 sha13286820…，
 APK 总大小三版同为 6130530 是 zip 对齐的巧合）。
+
+(cherry picked from commit 0f37580d98f6370366e19d66bb96574ef65cad19)
 ---
  .../java/com/haooz/chedule/ui/components/CourseCard.kt |  8 +++++++-
  .../java/com/haooz/chedule/ui/components/DayColumn.kt  |  8 +++++++-
@@ -58,10 +60,10 @@ index 1143d68..c065fa0 100644
                          }
                      }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
-index d0397ec..2a1ef34 100644
+index 2dfb587..21f4fd8 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
-@@ -752,7 +752,13 @@ fun SpecialBandOverlay(
+@@ -755,7 +755,13 @@ fun SpecialBandOverlay(
                                  blur(blurPx * glassFactor)
                              }
                              if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
@@ -77,10 +79,10 @@ index d0397ec..2a1ef34 100644
                          }
                      }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-index 1b48d75..596847a 100644
+index 0e9648c..5bef52c 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-@@ -135,8 +135,11 @@ fun BlurCard(
+@@ -145,8 +145,11 @@ fun BlurCard(
                      if (glassFactor > 0.01f) {
                          blur(blurRadius.dp.toPx() * glassFactor)
                          if (refraction != CardRefractionLevel.OFF) {
@@ -93,7 +95,7 @@ index 1b48d75..596847a 100644
                                  refraction.lensStrengthDp.dp.toPx() * glassFactor
                              )
                          }
-@@ -1612,8 +1615,11 @@ private fun CourseSectionTitle(
+@@ -1760,8 +1763,11 @@ private fun CourseSectionTitle(
                      if (glassFactor > 0.01f) {
                          blur(blurRadius.dp.toPx() * glassFactor)
                          if (refraction != CardRefractionLevel.OFF) {

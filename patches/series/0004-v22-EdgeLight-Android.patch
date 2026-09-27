@@ -1,4 +1,4 @@
-From 48e434f12d93234ebee59643a790e9d0d2a3448f Mon Sep 17 00:00:00 2001
+From a8f1ebc0391ec93f2155ec564ababf9d90208545 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 07:34:06 +0800
 Subject: [PATCH 04/19] =?UTF-8?q?v22=EF=BC=9A=E4=BF=AE=E6=A4=AD=E5=9C=86?=
@@ -32,6 +32,8 @@ Content-Transfer-Encoding: 8bit
 
 【其他】
 - ensureNotificationChannels 改为 10 分钟心跳复核（原一次性布尔会让'通道被用户删掉'后不再重建）
+
+(cherry picked from commit bb6e7738570c100d11b1e23cea51345fe333d9f7)
 ---
  .../haooz/chedule/data/ReturnDayReminder.kt   | 56 ++++++++++----
  .../chedule/reminder/CourseReminderHelper.kt  | 40 ++++++++--
@@ -146,10 +148,10 @@ index 6df9488..b1028c2 100644
      }
  }
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 3756db7..480d1e7 100644
+index 860d708..417d573 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-@@ -57,6 +57,21 @@ object CourseReminderHelper {
+@@ -60,6 +60,21 @@ object CourseReminderHelper {
          if (debugEnabled(context)) android.util.Log.d(TAG, message)
      }
  
@@ -171,7 +173,7 @@ index 3756db7..480d1e7 100644
      const val EXTRA_REMINDER_TYPE = "reminder_type"
      const val EXTRA_COURSE_NAME = "course_name"
      const val EXTRA_COURSE_SECTION = "course_section"
-@@ -386,6 +401,9 @@ object CourseReminderHelper {
+@@ -400,6 +415,9 @@ object CourseReminderHelper {
              // 立即占位：检查与更新必须原子，否则两条并发线程会同时通过判断、各全量重排一次
              lastServiceStartAt = now
          }
@@ -181,7 +183,7 @@ index 3756db7..480d1e7 100644
          doStartReminderService(context, repository)
      }
  
-@@ -1422,8 +1440,8 @@ object CourseReminderHelper {
+@@ -1603,8 +1621,8 @@ object CourseReminderHelper {
                          .setProgress(progressPercent.coerceIn(0, 100))
                  )
              }
@@ -192,7 +194,7 @@ index 3756db7..480d1e7 100644
              manager.notify(
                  RETURN_DAY_LIVE_ID,
                  styleBuilder.build().apply {
-@@ -1558,8 +1576,8 @@ object CourseReminderHelper {
+@@ -1739,8 +1757,8 @@ object CourseReminderHelper {
                          .setProgress(liveProgress)
                  )
              }
@@ -203,7 +205,7 @@ index 3756db7..480d1e7 100644
              styleBuilder.build().apply { flags = flags or Notification.FLAG_ONLY_ALERT_ONCE }
          } else {
              NotificationCompat.Builder(context, CHANNEL_LIVE_ID)
-@@ -1668,12 +1686,20 @@ object CourseReminderHelper {
+@@ -1850,12 +1868,20 @@ object CourseReminderHelper {
       * 原实现每次发通知都 `createNotificationChannel` ×2 —— 那就是 2 次 binder 往返 +
       * 2 个 NotificationChannel 分配。课中提醒是**每分钟**发一次的，
       * 等于每分钟白付两次跨进程调用去设置同一个通道。
@@ -226,7 +228,7 @@ index 3756db7..480d1e7 100644
          val manager = context.getSystemService(NotificationManager::class.java)
          val alertChannel = NotificationChannel(
              CHANNEL_REMINDER_ID,
-@@ -1701,7 +1727,7 @@ object CourseReminderHelper {
+@@ -1883,7 +1909,7 @@ object CourseReminderHelper {
          }
          manager.createNotificationChannel(alertChannel)
          manager.createNotificationChannel(liveChannel)
@@ -236,7 +238,7 @@ index 3756db7..480d1e7 100644
  
      fun showReminderNotification(
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
-index 0f50f2c..0cdf674 100644
+index c00d56e..38ac3bc 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 @@ -28,7 +28,9 @@ object IslandNotificationHelper {
@@ -339,7 +341,7 @@ index 0f50f2c..0cdf674 100644
          val aodTitle = if (aodMode == 1) classroom ?: courseName ?: title else courseName ?: title
  
          val paramV2 = JSONObject().apply {
-@@ -807,7 +826,9 @@ object IslandNotificationHelper {
+@@ -803,7 +822,9 @@ object IslandNotificationHelper {
      /**
       * 「明天返校」超级岛（返校日前一晚）。
       *
@@ -350,7 +352,7 @@ index 0f50f2c..0cdf674 100644
       * 只换成静态文案、不带倒计时。**不新开通道，也不触碰 XMSF 绕白名单那段逻辑。**
       */
      fun sendReturnDayIslandNotification(
-@@ -818,7 +839,10 @@ object IslandNotificationHelper {
+@@ -814,7 +835,10 @@ object IslandNotificationHelper {
          notificationId: Int = ISLAND_RETURN_DAY_NOTIFICATION_ID,
          /** 形如 "中秋最后一天"；有则在标题里点明是哪段假期 */
          holidayLabel: String? = null,
@@ -362,7 +364,7 @@ index 0f50f2c..0cdf674 100644
          progressPercent: Int? = null,
      ) {
          val title = if (holidayLabel.isNullOrBlank()) "明天返校" else "明天返校 · $holidayLabel"
-@@ -840,13 +864,26 @@ object IslandNotificationHelper {
+@@ -836,13 +860,26 @@ object IslandNotificationHelper {
              classroom = "返校",
              courseStartMillis = null,
          )
@@ -396,7 +398,7 @@ index 0f50f2c..0cdf674 100644
                      "progressInfo",
                      JSONObject().apply {
                          put("progress", progressPercent.coerceIn(0, 100))
-@@ -854,9 +891,9 @@ object IslandNotificationHelper {
+@@ -850,9 +887,9 @@ object IslandNotificationHelper {
                          put("colorProgressEnd", "#FF2196F3")
                      },
                  )

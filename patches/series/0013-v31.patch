@@ -1,4 +1,4 @@
-From c5fa8c8620c13afd420d88e09c673bbe365851be Mon Sep 17 00:00:00 2001
+From e50f8346ca2e46ef944bbfbfab6a2207b70ec8a4 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 13:11:13 +0800
 Subject: [PATCH 13/19] =?UTF-8?q?v31:=20=E4=BF=AE=E3=80=8C=E8=BF=94?=
@@ -13,7 +13,7 @@ Content-Transfer-Encoding: 8bit
 
 真机实测那一屏：
     标题：明天返校 · 中秋节最后一天
-    正文：示例课｜第11节 18:30
+    正文：道法｜第11节 18:30
 
 根因：ReturnDayReminder.isReturnDay(d) = isRestDay(d) && isSchoolDay(d+1)，
 即「返校日」就是假期最后一天。今天正是最后一天，普通节次被假期清空，
@@ -43,6 +43,8 @@ Content-Transfer-Encoding: 8bit
 11 项源码约束（只有一份实现 / 岛确实调它 / 写死字面量只剩 returnDayVerb 内部一处 /
 标题·兜底·短文本都用 verb / 三个调用点都传 targetDate / 16:00 口径互补）+
 1 项前提核对（isReturnDay 公式）。assembleRelease 通过；签名与 sha256 通过。
+
+(cherry picked from commit d96c0e3221068346985a883dcdcc4cc895a6581f)
 ---
  .../haooz/chedule/reminder/AlarmReceiver.kt   |  4 ++
  .../chedule/reminder/CourseReminderHelper.kt  | 42 +++++++++++++++++--
@@ -72,10 +74,10 @@ index f8d3d13..9ab603e 100644
                              progressPercent = span?.progressPercent,
                          )
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 84f9e3a..35e42a0 100644
+index fa8219a..2130fe0 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-@@ -1468,12 +1468,42 @@ object CourseReminderHelper {
+@@ -1649,12 +1649,42 @@ object CourseReminderHelper {
              courseName = first.name,
              section = first.getTimeDisplayText(),
              startTime = startTime,
@@ -93,7 +95,7 @@ index 84f9e3a..35e42a0 100644
 +     * `ReturnDayReminder.isReturnDay(d) = isRestDay(d) && isSchoolDay(d+1)`，
 +     * 所以「返校日」就是假期最后一天：被「返校节次豁免」放出来的课（例如第11节 18:30 晚自习）
 +     * 是**今晚**的课。此时标题说「明天返校」、正文列今晚的课，自相矛盾
-+     * （真机实测：标题「明天返校 · 中秋节最后一天」，正文「示例课｜第11节 18:30」）。
++     * （真机实测：标题「明天返校 · 中秋节最后一天」，正文「道法｜第11节 18:30」）。
 +     * 而清单通知那边（prepNotificationTitle）一直说的是「今晚返校」 ——
 +     * 同一天两条提醒说不同的话，本质就是这个写死造成的。
 +     *
@@ -118,7 +120,7 @@ index 84f9e3a..35e42a0 100644
      /**
       * 「明天返校」原生实时动态通知。
       *
-@@ -1486,19 +1516,23 @@ object CourseReminderHelper {
+@@ -1667,19 +1697,23 @@ object CourseReminderHelper {
          courseName: String,
          section: String,
          startTime: String,
@@ -144,7 +146,7 @@ index 84f9e3a..35e42a0 100644
          }
          val contentIntent = PendingIntent.getActivity(
              context,
-@@ -1538,7 +1572,7 @@ object CourseReminderHelper {
+@@ -1719,7 +1753,7 @@ object CourseReminderHelper {
                  )
              }
              promotedCatching("returnDay.setRequestPromotedOngoing") { styleBuilder.setRequestPromotedOngoing(true) }
@@ -153,7 +155,7 @@ index 84f9e3a..35e42a0 100644
              manager.notify(
                  RETURN_DAY_LIVE_ID,
                  styleBuilder.build().apply {
-@@ -1563,7 +1597,7 @@ object CourseReminderHelper {
+@@ -1744,7 +1778,7 @@ object CourseReminderHelper {
                      Notification.CATEGORY_REMINDER
                  }
              )
@@ -163,10 +165,10 @@ index 84f9e3a..35e42a0 100644
              .setTimeoutAfter(timeoutMs)
          if (progressPercent != null) {
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
-index aacc9bf..04fae65 100644
+index 3bed194..aba68b4 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
-@@ -944,7 +944,8 @@ object IslandNotificationHelper {
+@@ -940,7 +940,8 @@ object IslandNotificationHelper {
      }
  
      /**
@@ -176,7 +178,7 @@ index aacc9bf..04fae65 100644
       *
       * 复用课前倒计时的组件与发送路径。注意课前/已上课那套其实是
       * **模板9**（文本组件2 + 识别图形组件1 + 按钮组件2），不是模板2；
-@@ -956,6 +957,8 @@ object IslandNotificationHelper {
+@@ -952,6 +953,8 @@ object IslandNotificationHelper {
          courseName: String,
          section: String,
          startTime: String,
@@ -185,7 +187,7 @@ index aacc9bf..04fae65 100644
          notificationId: Int = ISLAND_RETURN_DAY_NOTIFICATION_ID,
          /** 形如 "中秋最后一天"；有则在标题里点明是哪段假期 */
          holidayLabel: String? = null,
-@@ -965,13 +968,15 @@ object IslandNotificationHelper {
+@@ -961,13 +964,15 @@ object IslandNotificationHelper {
           */
          progressPercent: Int? = null,
      ) {
@@ -203,7 +205,7 @@ index aacc9bf..04fae65 100644
          }
          // courseStartMillis = null → 静态岛（不画倒计时），左右槽位回落到课程名/教室
          val paramsRaw = buildIslandParamsJson(
-@@ -988,7 +993,7 @@ object IslandNotificationHelper {
+@@ -984,7 +989,7 @@ object IslandNotificationHelper {
          // 传 courseStartMillis=null 会落到"已上课"态，于是：
          //   · hintInfo 的 title/content 被写成「已上课 / 现在」（模板库里它是描述"当前状况"的组件）
          //   · B 区 textInfo.title 也被写成「已上课」
@@ -212,7 +214,7 @@ index aacc9bf..04fae65 100644
          // 处理：去掉 hintInfo，并把 B 区标题换成节次 —— 组件组合正好变成模板库里的
          // **模板6（文本组件2 + 识别图形组件1 + 进度组件2）**，
          // 而不是原来那个"文本2 + 图形1 + 按钮2 + 进度"的四组件、模板清单里不存在的组合。
-@@ -998,10 +1003,10 @@ object IslandNotificationHelper {
+@@ -994,10 +999,10 @@ object IslandNotificationHelper {
              val paramV2 = root.optJSONObject("param_v2") ?: return@runCatching paramsRaw
              paramV2.remove("hintInfo")
              // timeout 的语义是"焦点通知多久后消失"（min）。静态提醒走的是 counting=false 分支，
