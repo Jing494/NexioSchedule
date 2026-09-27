@@ -1,0 +1,320 @@
+From c70f7201b322209067f1038439dc70f79eb07a4b Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Sun, 27 Sep 2026 11:27:44 +0800
+Subject: [PATCH 11/16] =?UTF-8?q?v29:=20=E6=AF=9B=E7=8E=BB=E7=92=83?=
+ =?UTF-8?q?=E9=99=8D=E7=BA=A7=E4=BB=8E=E5=B8=83=E5=B0=94=E7=A1=AC=E5=88=87?=
+ =?UTF-8?q?=E6=94=B9=E4=B8=BA=E7=B3=BB=E6=95=B0=E6=B7=A1=E5=85=A5=E6=B7=A1?=
+ =?UTF-8?q?=E5=87=BA=EF=BC=88=E4=BF=AE=E3=80=8C=E7=AA=81=E5=85=80=E3=80=8D?=
+ =?UTF-8?q?=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+问题：v28 把降级做成全局布尔开关，滑动一开始整屏玻璃在**同一帧**从"有折射的玻璃"
+变成"平的色块"，停下又整片弹回来。全局状态瞬时切换人眼一定抓得到 —— 实测反馈就是
+"感觉有点突兀"。这不是"降级本身不行"，而是"切换方式不行"。
+
+改法：
+- GlassPerf.enabled(Boolean) → GlassPerf.anim(Animatable<Float>)，读取入口改为
+  glassPerfFactor()，取值 1f..0f。
+- 驱动协程改为 animateTo：起滑 150ms 淡出；停滑先 delay(250) 防抖、再 250ms 淡入
+  （恢复比降级慢一点，观感上"长回来"更自然；防抖保留，否则惯性尾部会连续开关）。
+- 四个 effects 调用点（CourseCard / DayColumn / TodayScreen×2）把 blur 半径与 lens
+  强度乘以系数；**系数 <= 0.01 时一个 effect 都不追加** —— 这样稳态依然是
+  RenderEffect == null，canDirectBlit 直采共享预模糊层、跳过每卡离屏录制的那笔收益
+  完整保留。收益结构没有被"柔和化"削弱。
+- 边光不再硬跳过，改为 layer.alpha = intensity * fade 连续淡出。
+  特意**不去改 intensity 本身**：EdgeLightModifier 的 recordedIntensity 一旦失配
+  就会每帧重新录制，那就成了新的性能坑。
+
+代价（如实记）：每条过渡约有 9 帧处于"部分降级"（这几帧仍会录制），
+且 < 150ms 的短暂滑动根本到不了降级稳态 —— 等于这种滑动完全没降级。
+
+验证：新增 dist-v29/verify_glass_v29.py（26 项源码一致性核对，全过：
+旧布尔开关无残留 / 四个调用点都乘系数且有归零守卫 / 系数没有任何一处进 remember 键 /
+驱动确实是 150-250-250 / 边光乘 alpha 未改 intensity / 极端系数不产生负半径）；
+assembleRelease BUILD SUCCESSFUL；apksigner + sha256 + badging 通过；
+dex 独立佐证 glassPerfFactor FOUND、glassBlurEnabled MISSING。
+---
+ .../chedule/ui/activities/MainActivity.kt     | 19 ++++---
+ .../haooz/chedule/ui/components/CourseCard.kt | 12 +++--
+ .../haooz/chedule/ui/components/DayColumn.kt  | 12 +++--
+ .../ui/effects/edgelight/EdgeLightModifier.kt | 14 ++++--
+ .../haooz/chedule/ui/screens/TodayScreen.kt   | 36 +++++++++-----
+ .../com/haooz/chedule/ui/utils/GlassPerf.kt   | 49 +++++++++++--------
+ 6 files changed, 89 insertions(+), 53 deletions(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
+index dbeb6e3..4739072 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
+@@ -2547,14 +2547,15 @@ fun CourseScheduleApp() {
+             else -> 1f
+         }
+         /*
+-         * 毛玻璃降级：滑动/翻页进行中把 blur + lens 关掉，停下 180ms 再恢复。
++         * 毛玻璃降级：滑动/翻页进行中按**系数**淡出，停下淡入。
++         *
++         * 不能做成布尔硬切：那样滑动一开始整屏玻璃同一帧变平、停下整片弹回，
++         * 实测反馈"感觉有点突兀"。现在 150ms 淡出 / 停滑 250ms 后 250ms 淡入。
+          *
+          * 这里特意用 snapshotFlow 而不是在 composition 里读这些 isScrollInProgress ——
+          * 那会让整个四千多行的 body 在每次滑动开始/结束时重跑一遍。
+-         * 真正"读"这个开关的地方是各卡片 effects lambda 的**绘制期**，所以翻面只失效绘制层，
+-         * 一次重组都不会产生。
+-         *
+-         * 180ms 的滞后是为了防抖：惯性滑动尾部会连续开关几次，没有滞后就会看到玻璃闪烁。
++         * 真正"读"这个系数的地方是各卡片 effects lambda / DrawModifierNode.draw 的**绘制期**，
++         * 所以过渡的每一帧只失效绘制层，一次重组都不会产生。
+          */
+         LaunchedEffect(
+             scheduleScrollState, pagerState, todayPagerState, mainPagerState, todayListScrollInProgress
+@@ -2569,10 +2570,12 @@ fun CourseScheduleApp() {
+                 .distinctUntilChanged()
+                 .collectLatest { scrolling ->
+                     if (scrolling) {
+-                        GlassPerf.enabled.value = false
++                        // 淡出比淡入快：起滑时尽快省下渲染开销，观感上"变糊"要跟手
++                        GlassPerf.anim.animateTo(0f, tween(durationMillis = 150))
+                     } else {
+-                        delay(180)
+-                        GlassPerf.enabled.value = true
++                        // 250ms 防抖：惯性滑行尾部会连续开关几次，没有滞后会看到玻璃闪烁
++                        delay(250)
++                        GlassPerf.anim.animateTo(1f, tween(durationMillis = 250))
+                     }
+                 }
+         }
+diff --git a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
+index 8b60ff3..1143d68 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
+@@ -48,7 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import com.haooz.chedule.data.Course
+-import com.haooz.chedule.ui.utils.glassBlurEnabled
++import com.haooz.chedule.ui.utils.glassPerfFactor
+ import com.haooz.chedule.ui.utils.isAppDarkTheme
+ import com.kyant.backdrop.Backdrop
+ import com.kyant.backdrop.backdrops.SharedBlurBackdrop
+@@ -203,12 +203,16 @@ fun CourseCard(
+                         // 这两项是课表页最贵的两笔 —— 每帧 × 每张可见卡各一次 GPU 模糊 + 一次 AGSL 着色器。
+                         // 只在**绘制期**读开关，绝不进 remember 的键：否则 lambda 身份每次翻面都变，
+                         // drawBackdrop 会判不等并整块重建绘制缓存（那正是 v22 椭圆伪影的同一类坑）。
+-                        if (glassBlurEnabled()) {
++                        // 滑动/翻页进行中：按全局系数连续淡出（不是硬切）；系数归零时
++                        // **一个 effect 都不追加** → RenderEffect 为空 → 走 canDirectBlit
++                        // 直采共享预模糊层，连每卡离屏录制一起省掉。
++                        val glassFactor = glassPerfFactor()
++                        if (glassFactor > 0.01f) {
+                             if (!isSharedBlur) {
+-                                blur(blurPx)
++                                blur(blurPx * glassFactor)
+                             }
+                             if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
+-                                lens(lensRadiusPx, lensStrengthPx)
++                                lens(lensRadiusPx * glassFactor, lensStrengthPx * glassFactor)
+                             }
+                         }
+                     }
+diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
+index 89a3707..d0397ec 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
+@@ -46,7 +46,7 @@ import com.haooz.chedule.data.Course
+ import com.haooz.chedule.data.ReturnDayReminder
+ import com.haooz.chedule.ui.effects.edgelight.edgeLight
+ import com.haooz.chedule.ui.effects.edgelight.rememberCourseCardEdgeLight
+-import com.haooz.chedule.ui.utils.glassBlurEnabled
++import com.haooz.chedule.ui.utils.glassPerfFactor
+ import com.kyant.backdrop.Backdrop
+ import com.kyant.backdrop.backdrops.SharedBlurBackdrop
+ import com.kyant.backdrop.drawBackdrop
+@@ -743,12 +743,16 @@ fun SpecialBandOverlay(
+                 remember(isSharedBlur, blurPx, lensRadiusPx, lensStrengthPx, cardRefraction) {
+                     {
+                         // 特殊块卡片同 CourseCard：滑动中降级 blur+lens（绘制期读、不进键）
+-                        if (glassBlurEnabled()) {
++                        // 滑动/翻页进行中：按全局系数连续淡出（不是硬切）；系数归零时
++                        // **一个 effect 都不追加** → RenderEffect 为空 → 走 canDirectBlit
++                        // 直采共享预模糊层，连每卡离屏录制一起省掉。
++                        val glassFactor = glassPerfFactor()
++                        if (glassFactor > 0.01f) {
+                             if (!isSharedBlur) {
+-                                blur(blurPx)
++                                blur(blurPx * glassFactor)
+                             }
+                             if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
+-                                lens(lensRadiusPx, lensStrengthPx)
++                                lens(lensRadiusPx * glassFactor, lensStrengthPx * glassFactor)
+                             }
+                         }
+                     }
+diff --git a/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt b/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
+index e2dbb30..5829d18 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
+@@ -112,11 +112,14 @@ internal class EdgeLightNode(
+ 
+         drawContent()
+ 
+-        // 滑动/翻页进行中降级：跳过边光描边。
++        // 滑动/翻页进行中降级：边光随全局系数**连续淡出**，不是硬切 ——
++        // 描边是很细的一条线，硬切反而比玻璃更扎眼。layer.alpha 是可连续量，
++        // 乘上去不会触发重新录制（recordedIntensity 比的是原始 intensity，不变）。
+         // 它是"每张卡每帧一次的前景 RuntimeShader + 一次 native SkMaskFilter"，
+-        // 与 blur/lens 同属每帧每卡的开销。读的是同一个全局开关 ——
+-        // DrawModifierNode.draw 里的快照读会登记成绘制期依赖，翻面只失效绘制、不触发重组。
+-        if (!com.haooz.chedule.ui.utils.glassBlurEnabled()) return
++        // 与 blur/lens 同属每帧每卡的开销。读的是同一个全局系数 ——
++        // DrawModifierNode.draw 里的快照读会登记成绘制期依赖，变化只失效绘制、不触发重组。
++        val edgeLightFade = com.haooz.chedule.ui.utils.glassPerfFactor()
++        if (edgeLightFade <= 0.01f) return
+ 
+         val edgeLightLayer = edgeLightLayer
+         if (edgeLightLayer != null) {
+@@ -205,7 +208,8 @@ internal class EdgeLightNode(
+                 }
+             }
+ 
+-            edgeLightLayer.alpha = intensity
++            // 乘淡出系数（不改 intensity：改了会触发 recordedIntensity 失配、每帧重录）
++            edgeLightLayer.alpha = intensity * edgeLightFade
+ 
+             translate(-1f, -1f) {
+                 drawLayer(edgeLightLayer)
+diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
+index b3c814c..1b48d75 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
+@@ -62,7 +62,7 @@ import com.haooz.chedule.ui.basic.collapsibleTopInset
+ import com.haooz.chedule.ui.effects.edgelight.edgeLight
+ import com.haooz.chedule.ui.effects.edgelight.rememberCardEdgeLight
+ import com.haooz.chedule.ui.effects.edgelight.rememberDefaultEdgeLight
+-import com.haooz.chedule.ui.utils.glassBlurEnabled
++import com.haooz.chedule.ui.utils.glassPerfFactor
+ import com.haooz.chedule.ui.utils.isAppDarkTheme
+ import com.haooz.chedule.ui.utils.overScrollVertical
+ import com.haooz.chedule.ui.utils.pagerAxisTakeoverGesture
+@@ -125,13 +125,20 @@ fun BlurCard(
+         val cardEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
+             remember(blurRadius, refraction) {
+                 {
+-                    // 滑动/翻页进行中降级：跳过 blur + lens（每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器）。
+-                    // 只在**绘制期**读开关，绝不进 remember 的键 —— 否则 lambda 身份翻面即变，
++                    // 滑动/翻页进行中降级：按全局系数连续淡出 blur + lens
++                    //（它们是每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器），
++                    // 系数归零时一个 effect 都不追加 → RenderEffect 为空 →
++                    // 走 canDirectBlit 直采共享预模糊层，连每卡离屏录制一起省掉。
++                    // 只在**绘制期**读系数，绝不进 remember 的键 —— 否则 lambda 身份随系数变化，
+                     // drawBackdrop 会判不等并整块重建绘制缓存（v22 那个椭圆伪影是同一类坑）。
+-                    if (glassBlurEnabled()) {
+-                        blur(blurRadius.dp.toPx())
++                    val glassFactor = glassPerfFactor()
++                    if (glassFactor > 0.01f) {
++                        blur(blurRadius.dp.toPx() * glassFactor)
+                         if (refraction != CardRefractionLevel.OFF) {
+-                            lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
++                            lens(
++                                refraction.lensRadiusDp.dp.toPx() * glassFactor,
++                                refraction.lensStrengthDp.dp.toPx() * glassFactor
++                            )
+                         }
+                     }
+                 }
+@@ -1595,13 +1602,20 @@ private fun CourseSectionTitle(
+         val sectionEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
+             remember(blurRadius, refraction) {
+                 {
+-                    // 滑动/翻页进行中降级：跳过 blur + lens（每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器）。
+-                    // 只在**绘制期**读开关，绝不进 remember 的键 —— 否则 lambda 身份翻面即变，
++                    // 滑动/翻页进行中降级：按全局系数连续淡出 blur + lens
++                    //（它们是每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器），
++                    // 系数归零时一个 effect 都不追加 → RenderEffect 为空 →
++                    // 走 canDirectBlit 直采共享预模糊层，连每卡离屏录制一起省掉。
++                    // 只在**绘制期**读系数，绝不进 remember 的键 —— 否则 lambda 身份随系数变化，
+                     // drawBackdrop 会判不等并整块重建绘制缓存（v22 那个椭圆伪影是同一类坑）。
+-                    if (glassBlurEnabled()) {
+-                        blur(blurRadius.dp.toPx())
++                    val glassFactor = glassPerfFactor()
++                    if (glassFactor > 0.01f) {
++                        blur(blurRadius.dp.toPx() * glassFactor)
+                         if (refraction != CardRefractionLevel.OFF) {
+-                            lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
++                            lens(
++                                refraction.lensRadiusDp.dp.toPx() * glassFactor,
++                                refraction.lensStrengthDp.dp.toPx() * glassFactor
++                            )
+                         }
+                     }
+                 }
+diff --git a/app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt b/app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
+index 271319f..6b96f18 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
+@@ -1,33 +1,40 @@
+ package com.haooz.chedule.ui.utils
+ 
+-import androidx.compose.runtime.MutableState
+-import androidx.compose.runtime.mutableStateOf
++import androidx.compose.animation.core.Animatable
++import androidx.compose.animation.core.AnimationVector1D
+ 
+ /**
+- * 「毛玻璃是否全量渲染」的全局开关 —— 滑动/翻页进行中降级，停下恢复。
++ * 「毛玻璃降级」的全局系数 —— 1f = 全量渲染，0f = 全降级。
+  *
+- * 为什么是全局单例而不是参数一路传下去：
+- * 课表卡、今日页玻璃卡、边光描边分散在 4~5 个文件里，参数化要穿一整条调用链，
+- * 而这些调用点**都已经在绘制期读状态**了（drawBackdrop 的 effects / onDrawSurface lambda、
+- * EdgeLightNode.draw），所以只要提供一个稳定的读取入口，翻面就是"只失效绘制、不触发重组"。
++ * 为什么是系数而不是布尔开关：先做成开关时，滑动一开始整屏玻璃**同一帧**从
++ * "有折射的玻璃"变成"平的色块"，停下又整片弹回来。全局状态硬切换人眼一定抓得到
++ * （实测反馈："感觉有点突兀"）。现在由 MainActivity 的驱动协程做
++ * **150ms 淡出 / 250ms 淡入**，观感是"滑起来慢慢变糊、停下慢慢长回来"。
+  *
+- * 用法（**务必在 lambda 里读，不要读进 composition**）：
++ * 关键：稳态（系数降到 <= 0.01）时各调用点**一个 effect 都不追加** →
++ * `RenderEffect` 为空 → 走 `canDirectBlit` 直采共享预模糊层，
++ * 连每卡离屏录制一起省掉。收益结构没有被"柔和化"削弱。
++ *
++ * 用法（**务必在 effects lambda / draw 里读；不要读进 composition，也不要进 remember 的键**）：
+  * ```
+- * effects = remember(...) { { if (glassBlurEnabled()) { blur(...); lens(...) } } }
++ * effects = remember(...) {
++ *     {
++ *         val f = glassPerfFactor()
++ *         if (f > 0.01f) { blur(blurPx * f); lens(r * f, s * f) }
++ *     }
++ * }
+  * ```
+- * 关键：**不要把 glassBlurEnabled() 的结果进 remember 的键** ——
+- * 那会让 lambda 身份每次翻面都变，等于把 drawBackdrop 的绘制缓存整块重建
+- * （v22 那个"椭圆伪影"就是这个坑的同一类：实例稳定但内容会变的东西不能当键）。
++ * 进 remember 的键 → lambda 身份随系数每次变化，`drawBackdrop` 会判不等并整块重建
++ * 绘制缓存（v22 那个"椭圆伪影"是同一类坑）；读进 composition → 四千多行的壳 body
++ * 会在每个过渡帧完整重跑一遍（v28 的 ③ 刚把这类问题修掉）。
+  */
+ object GlassPerf {
+-    /** true = 全量毛玻璃；false = 降级（跳过 blur / lens 与边光描边） */
+-    val enabled: MutableState<Boolean> = mutableStateOf(true)
++    /**
++     * 过渡由驱动协程 `animateTo` 推进。放 Animatable 而不是 mutableStateOf，
++     * 是为了让"谁推进动画"只有一个来源，且被取消/重建时保留当前值（不会闪回 1f）。
++     */
++    val anim: Animatable<Float, AnimationVector1D> = Animatable(1f)
+ }
+ 
+-/**
+- * 绘制期读取：当前是否应该画全量毛玻璃（不要再加 inline：编译器提示收益不显著，
+- * 而且内联会把快照读取点复制到每个调用点，反而不利于排查）。
+- * 在 DrawModifierNode.draw / drawBackdrop 的 lambda 里调用会登记"绘制期依赖"，
+- * 翻面时只失效这一层绘制，不会触发任何重组。
+- */
+-fun glassBlurEnabled(): Boolean = GlassPerf.enabled.value
++/** 绘制期读取：当前毛玻璃渲染到几成。1f = 全量，0f = 全降级。 */
++fun glassPerfFactor(): Float = GlassPerf.anim.value
+-- 
+2.55.0
+

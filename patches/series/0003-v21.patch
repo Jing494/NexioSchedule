@@ -1,0 +1,1485 @@
+From 99990befae040cf061b0e73c45b7651d7385f9b6 Mon Sep 17 00:00:00 2001
+From: dsh-local <dsh@local>
+Date: Sat, 26 Sep 2026 23:40:58 +0800
+Subject: [PATCH 03/16] =?UTF-8?q?=E5=AE=A1=E8=AE=A1=E4=BF=AE=E5=A4=8D=20+?=
+ =?UTF-8?q?=20=E6=80=A7=E8=83=BD=E4=BC=98=E5=8C=96=EF=BC=88v21=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+审计（1f46721..HEAD 新增代码）
+- 修 ReturnDayReminder.isReturnDay 不看总开关：关掉功能后「明天返校」岛/实况照样推
+- 修 maybeUpdateReturnDayLiveNotification 用 parseTimeToTodayMillis 解析「明天」→ 时间戳已过，
+  该分支永远提前 return（新增 millisAtDate 按目标日期算）；窗口 12h→24h（返校提醒是前一晚推的）
+- 修 statusText 写死今天：次日小部件上会说错日子；假期余额限定当天显示，避免串味
+- 修返校/余额设置改动不 bump 假期版本号 → 今日页状态卡与课表页豁免标记长期显示旧状态
+- 修返校准备清单文案：写死今晚返校/中午与实际可配时间冲突
+- 修 CourseReminderScreen 岛开关在不支持机型上被 disable → 用户既关不掉也开不了
+- 修 DayColumn displayCourse remember 漏 course 键：改课名/颜色后分段卡显示旧数据
+- sectionRangeTimeText 对无 '-' 的时间串会产出 08:00–08:00
+
+性能
+- HolidayManager.load 加版本号失效的解析缓存（原来每次调用都 JSON 解析；
+  isHoliday/workSwap 每次读两年 → 被刷新链放大到三位数/分钟）；isHoliday 去掉裸 Log.d
+- 刷新链：课中不再无条件每分钟唤醒——只有存在分钟级消费者（倒计时/岛/实况/已放置小组件）才分钟级
+- WidgetUpdateCache 加 60s 负缓存：没放小组件时不再每次 hop 打 4 次 getAppWidgetIds
+- checkPendingPreClassReminders 先判窗口再算去重键（原来每课每跳都解析一次 SP JSON）
+- ensureNotificationChannels 一次性建通道（原来每次发通知 2 次 createNotificationChannel）
+- isIslandSupported 每进程只反射一次
+- 余额/清单精确闹钟去抖（目标时刻未变不重排 setAlarmClock）
+- MainActivity：把 9 个 Animatable 的 .value 读取从 composition 移到绘制期
+  （原来每动画帧整棵 4100 行 body 重跑）；主内容模糊改在已有 graphicsLayer 里设 renderEffect
+- CollapsibleTopAppBar：overScrollState.offset 移出 remember 键
+- MainActivity isWeekHoliday 加 remember（内部遍历全部课程）
+- TodayScreen 课程分组的 map+3 list 加 remember；BlurCard 的 drawBackdrop lambda 加 remember
+- DayColumn computeCustomTimeLayout 加 remember
+- EdgeLightElement 值重载按值比较（原来每次重组都失效 outline 缓存）
+- AlarmReceiver 去掉每次闹钟都跑的 SimpleDateFormat 调试日志；6 处裸 Log.d 改走门控 logD
+---
+ app/build.gradle.kts                          |   2 +-
+ .../com/haooz/chedule/data/HolidayManager.kt  | 101 +++++++---
+ .../haooz/chedule/data/ReturnDayReminder.kt   |  58 ++++--
+ .../haooz/chedule/reminder/AlarmReceiver.kt   |  16 +-
+ .../chedule/reminder/CourseReminderHelper.kt  | 176 +++++++++++++++---
+ .../reminder/IslandNotificationHelper.kt      |  19 +-
+ .../ui/activities/CourseReminderScreen.kt     |  10 +-
+ .../ui/activities/HolidaySettingsScreen.kt    |  31 +--
+ .../chedule/ui/activities/MainActivity.kt     |  78 +++++---
+ .../chedule/ui/basic/CollapsibleTopAppBar.kt  |   6 +-
+ .../haooz/chedule/ui/basic/ShortcutMenu.kt    |  28 ++-
+ .../haooz/chedule/ui/components/DayColumn.kt  |  31 +--
+ .../ui/effects/edgelight/EdgeLightModifier.kt |  22 ++-
+ .../ui/screens/CustomizeScheduleScreen.kt     | 124 +++++++-----
+ .../haooz/chedule/ui/screens/TodayScreen.kt   |  90 ++++++---
+ .../haooz/chedule/widget/WidgetUpdateCache.kt |  25 +++
+ 16 files changed, 612 insertions(+), 205 deletions(-)
+
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 249f77a..ca55f20 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -17,7 +17,7 @@ android {
+         minSdk = 31
+         targetSdk = 37
+         versionCode = 156
+-        versionName = "1.5.6-0926"
++        versionName = "1.5.6-0926-audit"
+ 
+         ndk {
+             abiFilters += listOf("arm64-v8a")
+diff --git a/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt b/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt
+index fc776d1..91596cb 100644
+--- a/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt
++++ b/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt
+@@ -32,22 +32,50 @@ object HolidayManager {
+         }
+     }
+ 
+-    fun load(context: Context, year: Int): List<Entry> {
++    /**
++     * 解析结果的进程内缓存。
++     *
++     * 原实现**每次调用都从 SharedPreferences 取字符串并重新 JSON 解析**，
++     * 而 [isHoliday] / [workSwap] 每次要读两个年份 → 单次判定最多 4 次解析；
++     * 再被 `ReturnDayReminder.isReturnDay`（×2 天）与刷新链放大后，
++     * 一分钟内的解析次数是三位数。缓存以 [KEY_VERSION] 为失效依据：
++     * 任何一次 [save] 都会改版本号，缓存随之整体失效，所以不存在读到旧数据的问题。
++     */
++    private val parseCache = HashMap<Int, List<Entry>>()
++    private var parseCacheVersion = Long.MIN_VALUE
++
++    @Synchronized
++    private fun cached(context: Context, year: Int): List<Entry> {
++        val version = getVersion(context)
++        if (version != parseCacheVersion) {
++            parseCache.clear()
++            parseCacheVersion = version
++        }
++        parseCache[year]?.let { return it }
+         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+-            .getString("$KEY_PREFIX$year", null) ?: return emptyList()
+-        return runCatching {
+-            val array = JSONArray(raw)
+-            List(array.length()) { index ->
+-                val item = array.getJSONObject(index)
+-                Entry(
+-                    item.optString("date"), item.optString("endDate"), item.optString("name"),
+-                    item.optInt("type"), item.optInt("followWeek", -1),
+-                    item.optInt("followWeekday", -1), item.optBoolean("custom")
+-                )
+-            }
+-        }.getOrDefault(emptyList())
++            .getString("$KEY_PREFIX$year", null)
++        val parsed = if (raw == null) {
++            emptyList()
++        } else {
++            runCatching {
++                val array = JSONArray(raw)
++                List(array.length()) { index ->
++                    val item = array.getJSONObject(index)
++                    Entry(
++                        item.optString("date"), item.optString("endDate"), item.optString("name"),
++                        item.optInt("type"), item.optInt("followWeek", -1),
++                        item.optInt("followWeekday", -1), item.optBoolean("custom")
++                    )
++                }
++            }.getOrDefault(emptyList())
++        }
++        parseCache[year] = parsed
++        return parsed
+     }
+ 
++    /** 返回的列表是缓存对象，调用方**只读**；需要改请先 `.toMutableList()`。 */
++    fun load(context: Context, year: Int): List<Entry> = cached(context, year)
++
+     fun save(context: Context, year: Int, entries: List<Entry>) {
+         val array = JSONArray().apply { entries.sortedBy { it.date }.forEach { put(it.toJson()) } }
+         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+@@ -64,19 +92,38 @@ object HolidayManager {
+         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_VERSION, 0L)
+     }
+ 
++    /**
++     * 让「假期相关设置」也参与版本号：返校节次豁免 / 假期余额 / 准备清单这些开关
++     * 并不经过 [save]，若不 bump 版本号，`semesterStartMonday`+`holidayVersion` 这类
++     * `remember(...)` 键不变 → 今日页状态卡与课表页豁免标记会一直显示旧状态。
++     */
++    fun notifyConfigChanged(context: Context) {
++        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
++        val prev = prefs.getLong(KEY_VERSION, 0L)
++        prefs.edit { putLong(KEY_VERSION, maxOf(System.currentTimeMillis(), prev + 1L)) }
++    }
++
+     fun isHoliday(context: Context, date: LocalDate): Boolean {
+-        val y2026 = load(context, date.year)
+-        val y2025 = load(context, date.year - 1)
+-        val hit = (y2026 + y2025)
+-            .filter { it.type == TYPE_HOLIDAY }
+-            .firstOrNull { it.matches(date.toString()) }
+-        android.util.Log.d("CourseReminder", "isHoliday: date=$date y${date.year}=${y2026.size} y${date.year - 1}=${y2025.size} hit=${hit?.name ?: "none"} date=${hit?.date ?: "-"} end=${hit?.endDate ?: "-"}")
+-        return hit != null
++        val key = date.toString()
++        for (entry in cached(context, date.year)) {
++            if (entry.type == TYPE_HOLIDAY && entry.matches(key)) return true
++        }
++        for (entry in cached(context, date.year - 1)) {
++            if (entry.type == TYPE_HOLIDAY && entry.matches(key)) return true
++        }
++        return false
+     }
+ 
+-    fun workSwap(context: Context, date: LocalDate): Entry? =
+-        (load(context, date.year) + load(context, date.year - 1))
+-            .firstOrNull { it.type == TYPE_WORKSWAP && it.matches(date.toString()) }
++    fun workSwap(context: Context, date: LocalDate): Entry? {
++        val key = date.toString()
++        for (entry in cached(context, date.year)) {
++            if (entry.type == TYPE_WORKSWAP && entry.matches(key)) return entry
++        }
++        for (entry in cached(context, date.year - 1)) {
++            if (entry.type == TYPE_WORKSWAP && entry.matches(key)) return entry
++        }
++        return null
++    }
+ 
+     fun mergeApiEntries(context: Context, year: Int, apiEntries: List<Entry>) {
+         val existing = load(context, year)
+@@ -86,7 +133,13 @@ object HolidayManager {
+     }
+ 
+     fun clear(context: Context, year: Int) {
+-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { remove("$KEY_PREFIX$year") }
++        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
++        val prev = prefs.getLong(KEY_VERSION, 0L)
++        // 必须同时 bump 版本号：解析缓存以版本号为失效依据，否则清空后仍读得到旧数据
++        prefs.edit {
++            remove("$KEY_PREFIX$year")
++            putLong(KEY_VERSION, maxOf(System.currentTimeMillis(), prev + 1L))
++        }
+     }
+ 
+     fun parseApiResponse(json: String): List<Entry> = runCatching {
+diff --git a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
+index 9c07ff3..6df9488 100644
+--- a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
++++ b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
+@@ -35,9 +35,22 @@ object ReturnDayReminder {
+ 
+     fun isRestDay(context: Context, date: LocalDate): Boolean = !isSchoolDay(context, date)
+ 
++    /** 纯日期口径的返校日判定，**不含**功能总开关。做日期推算时用它。 */
+     fun isReturnDay(context: Context, date: LocalDate): Boolean =
+         isRestDay(context, date) && isSchoolDay(context, date.plusDays(1))
+ 
++    /**
++     * 对外提醒口径的返校日：必须功能已开启。
++     *
++     * 修掉的一处逻辑漏洞：AlarmReceiver 与刷新链原来只调上面那个纯日期重载，
++     * 于是用户把「返校节次豁免」关掉之后，「明天返校」的超级岛 / 实时动态照样会推。
++     */
++    fun isReturnDay(
++        context: Context,
++        repository: CourseRepository,
++        date: LocalDate,
++    ): Boolean = repository.getReturnDayReminder() && isReturnDay(context, date)
++
+     /**
+      * 返校日当天不被假期清空的节次。
+      * 未开启功能、或当天不是返校日时返回空集（即完全保持原有假期语义）。
+@@ -96,28 +109,41 @@ object ReturnDayReminder {
+      */
+     fun currentHolidaySpan(context: Context, date: LocalDate): HolidaySpan? {
+         val key = date.toString()
+-        val entry = (HolidayManager.load(context, date.year) +
+-            HolidayManager.load(context, date.year - 1))
+-            .firstOrNull { it.type == HolidayManager.TYPE_HOLIDAY && it.matches(key) }
+-            ?: return null
++        var entry: HolidayManager.Entry? = null
++        for (year in intArrayOf(date.year, date.year - 1)) {
++            entry = HolidayManager.load(context, year).firstOrNull {
++                it.type == HolidayManager.TYPE_HOLIDAY && it.matches(key)
++            }
++            if (entry != null) break
++        }
++        val hit = entry ?: return null
+         val last = runCatching {
+-            LocalDate.parse(entry.endDate.ifBlank { entry.date })
++            LocalDate.parse(hit.endDate.ifBlank { hit.date })
+         }.getOrNull() ?: return null
+         if (last.isBefore(date)) return null
+-        val first = runCatching { LocalDate.parse(entry.date) }.getOrNull() ?: date
++        val first = runCatching { LocalDate.parse(hit.date) }.getOrNull() ?: date
+         return HolidaySpan(
+-            name = entry.name.ifBlank { "假期" },
++            name = hit.name.ifBlank { "假期" },
+             firstDate = if (first.isAfter(last)) last else first,
+             lastDate = last,
+             daysLeft = ChronoUnit.DAYS.between(date, last).toInt(),
+         )
+     }
+ 
++    /** 「今天 / 明天 / 那天」——文案里写死"今天"会在次日提醒、次日小部件上直接说错日子。 */
++    private fun dayLabel(date: LocalDate, today: LocalDate = LocalDate.now()): String =
++        when (ChronoUnit.DAYS.between(today, date)) {
++            0L -> "今天"
++            1L -> "明天"
++            -1L -> "昨天"
++            else -> "这天"
++        }
++
+     /**
+      * 今日页 / 小部件用的一句话状态。不适用时返回 null（调用方保持原样）。
+      *
+-     * - 返校日 → "今天返校"（假期最后一天会带上假期名）
+-     * - 假期中 → "中秋还剩 2 天"
++     * - 返校日 → "今天/明天是中秋最后一天，返校啦"
++     * - 假期中（仅当天）→ "中秋还剩 2 天"
+      */
+     fun statusText(
+         context: Context,
+@@ -126,13 +152,17 @@ object ReturnDayReminder {
+         returnCourseName: String? = null,
+         returnStartTime: String? = null,
+     ): String? {
++        val today = LocalDate.now()
++        val isToday = date == today
+         val span = currentHolidaySpan(context, date)
+         // 返校文案：受「返校节次豁免」总开关管
+         if (repository.getReturnDayReminder() && isReturnDay(context, date)) {
+-            val where = if (span != null) "今天是${span.name}最后一天" else "今天是周末最后一天"
++            val label = dayLabel(date, today)
++            // 注意：中文紧跟在 $label 后面会被当成标识符（$label是 不是 $label + 是），必须加花括号
++            val where = if (span != null) "${label}是${span.name}最后一天" else "${label}是周末最后一天"
+             val what = returnCourseName?.takeIf { it.isNotBlank() }
+             // 只有"今天"算倒计时才有意义（次日提醒等场景算出来是负数或几十小时）
+-            val hours = if (date == LocalDate.now()) hoursUntil(returnStartTime) else null
++            val hours = if (isToday) hoursUntil(returnStartTime) else null
+             return when {
+                 hours != null && hours > 0 -> "$where，距返校${what ?: ""}还有 $hours 小时"
+                 what != null && !returnStartTime.isNullOrBlank() ->
+@@ -140,8 +170,10 @@ object ReturnDayReminder {
+                 else -> "$where，返校啦"
+             }
+         }
+-        // 假期余额：与总开关**解耦** —— 只要在假期内就显示（余额是假期信息，不是豁免功能的一部分）
+-        if (span != null) {
++        // 假期余额：与总开关**解耦**（余额是假期信息，不是豁免功能的一部分）。
++        // 但只在「当天」显示 —— 在次日小部件上按明天算余额会说成"还剩 N 天"，
++        // 用户读到的是今天的信息，属于串味；非当天时返回 null 让调用方保持原样。
++        if (span != null && isToday) {
+             return if (span.daysLeft > 0) {
+                 "${span.name}还剩 ${span.daysLeft} 天"
+             } else {
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
+index 90f626d..397c142 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
+@@ -22,7 +22,17 @@ class AlarmReceiver : BroadcastReceiver() {
+ 
+     override fun onReceive(context: Context, intent: Intent) {
+         val type = intent.getIntExtra(CourseReminderHelper.EXTRA_REMINDER_TYPE, 0)
+-        Log.d("CourseReminder", "AlarmReceiver: type=$type ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}")
++        // 原实现在每次闹钟触发时都新建一个 SimpleDateFormat 并格式化当前时间，
++        // 纯粹为了打一条 debug 日志 —— release 包里完全是白烧 CPU。
++        // 改成：只在可调试包里做，并且按需构造格式化器。
++        if ((context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
++            Log.d(
++                "CourseReminder",
++                "AlarmReceiver: type=$type " +
++                    java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
++                        .format(java.util.Date()),
++            )
++        }
+         val repository = CourseRepository(context)
+         val useIsland = repository.getIslandNotification() && IslandNotificationHelper.isIslandSupported(context)
+ 
+@@ -149,8 +159,10 @@ class AlarmReceiver : BroadcastReceiver() {
+ 
+                 // 明天是「返校日」（假期/周末最后一天、次日要上课）→ 顺带推一条超级岛。
+                 // 复用既有岛发送路径（含 XMSF 绕白名单），这里只是多一个调用方。
++                // 注意用带 repository 的重载：它会一并检查「返校节次豁免」总开关，
++                // 否则用户关掉功能后仍会收到「明天返校」的岛 / 实时动态。
+                 val tomorrow = java.time.LocalDate.now().plusDays(1)
+-                if (com.haooz.chedule.data.ReturnDayReminder.isReturnDay(context, tomorrow)) {
++                if (com.haooz.chedule.data.ReturnDayReminder.isReturnDay(context, repository, tomorrow)) {
+                     val span = com.haooz.chedule.data.ReturnDayReminder
+                         .currentHolidaySpan(context, tomorrow)
+                     val firstReturnCourse = tomorrowCourses.firstOrNull()
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+index 60f4fb2..3756db7 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+@@ -96,9 +96,18 @@ object CourseReminderHelper {
+     private const val RC_RETURN_PREP_ALARM = 8102
+     private const val NOTIFY_ID_RETURN_BALANCE = 300
+     private const val NOTIFY_ID_RETURN_PREP = 301
++
++    /** 余额/清单/「明天返校」实况共用的去重状态（原来散落成字面量，这里统一） */
++    private const val RETURN_DAY_STATE_PREFS = "return_day_notify_state"
+     private const val KEY_RETURN_BALANCE_DATE = "balance_date"
+     private const val KEY_RETURN_PREP_DATE = "prep_date"
+     private const val KEY_RETURN_LIVE_PUSH = "return_live_push_at"
++
++    /** 精确闹钟去抖状态：已排的目标时刻 + 上次真正排钟的墙钟时间 */
++    private const val KEY_RETURN_BALANCE_ALARM_AT = "balance_alarm_at"
++    private const val KEY_RETURN_BALANCE_ALARM_SET = "balance_alarm_set"
++    private const val KEY_RETURN_PREP_ALARM_AT = "prep_alarm_at"
++    private const val KEY_RETURN_PREP_ALARM_SET = "prep_alarm_set"
+     const val LIVE_STARTED_ID = 2004
+     const val LIVE_IN_CLASS_ID = 2005
+     // 测试实时活动独立 ID，对齐超级岛 5000/5001/5002，不覆盖真实课提醒
+@@ -298,6 +307,25 @@ object CourseReminderHelper {
+         }.timeInMillis
+     }
+ 
++    /**
++     * **指定日期**上 "HH:mm" 的绝对时间戳。
++     * 与 [parseTimeToTodayMillis] 的区别是它不会把"明天"解析成"今天"；格式非法返回 -1。
++     */
++    fun millisAtDate(date: java.time.LocalDate, time: String?): Long {
++        if (time.isNullOrBlank()) return -1L
++        val parts = time.split(":")
++        if (parts.size < 2) return -1L
++        val hour = parts[0].trim().toIntOrNull() ?: return -1L
++        val minute = parts[1].trim().toIntOrNull() ?: return -1L
++        if (hour !in 0..23 || minute !in 0..59) return -1L
++        return runCatching {
++            date.atTime(hour, minute)
++                .atZone(java.time.ZoneId.systemDefault())
++                .toInstant()
++                .toEpochMilli()
++        }.getOrDefault(-1L)
++    }
++
+     /**
+      * 课表边界闹钟专用：课前提醒点、上课瞬间、下课瞬间。
+      *
+@@ -772,6 +800,21 @@ object CourseReminderHelper {
+         // 用于把刷新对齐到上课瞬间，避免倒计时归零后等一整分钟才切"已上课"
+         var imminentStartMillis: Long? = null
+ 
++        /*
++         * 「分钟级消费者」：只有它们才需要"课中每分钟唤醒一次"。
++         *
++         * 原来只要有一节课正在上就置 hasActiveCourse=true —— 与任何开关、任何小组件都无关，
++         * 于是即便所有提醒都关掉、桌面也没放小组件，仍旧是**每分钟一次精确唤醒**，
++         * 一学期下来是每天数百次纯空唤醒（每次还要跑一遍 receiver 的整条对账链）。
++         *
++         * 注意：这里只是**降低轮询密度**，刷新链本身仍然是 setExactAndAllowWhileIdle 精确闹钟，
++         * 不能改成非精确（见 scheduleNextWidgetRefresh 上方的注释：链式调度一旦漂移会累积，
++         * 课前补发与跨日重调度会整个失效）。
++         */
++        val minuteLevelConsumer = hasActiveCountdown ||
++            inClassEndMillis != null ||
++            WidgetUpdateCache.anyProviderWidgets(context)
++
+         for (course in todayCourses) {
+             val startTime = getCourseStartTime(course, repository)
+             val endTime = getCourseEndTime(course, repository)
+@@ -785,8 +828,24 @@ object CourseReminderHelper {
+             val endMin = (endParts[0].toIntOrNull() ?: 0) * 60 + (endParts[1].toIntOrNull() ?: 0)
+ 
+             if (currentMinutes in startMin until endMin) {
+-                hasActiveCourse = true
+-                break
++                if (minuteLevelConsumer) {
++                    hasActiveCourse = true
++                    break
++                }
++                // 没有分钟级消费者：不为"这节课正在上"每分钟唤醒，
++                // 但要把下课本身上升为一个事件点（否则会退化到 30 分钟兜底心跳）
++                val endCal = Calendar.getInstance().apply {
++                    set(Calendar.HOUR_OF_DAY, endParts[0].toInt())
++                    set(Calendar.MINUTE, endParts[1].toInt())
++                    set(Calendar.SECOND, 0)
++                    set(Calendar.MILLISECOND, 0)
++                }
++                if (endCal.timeInMillis > now &&
++                    (nextEventTime == null || endCal.timeInMillis < nextEventTime!!)
++                ) {
++                    nextEventTime = endCal.timeInMillis
++                }
++                continue
+             }
+ 
+             val minutesToStart = startMin - currentMinutes
+@@ -1001,8 +1060,14 @@ object CourseReminderHelper {
+ 
+     /** 节假日/调休数据变更后：重排提醒并立即刷新已放置的小部件 */
+     fun onHolidayDataChanged(context: Context) {
++        // 顺手 bump 假期版本号：今日页状态卡、课表页豁免标记、小部件都靠它做 remember 键。
++        // 返校节次豁免 / 余额 / 清单这些开关不走 HolidayManager.save，不 bump 的话
++        // 关掉开关后今日页还会一直显示旧的「返校啦」卡片。
++        HolidayManager.notifyConfigChanged(context)
+         startReminderService(context)
+         WidgetUpdateCache.updateInstalledWidgets(context)
++        // 开关变化立刻对账一次精确闹钟（开→排上，关→取消），不必等下一次刷新链
++        runCatching { checkDailyReturnDayNotifications(context) }
+     }
+ 
+     fun getTomorrowCourses(context: Context): List<Course> =
+@@ -1083,7 +1148,7 @@ object CourseReminderHelper {
+         val repository = CourseRepository(context)
+         val today = java.time.LocalDate.now()
+         val todayKey = today.toString()
+-        val prefs = context.getSharedPreferences("return_day_notify_state", Context.MODE_PRIVATE)
++        val prefs = context.getSharedPreferences(RETURN_DAY_STATE_PREFS, Context.MODE_PRIVATE)
+ 
+         // 假期余额：假期中每天一条（返校日当天不发，那天由返校提醒负责）
+         val span = ReturnDayReminder.currentHolidaySpan(context, today)
+@@ -1131,7 +1196,9 @@ object CourseReminderHelper {
+                 showReminderNotification(
+                     context,
+                     NOTIFY_ID_RETURN_PREP,
+-                    "今晚返校，别忘了带",
++                    // 原来写死「今晚返校」：默认提醒时间是 12:00，且时间可自定义，
++                    // 中午收到一条"今晚返校"是明显说错话。按实际时刻选措辞。
++                    if (java.time.LocalTime.now().hour >= 16) "今晚返校，别忘了带" else "返校别忘了带这些",
+                     multiLinePrep,
+                     channelId = CHANNEL_HOLIDAY_ID,
+                 )
+@@ -1147,9 +1214,13 @@ object CourseReminderHelper {
+         if (repository.getReturnDayBalanceEnabled()) {
+             scheduleReturnDayExactAlarm(
+                 context, alarmManager, RC_RETURN_BALANCE_ALARM, TYPE_RETURN_DAILY_BALANCE, balanceTarget,
++                KEY_RETURN_BALANCE_ALARM_AT, KEY_RETURN_BALANCE_ALARM_SET,
+             )
+         } else {
+-            cancelReturnDayExactAlarm(context, alarmManager, RC_RETURN_BALANCE_ALARM, TYPE_RETURN_DAILY_BALANCE)
++            cancelReturnDayExactAlarm(
++                context, alarmManager, RC_RETURN_BALANCE_ALARM, TYPE_RETURN_DAILY_BALANCE,
++                KEY_RETURN_BALANCE_ALARM_AT, KEY_RETURN_BALANCE_ALARM_SET,
++            )
+         }
+         if (repository.getReturnDayPrepEnabled()) {
+             scheduleReturnDayExactAlarm(
+@@ -1161,20 +1232,48 @@ object CourseReminderHelper {
+                     repository.getReturnDayPrepHour(),
+                     repository.getReturnDayPrepMinute(),
+                 ),
++                KEY_RETURN_PREP_ALARM_AT,
++                KEY_RETURN_PREP_ALARM_SET,
+             )
+         } else {
+-            cancelReturnDayExactAlarm(context, alarmManager, RC_RETURN_PREP_ALARM, TYPE_RETURN_DAILY_PREP)
++            cancelReturnDayExactAlarm(
++                context, alarmManager, RC_RETURN_PREP_ALARM, TYPE_RETURN_DAILY_PREP,
++                KEY_RETURN_PREP_ALARM_AT, KEY_RETURN_PREP_ALARM_SET,
++            )
+         }
+     }
+ 
+-    /** 把余额/清单的精确闹钟排到「今天该时刻」；已过则排到明天（自续链的锚点）。 */
++    /**
++     * 把余额/清单的精确闹钟排到「今天该时刻」；已过则排到明天（自续链的锚点）。
++     *
++     * **去抖**：目标触发时刻没变就不重排。这个函数挂在刷新链上，而刷新链在倒计时/岛活跃时
++     * 是**分钟级**的；原实现每次都 `AlarmManager.setAlarmClock` —— 每次都是跨进程调用 +
++     * 系统侧闹钟图标刷新。为兼容"闹钟被系统清掉、进程被杀后 SP 仍在"的情况，保留 6 小时心跳：
++     * 超过 6 小时没真正排过就强制重排一次。
++     */
+     private fun scheduleReturnDayExactAlarm(
+         context: Context,
+         alarmManager: AlarmManager,
+         requestCode: Int,
+         type: Int,
+         target: java.time.LocalTime,
++        triggerKey: String,
++        heartbeatKey: String,
+     ) {
++        val at = Calendar.getInstance().apply {
++            set(Calendar.HOUR_OF_DAY, target.hour)
++            set(Calendar.MINUTE, target.minute)
++            set(Calendar.SECOND, 0)
++            set(Calendar.MILLISECOND, 0)
++            if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DATE, 1)
++        }
++        val trigger = at.timeInMillis
++        val now = System.currentTimeMillis()
++        val state = context.getSharedPreferences(RETURN_DAY_STATE_PREFS, Context.MODE_PRIVATE)
++        val sameTrigger = state.getLong(triggerKey, -1L) == trigger
++        val recentEnough = now - state.getLong(heartbeatKey, 0L) < 6 * 60 * 60 * 1000L
++        if (sameTrigger && recentEnough) return
++
+         val intent = Intent(context, AlarmReceiver::class.java).apply {
+             putExtra(EXTRA_REMINDER_TYPE, type)
+         }
+@@ -1184,14 +1283,11 @@ object CourseReminderHelper {
+             intent,
+             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+         )
+-        val at = Calendar.getInstance().apply {
+-            set(Calendar.HOUR_OF_DAY, target.hour)
+-            set(Calendar.MINUTE, target.minute)
+-            set(Calendar.SECOND, 0)
+-            set(Calendar.MILLISECOND, 0)
+-            if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DATE, 1)
++        setCourseBoundaryAlarm(alarmManager, trigger, pendingIntent)
++        state.edit {
++            putLong(triggerKey, trigger)
++            putLong(heartbeatKey, now)
+         }
+-        setCourseBoundaryAlarm(alarmManager, at.timeInMillis, pendingIntent)
+     }
+ 
+     private fun cancelReturnDayExactAlarm(
+@@ -1199,6 +1295,8 @@ object CourseReminderHelper {
+         alarmManager: AlarmManager,
+         requestCode: Int,
+         type: Int,
++        triggerKey: String,
++        heartbeatKey: String,
+     ) {
+         val intent = Intent(context, AlarmReceiver::class.java).apply {
+             putExtra(EXTRA_REMINDER_TYPE, type)
+@@ -1210,6 +1308,9 @@ object CourseReminderHelper {
+             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+         )
+         alarmManager.cancel(pendingIntent)
++        // 清掉去抖状态：开关重新打开时必须能立刻排上
++        context.getSharedPreferences(RETURN_DAY_STATE_PREFS, Context.MODE_PRIVATE)
++            .edit { remove(triggerKey); remove(heartbeatKey) }
+     }
+ 
+     /**
+@@ -1224,6 +1325,8 @@ object CourseReminderHelper {
+         repository: CourseRepository,
+     ) {
+         if (repository.getIslandNotification() && IslandNotificationHelper.isIslandSupported(context)) return
++        // 功能总开关关掉就不再推（原来只判 isReturnDay，关掉开关照样会推）
++        if (!repository.getReturnDayReminder()) return
+         val today = java.time.LocalDate.now()
+         val tomorrow = today.plusDays(1)
+         val todayIsReturn = ReturnDayReminder.isReturnDay(context, today)
+@@ -1233,12 +1336,16 @@ object CourseReminderHelper {
+         val resolution = resolveDaySchedule(context, targetDate)
+         val first = resolution.courses.firstOrNull() ?: return
+         val startTime = getCourseStartTime(first, repository) ?: return
+-        val startMillis = parseTimeToTodayMillis(startTime)
++        // 按**目标日期**算起始时刻。原来用 parseTimeToTodayMillis（按"今天"解析），
++        // 于是 targetDate=明天 时算出来的时间戳已经过去，这一路永远提前 return ——
++        // "返校日前一晚定时重推进度"在「明天返校」这个主要场景下根本没跑过。
++        val startMillis = millisAtDate(targetDate, startTime)
+         if (startMillis <= 0L) return
+         val now = System.currentTimeMillis()
+-        // 只在开始前 12 小时内推；已开始则不再重推
+-        if (now >= startMillis || startMillis - now > 12 * 60 * 60 * 1000L) return
+-        val prefs = context.getSharedPreferences("return_day_notify_state", Context.MODE_PRIVATE)
++        // 窗口放到 24 小时：返校提醒是**前一晚**推的，此时距次日傍晚开课可能超过 12 小时；
++        // 12 小时的窗口会让"前晚"这个主要时机被挡掉。已开始则不再重推。
++        if (now >= startMillis || startMillis - now > 24 * 60 * 60 * 1000L) return
++        val prefs = context.getSharedPreferences(RETURN_DAY_STATE_PREFS, Context.MODE_PRIVATE)
+         if (now - prefs.getLong(KEY_RETURN_LIVE_PUSH, 0L) < 15 * 60 * 1000L) return
+         val span = ReturnDayReminder.currentHolidaySpan(context, targetDate)
+         showReturnDayLiveNotification(
+@@ -1275,7 +1382,8 @@ object CourseReminderHelper {
+             if (courseName.isNotEmpty()) append(courseName)
+             if (section.isNotEmpty()) append("｜").append(section)
+             if (startTime.isNotEmpty()) append(" ").append(startTime)
+-            if (isEmpty()) append("明天要上课，别忘了返校")
++            // 兜底文案不能说"明天要上课"：明天可能只是"要上学但没有课"，那样是假话
++            if (isEmpty()) append("明天返校，别忘了收拾东西")
+         }
+         val contentIntent = PendingIntent.getActivity(
+             context,
+@@ -1554,7 +1662,18 @@ object CourseReminderHelper {
+         manager.notify(startedNotificationId, startedNotification)
+     }
+ 
++    /**
++     * 通道是**进程级**系统状态，建一次就够。
++     *
++     * 原实现每次发通知都 `createNotificationChannel` ×2 —— 那就是 2 次 binder 往返 +
++     * 2 个 NotificationChannel 分配。课中提醒是**每分钟**发一次的，
++     * 等于每分钟白付两次跨进程调用去设置同一个通道。
++     */
++    @Volatile
++    private var notificationChannelsReady = false
++
+     private fun ensureNotificationChannels(context: Context) {
++        if (notificationChannelsReady) return
+         val manager = context.getSystemService(NotificationManager::class.java)
+         val alertChannel = NotificationChannel(
+             CHANNEL_REMINDER_ID,
+@@ -1582,6 +1701,7 @@ object CourseReminderHelper {
+         }
+         manager.createNotificationChannel(alertChannel)
+         manager.createNotificationChannel(liveChannel)
++        notificationChannelsReady = true
+     }
+ 
+     fun showReminderNotification(
+@@ -1970,10 +2090,10 @@ object CourseReminderHelper {
+             // 连堂课间为 0 时触发点可能已过上课时刻：落"已上课"；超宽限期则不再打扰
+             val elapsed = nowMs - courseStartMillis
+             if (elapsed > ISLAND_START_GRACE_MS) {
+-                android.util.Log.d(TAG, "sendPreClass: ${course.name} started ${elapsed}ms ago, too late, skip")
++                logD(context, "sendPreClass: ${course.name} started ${elapsed}ms ago, too late, skip")
+                 return
+             }
+-            android.util.Log.d(TAG, "sendPreClass: ${course.name} just started, show started state")
++            logD(context, "sendPreClass: ${course.name} just started, show started state")
+             if (useIsland) {
+                 IslandNotificationHelper.sendPreClassIslandNotification(
+                     context = context,
+@@ -2070,7 +2190,7 @@ object CourseReminderHelper {
+                 IslandNotificationHelper.cancelIslandNotifications(context)
+                 IslandNotificationHelper.IslandState.clear(context)
+                 IslandNotificationHelper.IslandState.clear(context, testMode = true)
+-                android.util.Log.d(TAG, "reconcileIsland: island disabled, dismissed")
++                logD(context, "reconcileIsland: island disabled, dismissed")
+             }
+             return
+         }
+@@ -2096,7 +2216,7 @@ object CourseReminderHelper {
+             // 连带收起另一半（倒计时/已上课），避免残留岛一直停在 00:00
+             IslandNotificationHelper.cancelIslandState(context, state.notificationId)
+             IslandNotificationHelper.IslandState.clear(context, testMode)
+-            android.util.Log.d(TAG, "reconcileIsland: dismissed test=$testMode end=$expiredByEnd show=$expiredByShow")
++            logD(context, "reconcileIsland: dismissed test=$testMode end=$expiredByEnd show=$expiredByShow")
+             return
+         }
+ 
+@@ -2106,10 +2226,10 @@ object CourseReminderHelper {
+                 // 隔夜或重启后残留的状态：不要再补一个过期的"已上课"，直接收起
+                 IslandNotificationHelper.cancelIslandState(context, state.notificationId)
+                 IslandNotificationHelper.IslandState.clear(context, testMode)
+-                android.util.Log.d(TAG, "reconcileIsland: stale state dismissed for ${state.courseName}")
++                logD(context, "reconcileIsland: stale state dismissed for ${state.courseName}")
+                 return
+             }
+-            android.util.Log.d(TAG, "reconcileIsland: late switch for ${state.courseName}")
++            logD(context, "reconcileIsland: late switch for ${state.courseName}")
+             IslandNotificationHelper.onClassStart(
+                 context = context,
+                 courseName = state.courseName,
+@@ -2227,12 +2347,16 @@ object CourseReminderHelper {
+                     windowStart = prevEnd
+                 }
+             }
++            // 先判窗口再算去重：去重键要读 SharedPreferences 里的 JSON 映射，
++            // 原来对**每一节课、每一次刷新**都解析一遍（一天上千次），
++            // 而真正可能补发的只有落在 [窗口起点, 上课时刻) 里的那一节。
+             val inWindow = currentMinutes in windowStart until startTotal
++            if (!inWindow) continue
+             val dedupId11 = "${course.name}|${course.getTimeDisplayText()}|$startTime"
+             val dedupHit = isPreClassSentRecently(context, dedupId11)
+             // 岛当天已发过则不重发（重发会触发岛重新弹出）
+             val islandHit = useIsland && hasIslandPreClassSentToday(context, dedupId11)
+-            if (!inWindow || dedupHit || islandHit) continue
++            if (dedupHit || islandHit) continue
+             val startMillis = parseTimeToTodayMillis(startTime)
+             val endMillis = parseTimeToTodayMillis(getCourseEndTime(course, repository))
+             sendPreClassNotification(
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
+index c8c07e9..0f50f2c 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
+@@ -254,8 +254,20 @@ object IslandNotificationHelper {
+         ShizukuManager.init(context)
+     }
+ 
++    /**
++     * 一次进程内只查一次。
++     *
++     * `persist.sys.feature.island` 是开机读入的持久属性，进程存活期间不会变；
++     * 而原实现每次都 `Class.forName` + `getMethod` + 反射 invoke（约几十~上百微秒 + 若干分配），
++     * 且它挂在刷新链的对账路径上（每次 hop 3~4 次）、每次闹钟也要判一次 ——
++     * 一天下来上千次纯重复反射。
++     */
++    @Volatile
++    private var islandSupportedCache: Boolean? = null
++
+     fun isIslandSupported(context: Context): Boolean {
+-        return try {
++        islandSupportedCache?.let { return it }
++        val result = try {
+             val clazz = Class.forName("android.os.SystemProperties")
+             val method = clazz.getMethod(
+                 "getBoolean",
+@@ -266,6 +278,8 @@ object IslandNotificationHelper {
+         } catch (e: Exception) {
+             false
+         }
++        islandSupportedCache = result
++        return result
+     }
+ 
+     fun isShizukuAvailable(): Boolean {
+@@ -812,7 +826,8 @@ object IslandNotificationHelper {
+             if (courseName.isNotEmpty()) append(courseName)
+             if (section.isNotEmpty()) append("｜").append(section)
+             if (startTime.isNotEmpty()) append(" ").append(startTime)
+-            if (isEmpty()) append("明天要上课，别忘了返校")
++            // 兜底文案不能说"明天要上课"：明天可能只是"要上学但没有课"，那样是假话
++            if (isEmpty()) append("明天返校，别忘了收拾东西")
+         }
+         // courseStartMillis = null → 静态岛（不画倒计时），左右槽位回落到课程名/教室
+         val paramsRaw = buildIslandParamsJson(
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
+index 0de09ef..0a78712 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
+@@ -589,12 +589,16 @@ fun CourseReminderScreen(
+                                     title = "小米超级岛",
+                                     summary = when {
+                                         !isIslandSupported ->
+-                                            "本机不支持超级岛，将使用实时动态通知"
++                                            "本机不支持超级岛，将使用实时动态通知（开关可保留为开启）"
+                                         islandNotification -> "已开启，课程提醒将以超级岛样式显示"
+                                         else -> "关闭后使用实时动态通知"
+                                     },
+-                                    enabled = isIslandSupported,
+-                                    checked = islandNotification && isIslandSupported,
++                                    // 不能因为"不支持"就把开关 disable：那样 checked 显示成关闭、
++                                    // 又点不动，用户既关不掉也开不了 —— 设置项变成死开关。
++                                    // 支持与否只影响文案与实际发送路径（发送侧已统一按
++                                    // getIslandNotification() && isIslandSupported 判定）。
++                                    enabled = true,
++                                    checked = islandNotification,
+                                     onCheckedChange = {
+                                         rlog("island_switch", "on=$it supported=$isIslandSupported")
+                                         settingsViewModel.setIslandNotification(it)
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
+index 838c454..e473743 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
+@@ -918,8 +918,12 @@ private fun sectionRangeTimeText(
+     startSection: Int,
+     endSection: Int,
+ ): String {
+-    val start = sectionTimeRange(repository, startSection)?.substringBefore("-")?.trim().orEmpty()
+-    val end = sectionTimeRange(repository, endSection)?.substringAfter("-")?.trim().orEmpty()
++    val startRaw = sectionTimeRange(repository, startSection)
++    val endRaw = sectionTimeRange(repository, endSection)
++    // 只有真的含 "-" 才切分；否则 "08:00".substringAfter("-") 会原样返回 "08:00"，
++    // 摘要会变成毫无意义的 "08:00–08:00"
++    val start = startRaw?.substringBefore("-")?.trim().orEmpty()
++    val end = endRaw?.takeIf { it.contains('-') }?.substringAfter("-")?.trim().orEmpty()
+     return when {
+         start.isNotEmpty() && end.isNotEmpty() -> "$start–$end"
+         start.isNotEmpty() -> start
+@@ -969,6 +973,10 @@ private fun ReturnDayReminderCard() {
+     var showWeekdayDialog by remember { mutableStateOf(false) }
+     var prepEnabled by remember { mutableStateOf(repository.getReturnDayPrepEnabled()) }
+     var prepText by remember { mutableStateOf(repository.getReturnDayPrepText()) }
++    // 清单时间也做成 state：原来摘要直接读 repository，改完时间要靠别的 state 变化
++    // 触发重组才刷新，读值与本地 state 混用容易看到旧值。
++    var prepHour by remember { mutableIntStateOf(repository.getReturnDayPrepHour()) }
++    var prepMinute by remember { mutableIntStateOf(repository.getReturnDayPrepMinute()) }
+     var showPrepDialog by remember { mutableStateOf(false) }
+     var showPrepTimeDialog by remember { mutableStateOf(false) }
+     var balanceEnabled by remember { mutableStateOf(repository.getReturnDayBalanceEnabled()) }
+@@ -1042,10 +1050,10 @@ private fun ReturnDayReminderCard() {
+                 SwitchPreference(
+                     title = "返校准备清单",
+                     summary = if (prepEnabled) {
+-                        "返校日 ${repository.getReturnDayPrepHour()}:" +
+-                            "%02d".format(repository.getReturnDayPrepMinute()) + " 提醒要带的东西"
++                        "返校日 %02d:%02d 提醒要带的东西".format(prepHour, prepMinute)
+                     } else {
+-                        "返校日中午提醒要带的东西（默认关闭）"
++                        // 不能写死"中午"：提醒时间可自定义，关掉时也该反映真实时间
++                        "返校日 %02d:%02d 提醒要带的东西（默认关闭）".format(prepHour, prepMinute)
+                     },
+                     checked = prepEnabled,
+                     onCheckedChange = { checked ->
+@@ -1056,10 +1064,7 @@ private fun ReturnDayReminderCard() {
+                 if (prepEnabled) {
+                     ArrowPreference(
+                         title = "提醒时间",
+-                        summary = "%02d:%02d".format(
+-                            repository.getReturnDayPrepHour(),
+-                            repository.getReturnDayPrepMinute(),
+-                        ),
++                        summary = "%02d:%02d".format(prepHour, prepMinute),
+                         onClick = { showPrepTimeDialog = true },
+                     )
+                     ArrowPreference(
+@@ -1227,7 +1232,7 @@ private fun ReturnDayReminderCard() {
+         var draftText by remember(showPrepDialog) { mutableStateOf(prepText) }
+         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+             Text(
+-                "返校日中午推送这条内容，用 / 分隔要带的东西",
++                "返校日按上面设定的时间推送这条内容，用 / 分隔要带的东西",
+                 style = MiuixTheme.textStyles.body1.copy(
+                     fontSize = 14.sp,
+                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+@@ -1313,10 +1318,12 @@ private fun ReturnDayReminderCard() {
+     timePickerDialog(
+         title = "清单提醒时间",
+         show = showPrepTimeDialog,
+-        hour = repository.getReturnDayPrepHour(),
+-        minute = repository.getReturnDayPrepMinute(),
++        hour = prepHour,
++        minute = prepMinute,
+         onDismiss = { showPrepTimeDialog = false },
+         onConfirm = { h, m ->
++            prepHour = h
++            prepMinute = m
+             repository.setReturnDayPrepHour(h)
+             repository.setReturnDayPrepMinute(m)
+             CourseReminderHelper.onHolidayDataChanged(context)
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
+index 50653ad..62d7dd3 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
+@@ -1724,7 +1724,11 @@ fun CourseScheduleApp() {
+         (1..5).toList() + settingsViewModel.getWeekendDaysForWeek(currentViewingWeek)
+             .filter { it in 6..7 }
+     }
+-    val viewingIsHoliday = viewModel.isWeekHoliday(currentViewingWeek)
++    // isWeekHoliday 内部会 getLastWeekWithCourses() 遍历**全部课程**；
++    // 直接写在 body 里等于上面每一次全量重组都扫一遍课表。
++    val viewingIsHoliday = remember(currentViewingWeek, courses, totalWeeks, dataVersion) {
++        viewModel.isWeekHoliday(currentViewingWeek)
++    }
+     val weekDates = remember(currentViewingWeek, classStartTime) {
+         try {
+             val startDate = LocalDate.parse(classStartTime.replace("/", "-"))
+@@ -2494,11 +2498,13 @@ fun CourseScheduleApp() {
+             showSwitchSchedule && switchOverlayActive -> 0f
+             else -> 1f
+         }
+-        val mainContentBlurDp =
+-            if (shortcutMenuBlurRadius.value > 0.01f) shortcutMenuBlurRadius.value.dp
+-            else managePageBlurRadius.value.dp
+-        val mainContentBlurModifier =
+-            if (mainContentBlurDp.value > 0f) Modifier.blur(mainContentBlurDp) else Modifier
++        // 主内容模糊**不在 composition 里读半径**。
++        //
++        // 原来这里写成 `Modifier.blur(半径.dp)`，半径取自两个 Animatable（长按拖动 /
++        // 点开课程详情时播放）。在函数体里读 .value 就是订阅，于是每动画一帧整个
++        // 四千多行的 body 都要重跑一遍，而且 `Modifier.blur` 也会被重建（新的
++        // BlurEffect + 离屏合成）。现在改为在主内容**已有的** graphicsLayer 里于绘制期
++        // 读半径并设 renderEffect：只失效这一层，不触发重组，也不再额外建图层。
+ 
+         // liquidGlass 录制跳帧指纹：结构量变了才 update→markNeedsRecord。
+         // 必须 remember 出稳定 List，否则 equals 失败会强制录制。
+@@ -2516,16 +2522,18 @@ fun CourseScheduleApp() {
+                 wallpaperBitmap, com.haooz.chedule.ui.components.TabletNavSideState.expanded, scheduleShowCourseDetail.value
+             )
+         }
+-        // 局部 val 不能直接捕获进 remember lambda，一律经 rememberUpdatedState
+-        val latestCutoutScale by rememberUpdatedState(cutoutMainScale.value)
+-        val latestBackgroundScale by rememberUpdatedState(backgroundScale.value)
+-        val latestSheetOffset by rememberUpdatedState(sheetOffsetY.value)
+-        val latestShortcutBlur by rememberUpdatedState(shortcutMenuBlurRadius.value)
+-        val latestManageBlur by rememberUpdatedState(managePageBlurRadius.value)
+-        val latestSwitchProgress by rememberUpdatedState(switchAnimProgress.value)
+-        val latestCustomizeExitScale by rememberUpdatedState(customizeExitScale.value)
+-        val latestCustomizeCoverScale by rememberUpdatedState(customizeCoverScale.value)
+-        val latestCustomizeCoverAlpha by rememberUpdatedState(customizeCoverAlpha.value)
++        // 这些 Animatable **不能在 composition 里读 .value**。
++        //
++        // 原来的写法是 `rememberUpdatedState(xxx.value)` —— 参数在调用点求值，
++        // 也就是在 CourseScheduleApp 的函数体里读了一次快照状态。读一次就订阅一次，
++        // 而 CourseScheduleApp 从 1097 到 5225 行是**同一个 restart scope**，
++        // 于是「长按课程卡拖动（改 shortcutMenuBlurRadius）」「点开课程详情（改
++        // managePageBlurRadius）」这两个最热的交互里，每动画一帧整个四千多行的
++        // body 就完整重跑一遍（连带所有 remember 键求值、Scaffold 重建）。
++        //
++        // 下面这些的值只在 liquidGlassMustRecord 那个 lambda 里被读；lambda 是在
++        // 绘制期被调用的，读在这里属于「draw 期读状态」，只会失效对应的绘制，
++        // 不再触发重组。这样每个动画帧省下的是一次全量重组。
+         val latestIsWindowCutout by rememberUpdatedState(isWindowCutoutActive)
+         val latestShowCustomize by rememberUpdatedState(showCustomizePage)
+         val latestIsCustomizeExiting by rememberUpdatedState(isCustomizeExiting)
+@@ -2565,16 +2573,16 @@ fun CourseScheduleApp() {
+                     (latestShowCustomize && latestIsCustomizeExiting) ||
+                     latestShowSwitch && latestSwitchAnimForward && latestSwitchAnimRunning ||
+                     latestSwitchAnimRunning ||
+-                    latestShortcutBlur > 0.01f ||
+-                    latestManageBlur > 0.01f ||
++                    shortcutMenuBlurRadius.value > 0.01f ||
++                    managePageBlurRadius.value > 0.01f ||
+                     // 非静止端点视为动画进行中
+-                    (latestCutoutScale != 1f && latestCutoutScale != 0.75f) ||
+-                    latestBackgroundScale != 1f ||
+-                    latestSheetOffset != 0f ||
+-                    (latestSwitchProgress != 0f && latestSwitchProgress != 1f) ||
+-                    latestCustomizeExitScale != 1f ||
+-                    latestCustomizeCoverScale != 1f ||
+-                    latestCustomizeCoverAlpha != 1f ||
++                    (cutoutMainScale.value != 1f && cutoutMainScale.value != 0.75f) ||
++                    backgroundScale.value != 1f ||
++                    sheetOffsetY.value != 0f ||
++                    (switchAnimProgress.value != 0f && switchAnimProgress.value != 1f) ||
++                    customizeExitScale.value != 1f ||
++                    customizeCoverScale.value != 1f ||
++                    customizeCoverAlpha.value != 1f ||
+                     // 拖拽课程卡片时像素每帧变
+                     latestDraggingCard
+             }
+@@ -2583,9 +2591,6 @@ fun CourseScheduleApp() {
+         Box(
+             modifier = Modifier
+                 .fillMaxSize()
+-                // 半径为 0 时不必挂 blur：Modifier.blur 会为整棵主内容树额外建一个
+-                // RenderEffect 图层，0 半径也照常走一遍离屏合成。
+-                .then(mainContentBlurModifier)
+                 .then(
+                     if (navBarStyle != "rail") {
+                         // 圆角裁剪在 graphicsLayer 内部完成（见下），这里不再单独 clip
+@@ -2593,6 +2598,23 @@ fun CourseScheduleApp() {
+                     } else Modifier
+                 )
+                 .graphicsLayer {
++                    // 主内容模糊：在绘制期读半径（理由见上方注释）。
++                    // 半径为 0 时把 renderEffect 置空，0 半径不必走一遍离屏合成。
++                    val blurDp =
++                        if (shortcutMenuBlurRadius.value > 0.01f) shortcutMenuBlurRadius.value
++                        else managePageBlurRadius.value
++                    renderEffect = if (blurDp > 0.01f) {
++                        // 必须用 Compose 的 BlurEffect：GraphicsLayerScope.renderEffect 收的是
++                        // androidx.compose.ui.graphics.RenderEffect。TileMode.Clamp 与
++                        // Modifier.blur 的默认 BlurredEdgeTreatment.Rectangle 一致。
++                        androidx.compose.ui.graphics.BlurEffect(
++                            blurDp,
++                            blurDp,
++                            androidx.compose.ui.graphics.TileMode.Clamp,
++                        )
++                    } else {
++                        null
++                    }
+                     val baseScale =
+                         if (!showSwitchSchedule) backgroundScale.value
+                         else if (isEntryAnimating) 1f
+diff --git a/app/src/main/java/com/haooz/chedule/ui/basic/CollapsibleTopAppBar.kt b/app/src/main/java/com/haooz/chedule/ui/basic/CollapsibleTopAppBar.kt
+index dab7d85..e5dc1fd 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/basic/CollapsibleTopAppBar.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/basic/CollapsibleTopAppBar.kt
+@@ -410,7 +410,11 @@ fun CollapsibleTopAppBar(
+     // 最近一次上报给 scrollBehavior / contentPadding 的顶栏高度，避免同值重复写状态
+     val lastReportedHeight = remember { intArrayOf(-1) }
+     val scrollShadowThresholdPx = with(density) { 10.dp.toPx() }
+-    val showButtonShadow = remember(scrollBehavior, showShadow, effectiveShowLargeTitle, overScrollState.offset) {
++    // 注意：**不要**把 overScrollState.offset 放进 remember 的键里。
++    // 放进键 = 在 composition 里读那个 Float state = 整个顶栏在每一次回弹帧都重组，
++    // 反而把下面 derivedStateOf 的"只在绘制/读取时计算"优化给废掉了（它已经在 lambda
++    // 里 observe 了 offset，值变化一样能正确失效）。
++    val showButtonShadow = remember(scrollBehavior, showShadow, effectiveShowLargeTitle) {
+         derivedStateOf {
+             if (showShadow != null) return@derivedStateOf showShadow
+             val contentOffset = scrollBehavior?.state?.contentOffset ?: 0f
+diff --git a/app/src/main/java/com/haooz/chedule/ui/basic/ShortcutMenu.kt b/app/src/main/java/com/haooz/chedule/ui/basic/ShortcutMenu.kt
+index e7f522d..7b1a472 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/basic/ShortcutMenu.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/basic/ShortcutMenu.kt
+@@ -165,23 +165,33 @@ fun ShortcutMenu(
+                 }
+             }
+     ) {
++        // drawBackdrop 的 effects / onDrawSurface 按**引用**比较，每次重组新建 lambda
++        // 会让毛玻璃与透镜重跑一遍（Menu 弹出期间正好在被拖动的动画帧上）。
++        val menuShape: () -> ContinuousRoundedRectangle = remember {
++            { ContinuousRoundedRectangle(18.dp) }
++        }
++        val menuEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit = remember {
++            {
++                vibrancy()
++                blur(4f.dp.toPx())
++                lens(12f.dp.toPx(), 12f.dp.toPx())
++            }
++        }
++        val onMenuSurface: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit =
++            remember(containerColor) {
++                { drawRect(containerColor) }
++            }
+         Box(
+             modifier = Modifier
+                 .wrapContentSize()
+                 .padding(ShadowPadding)
+                 .drawBackdrop(
+                     backdrop = backdrop,
+-                    shape = { ContinuousRoundedRectangle(18.dp) },
+-                    effects = {
+-                        vibrancy()
+-                        blur(4f.dp.toPx())
+-                        lens(12f.dp.toPx(), 12f.dp.toPx())
+-                    },
++                    shape = menuShape,
++                    effects = menuEffects,
+                     highlight = null,
+                     shadow = null,
+-                    onDrawSurface = {
+-                        drawRect(containerColor)
+-                    }
++                    onDrawSurface = onMenuSurface
+                 )
+                 .edgeLight(shape = ContinuousRoundedRectangle(18.dp), edgeLight = rememberDefaultEdgeLight())
+                 .clickable(
+diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
+index f46b924..c649d01 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
+@@ -397,16 +397,23 @@ private fun CourseCardsLayer(
+ 
+         // 自定义时间课按时间轴插值定位/定高，不按节次分段
+         if (course.hasValidCustomTime()) {
+-            val layout = computeCustomTimeLayout(
+-                customStart = course.customStartTime,
+-                customEnd = course.customEndTime,
+-                morningSections = morningSections,
+-                afternoonSections = afternoonSections,
+-                eveningSections = eveningSections,
+-                cardHeightPerSection = cardHeightPerSection,
+-                sectionTimes = sectionTimes,
+-                grid = grid
+-            )
++            // 纯函数（内部对每个节次 split/parse），入参不变就不必每次重组重算
++            val layout = remember(
++                course.customStartTime, course.customEndTime,
++                morningSections, afternoonSections, eveningSections,
++                cardHeightPerSection, sectionTimes, grid
++            ) {
++                computeCustomTimeLayout(
++                    customStart = course.customStartTime,
++                    customEnd = course.customEndTime,
++                    morningSections = morningSections,
++                    afternoonSections = afternoonSections,
++                    eveningSections = eveningSections,
++                    cardHeightPerSection = cardHeightPerSection,
++                    sectionTimes = sectionTimes,
++                    grid = grid
++                )
++            }
+             if (layout != null) {
+                 Box(
+                     modifier = Modifier
+@@ -447,7 +454,9 @@ private fun CourseCardsLayer(
+         }
+ 
+         renderData.segments.forEachIndexed { idx, (segStartSection, segEndSection) ->
+-            val displayCourse = remember(course.id, segStartSection, segEndSection) {
++            // course 必须进 key：只写 id 的话，改了课名/颜色/教室（id 与节次都不变）时
++            // 这里会一直返回第一次缓存的副本，分段渲染出来还是旧数据。
++            val displayCourse = remember(course, segStartSection, segEndSection) {
+                 course.copy(startSection = segStartSection, endSection = segEndSection)
+             }
+             val segOffset = (grid.sectionTop[segStartSection] ?: 0f).toInt()
+diff --git a/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt b/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
+index d9b533a..5384b46 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
+@@ -24,7 +24,16 @@ import kotlin.math.ceil
+ 
+ internal class EdgeLightElement(
+     val shape: androidx.compose.ui.graphics.Shape,
+-    val edgeLight: () -> EdgeLight?
++    val edgeLight: () -> EdgeLight?,
++    /**
++     * 「值重载」（[Modifier.edgeLight] 传 EdgeLight 的那个）把原始值也带上：
++     * 那个重载每次调用都会新建一个 `{ edgeLight }` lambda，而 lambda 只能按引用比较，
++     * 于是每次重组 `equals` 都判不等 → `update()` → `invalidateOutlineCache()`，
++     * 轮廓（ContinuousRoundedRectangle 走的是 Path 构建）就每次重组重算一遍。
++     * 带上原值后两个值重载之间按**值**比较，重组不再无故失效。
++     * 动态 lambda 重载不传这个字段，仍按引用比较，语义不变。
++     */
++    private val edgeLightValue: EdgeLight? = null,
+ ) : ModifierNodeElement<EdgeLightNode>() {
+ 
+     override fun create(): EdgeLightNode {
+@@ -41,20 +50,24 @@ internal class EdgeLightElement(
+     override fun InspectorInfo.inspectableProperties() {
+         name = "edgeLight"
+         properties["shape"] = shape
+-        properties["edgeLight"] = edgeLight
++        properties["edgeLight"] = edgeLightValue ?: edgeLight
+     }
+ 
+     override fun equals(other: Any?): Boolean {
+         if (this === other) return true
+         if (other !is EdgeLightElement) return false
+         if (shape != other.shape) return false
++        // 两边都是值重载 → 按值比；否则退回按引用比（动态 lambda 的原语义）
++        if (edgeLightValue != null && other.edgeLightValue != null) {
++            return edgeLightValue == other.edgeLightValue
++        }
+         if (edgeLight != other.edgeLight) return false
+         return true
+     }
+ 
+     override fun hashCode(): Int {
+         var result = shape.hashCode()
+-        result = 31 * result + edgeLight.hashCode()
++        result = 31 * result + (edgeLightValue?.hashCode() ?: edgeLight.hashCode())
+         return result
+     }
+ }
+@@ -263,7 +276,8 @@ fun Modifier.edgeLight(
+     return this.then(
+         EdgeLightElement(
+             shape = shape,
+-            edgeLight = { edgeLight }
++            edgeLight = { edgeLight },
++            edgeLightValue = edgeLight,
+         )
+     )
+ }
+diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt
+index fd335e0..1558949 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt
+@@ -955,35 +955,54 @@ fun CustomizeScheduleScreen(
+                         val applyHighlight =
+                             remember(animationScope) { InteractiveHighlight(animationScope) }
+                         val hapticFeedback = LocalHapticFeedback.current
++                        // drawBackdrop 的各个 lambda 按**引用**比较，每次重组新建会让
++                        // 毛玻璃/透镜/阴影整套重跑。highlight 变的是 pressProgress（在
++                        // lambda 内绘制期读），所以 key 只挂颜色，动画照样跟手。
++                        val exitShape: () -> com.kyant.capsule.ContinuousRoundedRectangle = remember {
++                            { ContinuousCapsule() }
++                        }
++                        val exitEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
++                            remember {
++                                {
++                                    vibrancy()
++                                    blur(2f.dp.toPx())
++                                    lens(12f.dp.toPx(), 12f.dp.toPx())
++                                }
++                            }
++                        val exitShadow: () -> Shadow = remember { { Shadow(alpha = 0.3f) } }
++                        val exitLayerBlock: androidx.compose.ui.graphics.GraphicsLayerScope.() -> Unit =
++                            remember(exitHighlight) {
++                                {
++                                    val progress = exitHighlight.pressProgress
++                                    val scale = 1f + 2f.dp.toPx() / 40.dp.toPx() * progress
++                                    scaleX = scale
++                                    scaleY = scale
++                                    val offset = exitHighlight.offset
++                                    translationX =
++                                        size.minDimension * 0.05f * offset.x / size.maxDimension
++                                    translationY =
++                                        size.minDimension * 0.05f * offset.y / size.maxDimension
++                                }
++                            }
++                        val onExitSurface: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit =
++                            remember(exitContainerColor, exitHighlight) {
++                                {
++                                    drawRect(exitContainerColor)
++                                    drawRect(Color.Black.copy(alpha = 0.03f * exitHighlight.pressProgress))
++                                }
++                            }
+                         Box(
+                             modifier = Modifier
+                                 .width(84.dp)
+                                 .height(40.dp)
+                                 .drawBackdrop(
+                                     backdrop = liquidGlassBackdrop,
+-                                    shape = { ContinuousCapsule() },
+-                                    effects = {
+-                                        vibrancy()
+-                                        blur(2f.dp.toPx())
+-                                        lens(12f.dp.toPx(), 12f.dp.toPx())
+-                                    },
++                                    shape = exitShape,
++                                    effects = exitEffects,
+                                     highlight = null,
+-                                    shadow = { Shadow(alpha = 0.3f) },
+-                                    layerBlock = {
+-                                        val progress = exitHighlight.pressProgress
+-                                        val scale = 1f + 2f.dp.toPx() / 40.dp.toPx() * progress
+-                                        scaleX = scale
+-                                        scaleY = scale
+-                                        val offset = exitHighlight.offset
+-                                        translationX =
+-                                            size.minDimension * 0.05f * offset.x / size.maxDimension
+-                                        translationY =
+-                                            size.minDimension * 0.05f * offset.y / size.maxDimension
+-                                    },
+-                                    onDrawSurface = {
+-                                        drawRect(exitContainerColor)
+-                                        drawRect(Color.Black.copy(alpha = 0.03f * exitHighlight.pressProgress))
+-                                    }
++                                    shadow = exitShadow,
++                                    layerBlock = exitLayerBlock,
++                                    onDrawSurface = onExitSurface
+                                 )
+                                 .edgeLight(
+                                     shape = ContinuousCapsule(),
+@@ -1010,35 +1029,52 @@ fun CustomizeScheduleScreen(
+                                 fontWeight = FontWeight.Medium
+                             )
+                         }
++                        // 同上：这一组 lambda 也要 remember，否则每次重组都重跑毛玻璃/透镜/阴影
++                        val applyShape: () -> com.kyant.capsule.ContinuousRoundedRectangle = remember {
++                            { ContinuousCapsule() }
++                        }
++                        val applyEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
++                            remember {
++                                {
++                                    vibrancy()
++                                    blur(2f.dp.toPx())
++                                    lens(12f.dp.toPx(), 12f.dp.toPx())
++                                }
++                            }
++                        val applyShadow: () -> Shadow = remember { { Shadow(alpha = 0.3f) } }
++                        val applyLayerBlock: androidx.compose.ui.graphics.GraphicsLayerScope.() -> Unit =
++                            remember(applyHighlight) {
++                                {
++                                    val progress = applyHighlight.pressProgress
++                                    val scale = 1f + 2f.dp.toPx() / 40.dp.toPx() * progress
++                                    scaleX = scale
++                                    scaleY = scale
++                                    val offset = applyHighlight.offset
++                                    translationX =
++                                        size.minDimension * 0.05f * offset.x / size.maxDimension
++                                    translationY =
++                                        size.minDimension * 0.05f * offset.y / size.maxDimension
++                                }
++                            }
++                        val onApplySurface: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit =
++                            remember(primaryColor, applyHighlight) {
++                                {
++                                    drawRect(primaryColor.copy(0.8f))
++                                    drawRect(Color.Black.copy(alpha = 0.03f * applyHighlight.pressProgress))
++                                }
++                            }
+                         Box(
+                             modifier = Modifier
+                                 .width(84.dp)
+                                 .height(40.dp)
+                                 .drawBackdrop(
+                                     backdrop = liquidGlassBackdrop,
+-                                    shape = { ContinuousCapsule() },
+-                                    effects = {
+-                                        vibrancy()
+-                                        blur(2f.dp.toPx())
+-                                        lens(12f.dp.toPx(), 12f.dp.toPx())
+-                                    },
++                                    shape = applyShape,
++                                    effects = applyEffects,
+                                     highlight = null,
+-                                    shadow = { Shadow(alpha = 0.3f) },
+-                                    layerBlock = {
+-                                        val progress = applyHighlight.pressProgress
+-                                        val scale = 1f + 2f.dp.toPx() / 40.dp.toPx() * progress
+-                                        scaleX = scale
+-                                        scaleY = scale
+-                                        val offset = applyHighlight.offset
+-                                        translationX =
+-                                            size.minDimension * 0.05f * offset.x / size.maxDimension
+-                                        translationY =
+-                                            size.minDimension * 0.05f * offset.y / size.maxDimension
+-                                    },
+-                                    onDrawSurface = {
+-                                        drawRect(primaryColor.copy(0.8f))
+-                                        drawRect(Color.Black.copy(alpha = 0.03f * applyHighlight.pressProgress))
+-                                    }
++                                    shadow = applyShadow,
++                                    layerBlock = applyLayerBlock,
++                                    onDrawSurface = onApplySurface
+                                 )
+                                 .edgeLight(
+                                     shape = ContinuousCapsule(),
+diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
+index 60386e7..5f679f2 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
+@@ -115,22 +115,39 @@ fun BlurCard(
+     if (hasBackdrop) {
+         val shape = ContinuousRoundedRectangle(cornerRadius)
+         val defaultEdgeLight = rememberDefaultEdgeLight()
++        // drawBackdrop 的 equals 是**按引用**比较 effects / onDrawSurface 的：
++        // 每次重组新建这两个 lambda 会让 element 判不等 → update() → 失效绘制缓存 →
++        // 重跑 blur + lens（lens 还要重建 RuntimeShader）。今日页有 5~6 张玻璃卡、
++        // 页面本身还带 1Hz 计时，所以必须 remember（CourseCard 里已经是这么做的）。
++        val cardEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
++            remember(blurRadius, refraction) {
++                {
++                    blur(blurRadius.dp.toPx())
++                    if (refraction != CardRefractionLevel.OFF) {
++                        lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
++                    }
++                }
++            }
++        val onCardSurface: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit =
++            remember(isDark, surfaceOpacity) {
++                {
++                    drawRect(
++                        if (isDark) Color.Black.copy(alpha = surfaceOpacity)
++                        else Color.White.copy(alpha = surfaceOpacity)
++                    )
++                }
++            }
++        val cardShape: () -> ContinuousRoundedRectangle =
++            remember(cornerRadius) { { ContinuousRoundedRectangle(cornerRadius) } }
+         Box(
+             modifier = modifier
+                 .clip(shape)
+                 .drawBackdrop(
+                     backdrop = wallpaperBackdrop,
+-                    shape = { ContinuousRoundedRectangle(cornerRadius) },
+-                    effects = {
+-                        blur(blurRadius.dp.toPx())
+-                        if (refraction != CardRefractionLevel.OFF) {
+-                            lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
+-                        }
+-                    },
++                    shape = cardShape,
++                    effects = cardEffects,
+                     highlight = null,
+-                    onDrawSurface = {
+-                        drawRect(if (isDark) Color.Black.copy(alpha = surfaceOpacity) else Color.White.copy(alpha = surfaceOpacity))
+-                    }
++                    onDrawSurface = onCardSurface
+                 )
+                 .then(
+                     if (showEdgeLight) {
+@@ -601,12 +618,20 @@ fun TodayScreen(
+                         )
+                     }
+                 }
+-                val coursePeriods = pageCourses.associateWith {
+-                    it.periodIndex(sectionTimes, morningSections, afternoonSections)
++                // pageCourses 本身已 remember；这里的分组也是纯函数，别每次重组都重建
++                // 1 个 map + 3 个 list（今日页自己有 1Hz 计时，重组非常频繁）
++                val (morningCourses, afternoonCourses, eveningCourses) = remember(
++                    pageCourses, sectionTimes, morningSections, afternoonSections
++                ) {
++                    val periods = pageCourses.associateWith {
++                        it.periodIndex(sectionTimes, morningSections, afternoonSections)
++                    }
++                    Triple(
++                        pageCourses.filter { periods[it] == Course.PERIOD_MORNING },
++                        pageCourses.filter { periods[it] == Course.PERIOD_AFTERNOON },
++                        pageCourses.filter { periods[it] == Course.PERIOD_EVENING },
++                    )
+                 }
+-                val morningCourses = pageCourses.filter { coursePeriods[it] == Course.PERIOD_MORNING }
+-                val afternoonCourses = pageCourses.filter { coursePeriods[it] == Course.PERIOD_AFTERNOON }
+-                val eveningCourses = pageCourses.filter { coursePeriods[it] == Course.PERIOD_EVENING }
+ 
+                 val isPageToday = pageDate == LocalDate.now()
+ 
+@@ -1530,23 +1555,38 @@ private fun CourseSectionTitle(
+ 
+     if (wallpaperBackdrop != null) {
+         val shape = ContinuousCapsule()
++        // 同 BlurCard：drawBackdrop 的 effects / onDrawSurface 按引用比较，
++        // 每次重组新建 lambda 会让毛玻璃与小透镜每次重组重建一次。
++        // 今日页每页有 3+ 个分组标题、页面本身还带 1Hz 计时，所以必须 remember。
++        val sectionShape: () -> com.kyant.capsule.ContinuousRoundedRectangle = remember { { ContinuousCapsule() } }
++        val sectionEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
++            remember(blurRadius, refraction) {
++                {
++                    blur(blurRadius.dp.toPx())
++                    if (refraction != CardRefractionLevel.OFF) {
++                        lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
++                    }
++                }
++            }
++        val onSectionSurface: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit =
++            remember(isDark, surfaceOpacity) {
++                {
++                    drawRect(
++                        if (isDark) Color.Black.copy(alpha = surfaceOpacity)
++                        else Color.White.copy(alpha = surfaceOpacity)
++                    )
++                }
++            }
+         Box(
+             modifier = modifier
+                 .padding(vertical = 6.dp)
+                 .clip(shape)
+                 .drawBackdrop(
+                     backdrop = wallpaperBackdrop,
+-                    shape = { shape },
+-                    effects = {
+-                        blur(blurRadius.dp.toPx())
+-                        if (refraction != CardRefractionLevel.OFF) {
+-                            lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
+-                        }
+-                    },
++                    shape = sectionShape,
++                    effects = sectionEffects,
+                     highlight = null,
+-                    onDrawSurface = {
+-                        drawRect(if (isDark) Color.Black.copy(alpha = surfaceOpacity) else Color.White.copy(alpha = surfaceOpacity))
+-                    }
++                    onDrawSurface = onSectionSurface
+                 )
+                 // 标题与课程卡一致用淡描边；亮版只留给今日助手/格言
+                 .edgeLight(shape = shape, edgeLight = rememberCardEdgeLight())
+diff --git a/app/src/main/java/com/haooz/chedule/widget/WidgetUpdateCache.kt b/app/src/main/java/com/haooz/chedule/widget/WidgetUpdateCache.kt
+index 83de3f2..ce90121 100644
+--- a/app/src/main/java/com/haooz/chedule/widget/WidgetUpdateCache.kt
++++ b/app/src/main/java/com/haooz/chedule/widget/WidgetUpdateCache.kt
+@@ -37,8 +37,33 @@ object WidgetUpdateCache {
+         }
+     }
+ 
++    /**
++     * 4 个 provider 里是否有任意一个真的被放到桌面。
++     *
++     * 刷新链在课中是**分钟级**的，每次都做 4 次 `getAppWidgetIds` binder 调用的话，
++     * 一天下来是四位数；而"桌面上一个小组件都没放"是最常见的情况。
++     * 所以这里对**否定结果**做 60 秒缓存：无实例时不重复问系统，
++     * 代价是最多 60 秒后才发现"刚放了小组件"——小组件自己的 onUpdate 本来就会画首帧。
++     * 任何异常一律按"有"处理，不会把真实实例漏掉。
++     */
++    @Volatile
++    private var noWidgetsUntil = 0L
++
++    fun anyProviderWidgets(context: Context): Boolean {
++        val now = System.currentTimeMillis()
++        if (now < noWidgetsUntil) return false
++        val any = hasProviderWidgets(context, CourseWidgetProviderStandard::class.java) ||
++            hasProviderWidgets(context, TodayCourseWidgetProviderStandard::class.java) ||
++            hasProviderWidgets(context, CourseWidgetProviderPad::class.java) ||
++            hasProviderWidgets(context, TodayCourseWidgetProviderPad::class.java)
++        if (!any) noWidgetsUntil = now + 60_000L
++        return any
++    }
++
+     /** 按桌面实际放置情况刷新；未放置的 provider 完全不广播 */
+     fun updateInstalledWidgets(context: Context) {
++        // 一个都没放时直接走缓存早退（原来这里固定 4 次 binder 调用）
++        if (System.currentTimeMillis() < noWidgetsUntil) return
+         if (hasProviderWidgets(context, CourseWidgetProviderStandard::class.java)) {
+             CourseWidgetProviderStandard.updateAllWidgets(context)
+         }
+-- 
+2.55.0
+

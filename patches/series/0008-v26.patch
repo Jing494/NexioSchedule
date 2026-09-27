@@ -1,0 +1,68 @@
+From b10c2e737f292e22c967b2f3fbdedecd68174e22 Mon Sep 17 00:00:00 2001
+From: dsh-local <dsh@local>
+Date: Sun, 27 Sep 2026 09:57:57 +0800
+Subject: [PATCH 08/16] =?UTF-8?q?v26=EF=BC=9A=E4=BF=AE=E3=80=8C=E5=81=87?=
+ =?UTF-8?q?=E6=9C=9F=E4=BD=99=E9=A2=9D=E6=8F=90=E9=86=92=E3=80=8D=E5=9C=A8?=
+ =?UTF-8?q?=E5=81=87=E6=9C=9F=E6=9C=80=E5=90=8E=E4=B8=80=E5=A4=A9=E6=B0=B8?=
+ =?UTF-8?q?=E8=BF=9C=E4=B8=8D=E5=8F=91?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+用户实测：把余额提醒设成 10:00，到点没收到。
+
+根因：checkDailyReturnDayNotifications 的余额分支有两个排除条件
+  span.daysLeft > 0  且  !isReturnDay(today)
+而假期最后一天必然**同时**命中这两条（剩 0 天 + 次日要上课），
+于是整个假期里最该提醒的那天一条都不发。逐日推演：
+  第1天 daysLeft>0、isReturnDay=false（次日仍在假期）→ 发
+  第2天 daysLeft>0、isReturnDay=false                     → 发
+  最后一天 daysLeft=0、isReturnDay=true                   → 不发 ✗
+
+今日页在 v22 就已经在最后一天显示「今天是X第 N 天 · 最后一天」，通知却漏掉同一天，
+两边口径不一致。现在统一：只要在假期内就发；最后一天换文案。
+
+顺带记录：本轮排查已核实系统侧全部正常 ——
+通知权限 granted、四个通道 del=false（imp 4/4/3/2）、应用在 Doze 白名单、
+所有闹钟 exactAllowReason=policy_permission、receiver 能被唤醒（广播历史可见）、
+crash 缓冲区无本包记录。所以问题在应用逻辑，不在系统。
+---
+ .../chedule/reminder/CourseReminderHelper.kt      | 15 +++++++++++----
+ 1 file changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+index 61fd25c..0ea33d8 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+@@ -1181,17 +1181,24 @@ object CourseReminderHelper {
+             repository.getReturnDayBalanceHour(),
+             repository.getReturnDayBalanceMinute(),
+         )
+-        if (span != null && span.daysLeft > 0 &&
++        // 「假期余额」= 假期期间**每天**一条，**含最后一天**。
++        //
++        // 原来有两个排除条件：`daysLeft > 0` 与 `!isReturnDay(today)`。
++        // 而假期的最后一天必然同时命中这两条（剩 0 天 + 次日要上课），
++        // 于是整个假期里最该提醒的那天一条都不发 —— 用户实测「余额提醒设了 10:00 却没收到」。
++        // 今日页早就在最后一天显示「今天是X第 N 天 · 最后一天」了，通知却漏掉同一天，两边口径不一致。
++        // 现在统一为：只要在假期内就发；最后一天换成「最后一天」的文案。
++        if (span != null &&
+             repository.getReturnDayBalanceEnabled() &&
+             !java.time.LocalTime.now().isBefore(balanceTarget) &&
+-            !ReturnDayReminder.isReturnDay(context, today) &&
+             prefs.getString(KEY_RETURN_BALANCE_DATE, null) != todayKey
+         ) {
++            val lastDay = span.daysLeft <= 0
+             showReminderNotification(
+                 context,
+                 NOTIFY_ID_RETURN_BALANCE,
+-                "${span.name}还剩 ${span.daysLeft} 天",
+-                "好好休息，返校前我会再提醒你",
++                if (lastDay) "今天是${span.name}最后一天" else "${span.name}还剩 ${span.daysLeft} 天",
++                if (lastDay) "最后一天了，收拾一下准备返校吧" else "好好休息，返校前我会再提醒你",
+                 channelId = CHANNEL_HOLIDAY_ID,
+             )
+             prefs.edit { putString(KEY_RETURN_BALANCE_DATE, todayKey) }
+-- 
+2.55.0
+

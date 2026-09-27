@@ -1,0 +1,73 @@
+From 412e38e569501e42b3814506483e9e44211544e2 Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Sun, 27 Sep 2026 17:19:28 +0800
+Subject: [PATCH 16/16] =?UTF-8?q?v34:=20=E5=BA=94=E7=94=A8=E5=86=85?=
+ =?UTF-8?q?=E3=80=8C=E5=8E=BB=E4=B8=8B=E8=BD=BD=E3=80=8D=E6=94=B9=E4=B8=BA?=
+ =?UTF-8?q?=E8=B7=B3=E6=9C=AC=20fork=20=E7=9A=84=20Releases=EF=BC=88?=
+ =?UTF-8?q?=E4=B8=8D=E5=86=8D=E5=86=85=E5=B5=8C=E4=B8=8B=E8=BD=BD=E4=B8=8A?=
+ =?UTF-8?q?=E6=B8=B8=E5=8E=9F=E7=89=88=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+根因：应用内更新检查查到的是**上游**（HaoZai000 / gitee）的版本，而上游 APK 与本 fork
+签名不同 —— 内嵌下载后安装会失败（或要求卸载重装、丢数据）。
+
+改法：UpdateDialog.startDownload() 改为打开
+https://github.com/Jing494/NexioSchedule/releases/latest
+（保留后续内嵌下载代码作为备用路径，暂不删除）。
+
+这让"优雅体验最新版"闭环：App 提示有新版 → 一键到本 fork 下载页 → 下载签名一致、
+可直接覆盖安装的包。对应的自动构建在仓库 master 的
+.github/workflows/sync-upstream-build-release.yml（GitHub Actions 全程构建 + fork keystore 签名）。
+
+(cherry picked from commit 93a445bf4bcabf9f27e9d0ed544a6527c4ed0fe3)
+---
+ .../chedule/ui/components/UpdateDialog.kt     | 30 +++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt b/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
+index 4ebc523..344ca16 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
+@@ -139,7 +139,37 @@ internal fun UpdateDialog(liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = nu
+         }
+     }
+ 
++    /**
++     * 「去下载」：**打开本 fork 的 Releases 页**，不再内嵌下载上游原版。
++     *
++     * 为什么必须这样：应用内更新检查查到的是**上游**（HaoZai000 / gitee）的版本，
++     * 而上游 APK 与本 fork 的签名不同 —— 直接下载安装会失败（或要求卸载重装、丢数据）。
++     * 本 fork 的包一律发布在自己的 Releases 里，所以这里改成跳转，让用户下载"签名一致、
++     * 可直接覆盖安装"的那一份。
++     *
++     * 对应的自动构建流水线见仓库 master 的 .github/workflows/sync-upstream-build-release.yml
++     * （全程在 GitHub Actions 构建、用 fork keystore 签名）。
++     */
++    private fun openForkReleases() {
++        val url = "https://github.com/Jing494/NexioSchedule/releases/latest"
++        val ok = runCatching {
++            context.startActivity(
++                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
++                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
++            )
++        }.isSuccess
++        if (!ok) {
++            android.widget.Toast.makeText(context, "打不开浏览器，请手动访问：$url", android.widget.Toast.LENGTH_LONG).show()
++        }
++    }
++
+     fun startDownload() {
++        // 上游原版与本 fork 签名不同，内嵌下载会装不上 —— 改为跳到本 fork 的 Releases
++        openForkReleases()
++        showUpdateDialog = false
++        return
++
++        @Suppress("UNREACHABLE_CODE")
+         val tag = updateTagName
+         val apkUrl = updatePrefs.getString("latest_apk_url", "") ?: ""
+         if (tag.isBlank() || apkUrl.isBlank()) {
+-- 
+2.55.0
+

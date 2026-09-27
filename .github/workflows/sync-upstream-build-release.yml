@@ -1,0 +1,344 @@
+# 同步上游 + 自动构建 + 发布 Release（全程在 GitHub runner 上，本地不参与）
+#
+# 设计参考了 xiaoxun007/NexioSchedule 的做法，但有两处**必须不同**：
+#   1) 签名密钥：本 fork 用**自己的 keystore**（放 repo secrets，绝不入库），
+#      这样能直接覆盖安装你手机上现有那版；参考仓库用的是可公开的 debug key。
+#   2) 定制内容：本 fork 的定制是一整套补丁序列（patches/series/*.patch），
+#      逐个 git am 应用；任一补丁失败就**红叉 + 开 Issue**，不做静默降级。
+#
+# 首次使用：先把 4 个 secrets 配好（见 README「自动构建」一节），再手动 Run 一次。
+
+name: 同步上游并构建 Release APK
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'      # 每 6 小时**只体检上游**（有新提交就开 Issue 提醒 rebase），不自动出包
+  workflow_dispatch: {}        # 手动触发 = 真正出包（改了补丁/基准后跑这个）
+
+permissions:
+  contents: write              # 发 Release / 推送 master 同步
+  issues: write                # 失败时开 Issue 提醒
+
+# 同一个 ref 同时只跑一个；重复触发自动取消旧的（省额度）
+concurrency:
+  group: sync-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 【上游基准】补丁严格配套这个 commit：patches/series/* 就是对着它生成的。
+  #   固定基准 → 补丁永远能干净应用、每次都能出包（本仓库要的是"随时能拿到我的定制版"）；
+  #   上游有新提交时不再盲目追最新，只开 Issue 提醒"该 rebase 了"（见最后一步）。
+  #   想升级：rebase 定制栈到新上游 → 重新生成 patches/series/ → 改这一行。
+  UPSTREAM_BASE: 1f467210c4145b098b350a0ec7fc18154d2fd1cd
+
+jobs:
+  sync-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库（完整历史）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 配置 git 并拉取上游
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/HaoZai000/NexioSchedule.git
+          git fetch upstream master
+
+      - name: 判断上游是否有新提交
+        id: check
+        run: |
+          if git merge-base --is-ancestor upstream/master HEAD; then
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+            echo "✅ 已是最新上游，无需构建"
+          else
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
+            echo "upstream_sha=$(git rev-parse --short upstream/master)" >> "$GITHUB_OUTPUT"
+            echo "🔄 检测到上游新提交 $(git rev-parse --short upstream/master)"
+          fi
+
+      - name: 同步 fork master 到上游最新（保留 fork 专属文件）
+        if: steps.check.outputs.has_update == 'true'
+        run: |
+          # fork 专属文件：补丁序列 / 本 workflow / README。reset 对齐上游后再挂回来，
+          # 因此 master = 上游最新 + 这些文件，历史由本 workflow 管理（force push）。
+          mkdir -p /tmp/keep
+          cp -r patches /tmp/keep/ 2>/dev/null || true
+          cp -r .github /tmp/keep/ 2>/dev/null || true
+          cp README.md /tmp/keep/ 2>/dev/null || true
+          git reset --hard upstream/master
+          cp -r /tmp/keep/patches ./patches 2>/dev/null || true
+          mkdir -p .github/workflows
+          cp -r /tmp/keep/.github/workflows/. .github/workflows/ 2>/dev/null || true
+          cp /tmp/keep/README.md ./README.md 2>/dev/null || true
+          git add -A
+          git commit -q -m "sync: 对齐上游 $(git rev-parse --short upstream/master)（保留 patches/README/workflow）" --no-verify || true
+          git push --force origin master
+
+      - name: 守卫｜补丁序列必须与源码分支一致
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          # 从 local-audit-v21 重新生成一遍，与仓库里的 patches/ 逐字节比对：
+          # 防止有人手改补丁，导致"仓库里的源码"和"实际构建的源码"不是同一套。
+          git fetch -q origin local-audit-v21
+          BASE="$UPSTREAM_BASE"   # 补丁就是对着这个基准生成的，显式用它
+          rm -rf /tmp/regen && git format-patch "$BASE..origin/local-audit-v21" -o /tmp/regen --quiet
+          if ! diff -r /tmp/regen patches/series > /tmp/patchdiff.txt 2>&1; then
+            echo "::error::patches/series 与 local-audit-v21 不一致 —— 请重新 git format-patch 生成后提交"
+            head -40 /tmp/patchdiff.txt
+            exit 1
+          fi
+          echo "✅ 补丁序列与源码分支一致（$BASE..origin/local-audit-v21）"
+
+      - name: 从干净的上游代码逐个应用定制补丁
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git checkout -B build-snapshot "$UPSTREAM_BASE"
+          cp -r patches /tmp/patches
+          echo "构建基准（钉住）：$UPSTREAM_BASE"
+          for p in /tmp/patches/series/*.patch; do
+            echo "── 应用 $(basename "$p")"
+            if ! git am --3way "$p"; then
+              git am --abort 2>/dev/null || true
+              echo "::error::补丁 $(basename "$p") 应用失败：上游改了同一处代码。需要先在上游最新上 rebase 定制栈、重新生成 patches/series/*.patch（本地只改文件不编译，见 README）"
+              exit 1
+            fi
+          done
+          echo "✅ 全部补丁应用完成，定制提交："
+          git log "$UPSTREAM_BASE"..HEAD --format='- %s' | head -30
+
+      - name: 质量门禁｜不变量核对（不过就不发版）
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          # 这些条目全部来自本地踩过的坑（岛 B 区联动 / 折射宽度恒定 / 日子词唯一 /
+          # 次日文案共享 / 余额最后一天 / sectionTopDp 单一真源 …），不过就红叉。
+          python3 tools/ci_check.py . | tee /tmp/ci_check.log
+
+      - name: 设置 JDK 21
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Gradle 缓存（CI 提速）
+        if: github.event_name == 'workflow_dispatch'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: 安装 Android SDK（platform/build-tools 37）
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK_ROOT" \
+            "platforms;android-37.0" "build-tools;37.0.0" > /dev/null
+          echo "SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: 计算 fork 版本号并构建
+        id: build
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # CI 在云端，用官方 Gradle 源（仓库里的 wrapper 指向的是国内镜像）
+          sed -i 's#distributionUrl=.*#distributionUrl=https://services.gradle.org/distributions/gradle-9.5.1-bin.zip#' \
+            gradle/wrapper/gradle-wrapper.properties
+          VNAME=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          MAINVER=$(echo "$VNAME" | sed 's/-.*//')
+          VC=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
+          GH_COUNT=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 2>/dev/null | grep -c "v${MAINVER}-gh" || true)
+          GH_N=$((GH_COUNT + 1))
+          FORK_CODE=$((VC * 100 + GH_N))
+          sed -i "s/versionName = \"[^\"]*\"/versionName = \"${MAINVER}-gh${GH_N}\"/" app/build.gradle.kts
+          sed -i "s/versionCode = [0-9]*/versionCode = ${FORK_CODE}/" app/build.gradle.kts
+          {
+            echo "MAINVER=$MAINVER"; echo "VNAME=$VNAME"; echo "VC=$VC"
+            echo "GH_N=$GH_N";     echo "FORK_CODE=$FORK_CODE"
+          } >> "$GITHUB_OUTPUT"
+          echo "本次构建：${MAINVER}-gh${GH_N}（versionCode=${FORK_CODE}，上游 ${VNAME}/${VC}）"
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon
+
+      - name: 用 fork keystore 签名
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ]; then
+            echo "::error::缺少 secrets.KEYSTORE_BASE64 —— 请按 README「自动构建」一节配置 4 个 secrets 后再运行"
+            exit 1
+          fi
+          mkdir -p signing
+          printf '%s' "$KS_B64" | base64 -d > signing/fork.jks
+          chmod 600 signing/fork.jks
+          BT="$SDK_ROOT/build-tools/37.0.0"
+          mkdir -p app/build/outputs/final
+          APK_NAME="Nexio.v${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}.apk"
+          "$BT/zipalign" -f 4 app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/final/aligned.apk
+          "$BT/apksigner" sign --ks signing/fork.jks --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:KS_PASS --key-pass env:KEY_PASS \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out "app/build/outputs/final/$APK_NAME" app/build/outputs/final/aligned.apk
+          "$BT/apksigner" verify --print-certs "app/build/outputs/final/$APK_NAME" | head -6
+          ( cd app/build/outputs/final && sha256sum "$APK_NAME" > "$APK_NAME.sha256" && cat "$APK_NAME.sha256" )
+          ls -lh app/build/outputs/final/
+
+      - name: 守卫｜APK 契约核验（签名指纹 / 版本号 / 单调递增）
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECT_CERT: a7fdc7b704db284774a0124fb13495b5e6ee4a05f6430547ad8ec21aba5ac938
+        run: |
+          APK="app/build/outputs/final/Nexio.v${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}.apk"
+          BT="$SDK_ROOT/build-tools/37.0.0"
+          # ① 签名指纹必须与"手机上现有那版"一致（否则装了也不能覆盖升级）
+          CERT=$("$BT/apksigner" verify --print-certs "$APK" | grep -m1 -i 'SHA-256 digest' | sed 's/.*digest: //')
+          if [ "$CERT" != "$EXPECT_CERT" ]; then
+            echo "::error::签名指纹不符：期望 $EXPECT_CERT，实际 $CERT（secrets 里的 keystore 是不是换过？）"
+            exit 1
+          fi
+          echo "✅ 签名指纹一致：$CERT"
+          # ② 包内版本号必须等于本次算出的值（防止 sed 版本号没生效）
+          BADGING=$("$SDK_ROOT/cmdline-tools/latest/bin/apkanalyzer" manifest version-name "$APK" 2>/dev/null || true)
+          VCODE=$("$SDK_ROOT/cmdline-tools/latest/bin/apkanalyzer" manifest version-code "$APK" 2>/dev/null || true)
+          echo "包内：versionName=$BADGING versionCode=$VCODE"
+          if [ "$BADGING" != "${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}" ]              || [ "$VCODE" != "${{ steps.build.outputs.FORK_CODE }}" ]; then
+            echo "::error::包内版本号与预期不符（预期 ${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }} / ${{ steps.build.outputs.FORK_CODE }}）"
+            exit 1
+          fi
+          # ③ versionCode 必须严格大于所有已发版本（保证能直接覆盖安装）
+          MAX=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 2>/dev/null | awk '{print $1}' | head -0; true)
+          MAX=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' 2>/dev/null                 | sed 's/.*-gh//' | grep -E '^[0-9]+$' | sort -n | tail -1)
+          MAX=${MAX:-0}
+          N=${{ steps.build.outputs.GH_N }}
+          if [ "$N" -le "$MAX" ]; then
+            echo "::error::序号 $N 不大于历史最大值 $MAX —— versionCode 会与旧版冲突"
+            exit 1
+          fi
+          echo "✅ versionCode 单调：本次 ${{ steps.build.outputs.FORK_CODE }}（序号 $N > 历史 $MAX）"
+
+      - name: 上传构建产物（Actions 页面可下载）
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nexio-fork-release-${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}
+          path: app/build/outputs/final/Nexio.v*.apk*
+
+      - name: 发布 GitHub Release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}"
+          UP_SHORT=$(git rev-parse --short "$UPSTREAM_BASE")
+          LATEST_UP=$(git rev-parse --short upstream/master 2>/dev/null || echo unknown)
+          UP_LOG=$(git log "$UPSTREAM_BASE"..upstream/master --oneline --no-merges -10 2>/dev/null | sed 's/^/- /')
+          [ -n "$UP_LOG" ] || UP_LOG="（上游无新提交）"
+          CUSTOM_LOG=$(git log "$UPSTREAM_BASE"..HEAD --format='- %s' | head -40)
+          CERT=$("$SDK_ROOT/build-tools/37.0.0/apksigner" verify --print-certs \
+            "app/build/outputs/final/Nexio.v${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}.apk" 2>/dev/null \
+            | grep -m1 -i 'SHA-256 digest' | sed 's/.*digest: //')
+          cat > /tmp/notes.md << MDEOF
+          ### 📦 构建信息
+          - **构建基准（钉住）**：HaoZai000/NexioSchedule@${UP_SHORT}（上游 versionName \`${{ steps.build.outputs.VNAME }}\` / versionCode \`${{ steps.build.outputs.VC }}\`）
+          - **本 fork 版本**：\`${TAG}\`（versionName \`${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}\` / versionCode \`${{ steps.build.outputs.FORK_CODE }}\`）
+          - **签名证书 SHA-256**：\`${CERT}\`
+          - **构建方式**：GitHub Actions 全程构建（本地不参与）；干净上游代码 + \`patches/series/*.patch\` 逐个应用
+
+          ### 🔄 上游最近变更（本次同步带入）
+          ${UP_LOG}
+
+          ### 🧩 本 fork 的定制（补丁序列，按应用顺序）
+          ${CUSTOM_LOG}
+
+          ### ✅ 自动核验（均由 CI 完成，不通过就不会发出来）
+          - 质量门禁 \`tools/ci_check.py\`：全部通过
+          - 补丁序列与源码分支 \`local-audit-v21\` 逐字节一致
+          - 签名指纹与目标 keystore 一致、包内版本号与上述一致、序号单调递增
+          - 已生成同名 \`.sha256\` 校验文件
+
+          ### ⚠️ 安装注意
+          - 本 fork 用自己的 keystore 签名：**从上游原版切过来需要先卸载**（会丢 App 内数据，建议先做一次 WebDAV 备份）；
+          - **同一 fork 系列可直接覆盖安装**（versionCode 单调递增：上游码×100 + 序号）；
+          - 校验：下载后比对同名 \`.sha256\`（`sha256sum -c` 即可）。
+          MDEOF
+          gh release create "$TAG" app/build/outputs/final/Nexio.v*.apk app/build/outputs/final/*.sha256 \
+            --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file /tmp/notes.md \
+            || echo "Release 已存在或创建失败（忽略）"
+
+      - name: 上游有新提交时开 Issue 提醒（不阻塞出包）
+        if: (steps.check.outputs.has_update == 'true' || github.event_name == 'workflow_dispatch') && success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          AHEAD=$(git rev-list --count "$UPSTREAM_BASE"..upstream/master 2>/dev/null || echo 0)
+          if [ "$AHEAD" -gt 0 ]; then
+            EXIST=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "上游已更新" --json number --jq 'length' 2>/dev/null || echo 0)
+            if [ "$EXIST" = "0" ]; then
+              LATEST=$(git rev-parse --short upstream/master)
+              printf '%s\n' \
+                "上游 HaoZai000/NexioSchedule 已到 $LATEST，比本 fork 钉住的基准 $UPSTREAM_BASE 新 $AHEAD 个提交。" \
+                "" \
+                "**不影响出包**：流水线仍钉在旧基准上正常构建发布，无需紧急处理。想跟随时：" \
+                "" \
+                "  1. git fetch upstream master" \
+                "  2. git rebase --onto upstream/master <旧基准> local-audit-v21" \
+                "  3. git format-patch <旧基准>..local-audit-v21 -o patches/series" \
+                "  4. 改 .github/workflows/sync-upstream-build-release.yml 顶部的 UPSTREAM_BASE" \
+                "  5. 推上 master 后会重新出包；本 Issue 可关闭" \
+                "" \
+                "只需改文件，不用本地编译。" > /tmp/issue.md
+              gh issue create --repo "$GITHUB_REPOSITORY" \
+                --title "上游已更新 $AHEAD 个提交：该 rebase 定制栈了" --body-file /tmp/issue.md || true
+            else
+              echo "已有同类 Issue（#$EXIST），跳过"
+            fi
+          else
+            echo "上游无新提交（基准已是最新）"
+          fi
+
+      - name: 同步发布到 Gitee（可选：配了 GITEE_TOKEN 才执行）
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GT: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: ${{ vars.GITEE_REPO }}
+        run: |
+          if [ -z "$GT" ] || [ -z "$GITEE_REPO" ]; then
+            echo "未配置 GITEE_TOKEN / GITEE_REPO，跳过 Gitee 同步（不影响 GitHub 发布）"
+            exit 0
+          fi
+          TAG="v${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}"
+          APK="app/build/outputs/final/Nexio.v${{ steps.build.outputs.MAINVER }}-gh${{ steps.build.outputs.GH_N }}.apk"
+          API="https://gitee.com/api/v5/repos/$GITEE_REPO"
+          echo "同步到 Gitee: $GITEE_REPO $TAG"
+          # 建 release（已存在则取回 id）
+          RID=$(curl -s -X POST "$API/releases" --data-urlencode "access_token=$GT" \
+                  --data-urlencode "tag_name=$TAG" --data-urlencode "name=$TAG" \
+                  --data-urlencode "body=本包与 GitHub Release 同一构建产物：https://github.com/${{ github.repository }}/releases/tag/$TAG" \
+                | python3 -c "import json,sys;print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+          if [ -z "$RID" ]; then
+            RID=$(curl -s "$API/releases/tags/$TAG?access_token=$GT" \
+                  | python3 -c "import json,sys;print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+          fi
+          if [ -z "$RID" ]; then echo "::warning::Gitee release 创建/查询失败，跳过附件上传"; exit 0; fi
+          curl -s -X POST "$API/releases/$RID/attach_files" -F "access_token=$GT" -F "file=@$APK" | head -c 300
+          echo "✅ Gitee 附件上传完成"
+
+      - name: 失败时开 Issue 提醒（补丁冲突等）
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "自动构建失败：$(date +%F)" \
+            --body "本次 workflow 失败（多为**上游改了同一处代码导致补丁无法应用**）。
+
+          - 运行记录：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - 处理方式：把定制栈 rebase 到上游最新，重新生成 \`patches/series/*.patch\` 后推上 master（**只需改文件，不用本地编译**），再手动 Run 一次本 workflow。" \
+            || echo "开 Issue 失败（忽略）"

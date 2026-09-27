@@ -1,0 +1,652 @@
+From e780cd2823539e268b5a4fdf4163b25568fdb101 Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Sun, 27 Sep 2026 10:53:17 +0800
+Subject: [PATCH 10/16] =?UTF-8?q?v28:=20=E6=B5=81=E7=95=85=E5=BA=A6=20?=
+ =?UTF-8?q?=E2=80=94=E2=80=94=20=E9=A2=84=E5=90=88=E6=88=90=E5=87=8F?=
+ =?UTF-8?q?=E5=8D=8A=20/=20=E6=95=B4=E9=A1=B5=E9=87=8D=E6=89=A7=E8=A1=8C?=
+ =?UTF-8?q?=E6=B6=88=E9=99=A4=20/=20=E8=BD=AE=E8=AF=A2=E9=99=8D=E5=88=B0?=
+ =?UTF-8?q?=E5=88=86=E9=92=9F=E8=8A=82=E6=8B=8D=20/=20=E6=BB=91=E5=8A=A8?=
+ =?UTF-8?q?=E6=9C=9F=E6=AF=9B=E7=8E=BB=E7=92=83=E9=99=8D=E7=BA=A7?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+背景：v27 装机后 gfxinfo 基线为 2165 帧里 208 卡顿（9.61%），P50 42ms / P90 69ms。
+这一轮按"先去掉白干，再谈省资源"的顺序做，全部只动调度节拍与绘制降级，不改任何判定语义。
+
+① 预合成 2 周 → 1 周（MainScheduleScreen）
+   beyondViewportPageCount=2 时同时组合+测量+布局 5 个周页，而每页是
+   verticalScroll + 节次列 + 7 个 DayColumn × 数十张卡；跨页作用域的重组要乘 5。
+   代价：极快多周连滑时第二页可能晚一帧，紧邻 1 页仍然预合成。
+
+② 每秒空转的循环降到分钟节拍（TodayAssistant / TodayScreen）
+   generateSmartTip 每次要跑两遍 buildCourseTimeRanges（解析+排序），QuoteCard 的
+   computeQuoteScene 同理，而两者输出粒度都是分钟（ceil 语义，无退化取值）。
+   → 睡到下一个整分；用 LocalTime 现算剩余毫秒，不用固定 60_000（会漂移并错过整分）。
+   课程行倒计时用的是 floor 语义，**不能**照抄这套：见下。
+
+③ 滑动开始/停止不再让整页重执行（MainScheduleScreen）
+   原来在 pager 的页作用域里写 `val isScheduleScrolling by scheduleScrollInProgress`，
+   于是每次滑动起止，已组合的每一页 body 都要整块重执行（Modifier 链、remember 键求值、
+   两种 BreakDivider、SideEffect）。改走 snapshotFlow，只在停滑时把版本号 +1。
+
+④ 稳定壳 pager 的 key lambda（MainActivity）
+   只依赖 isShiftMode，原来每次壳重执行都新建，使 LazyLayout 的 item provider 失效。
+   同处的 mainPagerPageContent 捕获大量会变局部量，**不能** remember（会冻值），保持原样。
+
+⑤ Today pager 的跨页 LazyListState 改 rememberSaveable(+Saver)
+   回收重建时不再丢滚动位置、不再整列重新测量。
+
+⑥ 滑动/翻页期毛玻璃降级（新增 ui/utils/GlassPerf.kt）
+   课表卡/今日页玻璃卡的 blur+lens 与边光描边都是"每帧×每卡"开销。
+   开关只在**绘制期**读（effects lambda / DrawModifierNode.draw），绝不进 remember 的键
+   —— 否则 lambda 身份翻面即变，drawBackdrop 会判不等并整块重建绘制缓存（v22 椭圆伪影同类）。
+   已核对库实现：updateEffects() 跑在 observeReads 里，翻面只失效这一层；
+   且 renderEffect==null 时走 canDirectBlit 直采共享预模糊层，**额外省掉每卡离屏录制**。
+   停滑后延迟 180ms 恢复，防惯性尾部连续开关造成闪烁。
+   注：侧栏早就有同类降级（railGlassActive derivedStateOf），这里是把它generalize 到卡片。
+
+⑦ 课程行倒计时：唤醒点改为从"当前剩余秒数"推（TodayScreen）
+   显示用 floor 语义，分钟值 v 的窗口是 (end-60(v+1), end-60v]，
+   所以下一次跳变距现在恰好 totalSeconds%60+1 秒。
+   若按"睡到下一个整分"推：进入循环那一瞬若正压在跳变点上（"未开始"分支正好睡到 start=整分），
+   floor(end-now) 还是旧的一档（开课时算出 45，40ms 后才是 44），
+   于是那一分钟（44）会被整个跳过，肉眼看到 45 → 43。已用离线复算证明修复。
+
+⑧ 旧版残留闹钟 RC 清理改为一次性（CourseReminderHelper）
+   现版本到点闹钟用固定 ID，这里的"课程名 hash"RC 是一次性迁移；
+   每个 RC 都要 getBroadcast+cancel（未命中时先建再删），60 门课 120 次 binder 往返，
+   且每次全量重排都重走。迁移完成置位标记。
+
+⑨ 提醒体检补「后台自启动」（CourseReminderScreen）
+   Android 没有查询自启动的公开接口（HyperOS 在安全中心），所以只读 AOSP 的
+   isBackgroundRestricted()，读不到按通过处理，再按厂商补一句手动确认 —— 不做假判定。
+
+验证：
+- 新增 dist-v28/verify_perf_v28.py 离线复算：分钟节拍 24h 节拍/漂移/值域；
+  课程行取值窗口覆盖（15 组进入相位 × 3 种作息，skip=0、无跳档、最后一分钟仍秒级、
+  单行唤醒 3300 → 115）；唤醒间隔值域（不忙等、不久睡）。
+- 编译门禁 assembleRelease 通过；apksigner verify + sha256 + dex 字符串核验见 dist-v28。
+---
+ .../chedule/reminder/CourseReminderHelper.kt  | 42 ++++++++++----
+ .../ui/activities/CourseReminderScreen.kt     | 29 +++++++++-
+ .../chedule/ui/activities/MainActivity.kt     | 44 ++++++++++++++-
+ .../haooz/chedule/ui/components/CourseCard.kt | 17 ++++--
+ .../haooz/chedule/ui/components/DayColumn.kt  | 14 +++--
+ .../ui/effects/edgelight/EdgeLightModifier.kt |  6 ++
+ .../chedule/ui/screens/MainScheduleScreen.kt  | 26 +++++++--
+ .../chedule/ui/screens/TodayAssistant.kt      | 10 +++-
+ .../haooz/chedule/ui/screens/TodayScreen.kt   | 56 ++++++++++++++++---
+ .../com/haooz/chedule/ui/utils/GlassPerf.kt   | 33 +++++++++++
+ .../com/haooz/chedule/ui/utils/MinuteTick.kt  | 19 +++++++
+ 11 files changed, 255 insertions(+), 41 deletions(-)
+ create mode 100644 app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
+ create mode 100644 app/src/main/java/com/haooz/chedule/ui/utils/MinuteTick.kt
+
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+index d879de4..84f9e3a 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+@@ -212,6 +212,8 @@ object CourseReminderHelper {
+     // 只按课程取消会残留孤儿闹钟（到点弹旧数据）
+     private const val PREF_ALARM_REGISTRY = "reminder_alarm_registry"
+     private const val KEY_PRE_CLASS_RCS = "pre_class_rcs"
++    // 一次性迁移标记：旧版按课程名 hash 派生的到点闹钟 RC 已清理完毕
++    private const val KEY_LEGACY_RC_CLEANED = "legacy_rc_cleaned_v1"
+     private const val KEY_EXPAND_RCS = "expand_rcs"
+     private const val PI_FLAGS = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+ 
+@@ -220,6 +222,16 @@ object CourseReminderHelper {
+         return (prefs.getStringSet(key, emptySet()) ?: emptySet()).mapNotNull { it.toIntOrNull() }.toSet()
+     }
+ 
++    private fun hasCleanedLegacyAlarmRcs(context: Context): Boolean =
++        context.getSharedPreferences(PREF_ALARM_REGISTRY, Context.MODE_PRIVATE)
++            .getBoolean(KEY_LEGACY_RC_CLEANED, false)
++
++    private fun markLegacyAlarmRcsCleaned(context: Context) {
++        context.getSharedPreferences(PREF_ALARM_REGISTRY, Context.MODE_PRIVATE).edit {
++            putBoolean(KEY_LEGACY_RC_CLEANED, true)
++        }
++    }
++
+     private fun writeRcSet(context: Context, key: String, rcs: Set<Int>) {
+         context.getSharedPreferences(PREF_ALARM_REGISTRY, Context.MODE_PRIVATE).edit {
+             putStringSet(key, rcs.map { it.toString() }.toSet())
+@@ -616,16 +628,26 @@ object CourseReminderHelper {
+             )
+             alarmManager.cancel(pending)
+         }
+-        // 旧版按课程名 hash 派生 RC 的残留
+-        val allCourses = CourseRepository(context).getAllCourses()
+-        for (course in allCourses) {
+-            val pendingIntent = PendingIntent.getBroadcast(
+-                context,
+-                10000 + course.name.hashCode(),
+-                intent,
+-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+-            )
+-            alarmManager.cancel(pendingIntent)
++        // 旧版按课程名 hash 派生 RC 的残留。
++        //
++        // 这是一次性迁移，不是常规维护：现版本到点闹钟用的是固定 ID
++        // （LIVE_COUNTDOWN_ID / LIVE_TEST_COUNTDOWN_ID，见 sendCourseStartNotification）。
++        // 而这里的每个 RC 都要 getBroadcast(FLAG_UPDATE_CURRENT) + cancel ——
++        // 后者在没命中已有闹钟时会「先建再删」，一门课 2 次 binder 往返；
++        // 60 门课就是 120 次，而且每次全量重排（启动 App / 改设置 / 开机 / 跨日）都要重走一遍。
++        // 迁移完成后置位标记，之后就再也不用为已经不存在的旧 RC 付这笔开销。
++        if (!hasCleanedLegacyAlarmRcs(context)) {
++            val allCourses = CourseRepository(context).getAllCourses()
++            for (course in allCourses) {
++                val pendingIntent = PendingIntent.getBroadcast(
++                    context,
++                    10000 + course.name.hashCode(),
++                    intent,
++                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
++                )
++                alarmManager.cancel(pendingIntent)
++            }
++            markLegacyAlarmRcsCleaned(context)
+         }
+     }
+ 
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
+index 1b04cc3..a122982 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
+@@ -1368,7 +1368,34 @@ private fun buildReminderHealth(context: android.content.Context): List<Reminder
+         } else null,
+     )
+ 
+-    // ④ 三个通道有没有被单独关掉
++    // ④ 后台自启动 / 后台运行限制
++    //
++    // 说实话的一行：Android 没有查询「自启动」的公开接口（HyperOS 把它放在安全中心里，
++    // 非 MIUI 根本没有这个概念），所以这里只读 AOSP 的后台限制标志，
++    // 读不到就按"通过"处理，再按厂商补充一句手动确认的提示 ——
++    // 不做「一定是没开自启动」这种看似确定、实则误导的判定。
++    val activityManager = context.getSystemService(android.content.Context.ACTIVITY_SERVICE)
++        as android.app.ActivityManager
++    val bgRestricted = runCatching { activityManager.isBackgroundRestricted() }
++        .getOrDefault(false)
++    val manufacturer = (android.os.Build.MANUFACTURER ?: "").lowercase()
++    val isXiaomiLike = manufacturer.contains("xiaomi") ||
++        manufacturer.contains("redmi") || manufacturer.contains("poco")
++    out += ReminderHealthItem(
++        title = "后台自启动",
++        ok = !bgRestricted,
++        detail = when {
++            bgRestricted -> "系统已限制后台运行，锁屏久了提醒可能被压住"
++            isXiaomiLike -> "系统未限制后台；自启动需在应用信息里手动确认"
++            else -> "系统未限制后台运行"
++        },
++        fix = if (bgRestricted) {
++            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
++                .setData("package:${context.packageName}".toUri())
++        } else null,
++    )
++
++    // ⑤ 三个通道有没有被单独关掉
+     val channelIds = listOf(
+         com.haooz.chedule.reminder.CourseReminderHelper.CHANNEL_REMINDER_ID,
+         com.haooz.chedule.reminder.CourseReminderHelper.CHANNEL_HOLIDAY_ID,
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
+index a0adacd..dbeb6e3 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
+@@ -68,6 +68,7 @@ import androidx.compose.runtime.produceState
+ import androidx.compose.runtime.remember
+ import androidx.compose.runtime.rememberCoroutineScope
+ import androidx.compose.runtime.rememberUpdatedState
++import androidx.compose.runtime.snapshotFlow
+ import androidx.compose.runtime.setValue
+ import androidx.compose.runtime.withFrameNanos
+ import androidx.compose.ui.Alignment
+@@ -141,6 +142,7 @@ import com.haooz.chedule.ui.screens.SettingsScreen
+ import com.haooz.chedule.ui.screens.ShiftScheduleScreen
+ import com.haooz.chedule.ui.screens.TodayScreen
+ import com.haooz.chedule.ui.theme.CourseScheduleTheme
++import com.haooz.chedule.ui.utils.GlassPerf
+ import com.haooz.chedule.ui.utils.LocalForcedDarkTheme
+ import com.haooz.chedule.ui.utils.applyNavigationBarIsDark
+ import com.haooz.chedule.ui.utils.applyThemeAwareSystemBars
+@@ -158,6 +160,8 @@ import com.kyant.backdrop.effects.vibrancy
+ import com.kyant.capsule.ContinuousRoundedRectangle
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.delay
++import kotlinx.coroutines.flow.collectLatest
++import kotlinx.coroutines.flow.distinctUntilChanged
+ import kotlinx.coroutines.launch
+ import kotlinx.coroutines.withContext
+ import top.yukonga.miuix.kmp.basic.ButtonDefaults
+@@ -2542,6 +2546,37 @@ fun CourseScheduleApp() {
+             showSwitchSchedule && switchOverlayActive -> 0f
+             else -> 1f
+         }
++        /*
++         * 毛玻璃降级：滑动/翻页进行中把 blur + lens 关掉，停下 180ms 再恢复。
++         *
++         * 这里特意用 snapshotFlow 而不是在 composition 里读这些 isScrollInProgress ——
++         * 那会让整个四千多行的 body 在每次滑动开始/结束时重跑一遍。
++         * 真正"读"这个开关的地方是各卡片 effects lambda 的**绘制期**，所以翻面只失效绘制层，
++         * 一次重组都不会产生。
++         *
++         * 180ms 的滞后是为了防抖：惯性滑动尾部会连续开关几次，没有滞后就会看到玻璃闪烁。
++         */
++        LaunchedEffect(
++            scheduleScrollState, pagerState, todayPagerState, mainPagerState, todayListScrollInProgress
++        ) {
++            snapshotFlow {
++                scheduleScrollState.isScrollInProgress ||
++                    pagerState.isScrollInProgress ||
++                    todayPagerState.isScrollInProgress ||
++                    mainPagerState.isScrollInProgress ||
++                    todayListScrollInProgress.value
++            }
++                .distinctUntilChanged()
++                .collectLatest { scrolling ->
++                    if (scrolling) {
++                        GlassPerf.enabled.value = false
++                    } else {
++                        delay(180)
++                        GlassPerf.enabled.value = true
++                    }
++                }
++        }
++
+         // 主内容模糊**不在 composition 里读半径**。
+         //
+         // 原来这里写成 `Modifier.blur(半径.dp)`，半径取自两个 Animatable（长按拖动 /
+@@ -3163,8 +3198,13 @@ fun CourseScheduleApp() {
+                             val mainPagerModifier = Modifier
+                                 .fillMaxSize()
+                                 .nestedScroll(mainContentNestedScroll)
+-                            val mainPagerPageKey: (Int) -> String = { page ->
+-                                if (isShiftMode) "shift-$page" else "main-$page"
++                            // remember：这个 key lambda 只依赖 isShiftMode。
++                            // 它原来每次壳重执行都新建，而壳在动画/滚动帧上会反复重执行 →
++                            // pager 每次拿到新 lambda 都会使 LazyLayout 的 item provider 失效。
++                            // 注：同处的 mainPagerPageContent 捕获了大量会变的局部量，
++                            // 不能安全 remember（会把值冻住），只能保持现状。
++                            val mainPagerPageKey: (Int) -> String = remember(isShiftMode) {
++                                { page -> if (isShiftMode) "shift-$page" else "main-$page" }
+                             }
+                             val mainPagerPageContent: @Composable (Int) -> Unit = { page ->
+                                 if (!isShiftMode) {
+diff --git a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
+index 37fcb07..8b60ff3 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
+@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import com.haooz.chedule.data.Course
++import com.haooz.chedule.ui.utils.glassBlurEnabled
+ import com.haooz.chedule.ui.utils.isAppDarkTheme
+ import com.kyant.backdrop.Backdrop
+ import com.kyant.backdrop.backdrops.SharedBlurBackdrop
+@@ -198,11 +199,17 @@ fun CourseCard(
+             val backdropEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
+                 remember(isSharedBlur, blurPx, lensRadiusPx, lensStrengthPx, cardRefraction) {
+                     {
+-                        if (!isSharedBlur) {
+-                            blur(blurPx)
+-                        }
+-                        if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
+-                            lens(lensRadiusPx, lensStrengthPx)
++                        // 滑动/翻页进行中降级：跳过 blur + lens。
++                        // 这两项是课表页最贵的两笔 —— 每帧 × 每张可见卡各一次 GPU 模糊 + 一次 AGSL 着色器。
++                        // 只在**绘制期**读开关，绝不进 remember 的键：否则 lambda 身份每次翻面都变，
++                        // drawBackdrop 会判不等并整块重建绘制缓存（那正是 v22 椭圆伪影的同一类坑）。
++                        if (glassBlurEnabled()) {
++                            if (!isSharedBlur) {
++                                blur(blurPx)
++                            }
++                            if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
++                                lens(lensRadiusPx, lensStrengthPx)
++                            }
+                         }
+                     }
+                 }
+diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
+index c649d01..89a3707 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
+@@ -46,6 +46,7 @@ import com.haooz.chedule.data.Course
+ import com.haooz.chedule.data.ReturnDayReminder
+ import com.haooz.chedule.ui.effects.edgelight.edgeLight
+ import com.haooz.chedule.ui.effects.edgelight.rememberCourseCardEdgeLight
++import com.haooz.chedule.ui.utils.glassBlurEnabled
+ import com.kyant.backdrop.Backdrop
+ import com.kyant.backdrop.backdrops.SharedBlurBackdrop
+ import com.kyant.backdrop.drawBackdrop
+@@ -741,11 +742,14 @@ fun SpecialBandOverlay(
+             val bandEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
+                 remember(isSharedBlur, blurPx, lensRadiusPx, lensStrengthPx, cardRefraction) {
+                     {
+-                        if (!isSharedBlur) {
+-                            blur(blurPx)
+-                        }
+-                        if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
+-                            lens(lensRadiusPx, lensStrengthPx)
++                        // 特殊块卡片同 CourseCard：滑动中降级 blur+lens（绘制期读、不进键）
++                        if (glassBlurEnabled()) {
++                            if (!isSharedBlur) {
++                                blur(blurPx)
++                            }
++                            if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
++                                lens(lensRadiusPx, lensStrengthPx)
++                            }
+                         }
+                     }
+                 }
+diff --git a/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt b/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
+index d9b533a..e2dbb30 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
+@@ -112,6 +112,12 @@ internal class EdgeLightNode(
+ 
+         drawContent()
+ 
++        // 滑动/翻页进行中降级：跳过边光描边。
++        // 它是"每张卡每帧一次的前景 RuntimeShader + 一次 native SkMaskFilter"，
++        // 与 blur/lens 同属每帧每卡的开销。读的是同一个全局开关 ——
++        // DrawModifierNode.draw 里的快照读会登记成绘制期依赖，翻面只失效绘制、不触发重组。
++        if (!com.haooz.chedule.ui.utils.glassBlurEnabled()) return
++
+         val edgeLightLayer = edgeLightLayer
+         if (edgeLightLayer != null) {
+             val size = size
+diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
+index 2032a2c..6e88f4e 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
+@@ -106,6 +106,7 @@ import com.kyant.backdrop.effects.lens
+ import com.kyant.backdrop.isRenderEffectSupported
+ import com.kyant.capsule.ContinuousRoundedRectangle
+ import kotlinx.coroutines.delay
++import kotlinx.coroutines.flow.distinctUntilChanged
+ import kotlinx.coroutines.launch
+ import top.yukonga.miuix.kmp.basic.ButtonDefaults
+ import top.yukonga.miuix.kmp.basic.Card
+@@ -721,7 +722,11 @@ fun MainScheduleScreen(
+             }
+         }
+ 
+-// beyondViewportPageCount=2：邻近 2 周提前 composition，快滑跨周时目标页多半已就绪
++// beyondViewportPageCount=1：只保留紧邻 1 页预合成。
++// 原来是 2 → 同时组合+测量+布局 5 个周页，而每页是「verticalScroll + 节次列 + 7 个 DayColumn × 数十张卡」，
++// 5 页就是 5 倍节点量与布局量，且每次跨越页作用域的重组都要乘 5。
++// 代价：极快的「多周连滑」时，第二页可能晚一帧就绪（第一页仍然预合成，正常滑动无感）。
++// 若以后要更激进，可以按"是否正在跳周"动态切换 1/2，但那要动 pager 参数、会触发 pager 重组，暂不做。
+     HorizontalPager(
+         state = pagerState,
+         modifier = Modifier
+@@ -733,7 +738,7 @@ fun MainScheduleScreen(
+                     latestIsWallpaperEditing || latestDraggingCourseIds.isNotEmpty()
+                 },
+             ),
+-        beyondViewportPageCount = 2,
++        beyondViewportPageCount = 1,
+         // 横向触摸改由 pagerAxisTakeoverGesture 驱动；纵滑主导时交给 verticalScroll
+         userScrollEnabled = false
+     ) { page ->
+@@ -777,10 +782,19 @@ fun MainScheduleScreen(
+                 Box(modifier = Modifier.fillMaxWidth()) {
+                     val dayBoundsArray = remember { arrayOfNulls<FloatArray>(8) }
+                     var lastDayBoundsVersion by remember { mutableIntStateOf(0) }
+-                    val isScheduleScrolling by scheduleScrollInProgress
+-                    LaunchedEffect(isScheduleScrolling) {
+-                        // 停滑后冲刷：滑动中 onGloballyPositioned 只写数组不递增版本号
+-                        if (!isScheduleScrolling) lastDayBoundsVersion++
++                    // 停滑后冲刷：滑动中 onGloballyPositioned 只写数组不递增版本号。
++                    //
++                    // 这里**不能**写 `val isScheduleScrolling by scheduleScrollInProgress` ——
++                    // 那是在 pager 的**页作用域**里读 state，于是每次滑动开始/停止，
++                    // 已组合的每一页（现在 3 页）body 都要整块重执行一遍：Modifier 链、
++                    // remember 键求值、两种 BreakDivider、SideEffect 全部重来。
++                    // 改走 snapshotFlow：不在 composition 里读，只在停滑时把版本号 +1。
++                    LaunchedEffect(scheduleScrollInProgress) {
++                        snapshotFlow { scheduleScrollInProgress.value }
++                            .distinctUntilChanged()
++                            .collect { scrolling ->
++                                if (!scrolling) lastDayBoundsVersion++
++                            }
+                     }
+                     // 提升到 Row 之外：特殊横带按同一套列宽切分内部星期子块
+                     val pageDayRange = remember(weekendDaysByWeek, week) {
+diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayAssistant.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayAssistant.kt
+index 5d72ef0..462d7e7 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayAssistant.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayAssistant.kt
+@@ -46,6 +46,7 @@ import androidx.core.content.edit
+ import androidx.core.graphics.createBitmap
+ import com.google.gson.Gson
+ import com.haooz.chedule.R
++import com.haooz.chedule.ui.utils.millisToNextMinute
+ import com.haooz.chedule.data.Course
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.delay
+@@ -489,7 +490,8 @@ private fun rememberCourseStatus(
+             val newStatus = CourseStatus(current?.course, next?.course, message)
+             // 文案未变化时不写状态，避免每秒重组
+             if (newStatus != status) status = newStatus
+-            delay(1000L.milliseconds)
++            // 文案只到「分钟」粒度（formatCountdownMinutes 不显示秒），睡到下一个整分即可
++            delay(millisToNextMinute(now).milliseconds)
+         }
+     }
+     return status
+@@ -833,9 +835,11 @@ fun TodayAssistantCard(
+             val newTip = generateSmartTip(
+                 courses, tomorrowCourses, sectionTimes, morningSections, afternoonSections
+             ).orEmpty()
+-            // 与顶部倒计时同频轮询；文案未变化时不写状态，避免每秒重组
++            // 文案未变化时不写状态，避免每秒重组
+             if (newTip != smartTip) smartTip = newTip
+-            delay(1_000L.milliseconds)
++            // generateSmartTip 是最贵的一处：内部两遍 buildCourseTimeRanges + 解析 + 排序。
++            // 而它的输出粒度是分钟，所以从「每秒重算」改成「睡到下一个整分」。
++            delay(millisToNextMinute().milliseconds)
+         }
+     }
+ 
+diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
+index 5f679f2..b3c814c 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
+@@ -29,6 +29,7 @@ import androidx.compose.runtime.mutableIntStateOf
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.remember
+ import androidx.compose.runtime.rememberCoroutineScope
++import androidx.compose.runtime.saveable.rememberSaveable
+ import androidx.compose.runtime.setValue
+ import androidx.compose.runtime.snapshotFlow
+ import androidx.compose.runtime.staticCompositionLocalOf
+@@ -52,6 +53,7 @@ import androidx.compose.ui.text.style.TextAlign
+ import androidx.compose.ui.unit.Dp
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
++import com.haooz.chedule.ui.utils.millisToNextMinute
+ import com.haooz.chedule.data.CardRefractionLevel
+ import com.haooz.chedule.data.Course
+ import com.haooz.chedule.ui.basic.CollapsibleTopAppBarDefaults
+@@ -60,6 +62,7 @@ import com.haooz.chedule.ui.basic.collapsibleTopInset
+ import com.haooz.chedule.ui.effects.edgelight.edgeLight
+ import com.haooz.chedule.ui.effects.edgelight.rememberCardEdgeLight
+ import com.haooz.chedule.ui.effects.edgelight.rememberDefaultEdgeLight
++import com.haooz.chedule.ui.utils.glassBlurEnabled
+ import com.haooz.chedule.ui.utils.isAppDarkTheme
+ import com.haooz.chedule.ui.utils.overScrollVertical
+ import com.haooz.chedule.ui.utils.pagerAxisTakeoverGesture
+@@ -122,9 +125,14 @@ fun BlurCard(
+         val cardEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
+             remember(blurRadius, refraction) {
+                 {
+-                    blur(blurRadius.dp.toPx())
+-                    if (refraction != CardRefractionLevel.OFF) {
+-                        lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
++                    // 滑动/翻页进行中降级：跳过 blur + lens（每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器）。
++                    // 只在**绘制期**读开关，绝不进 remember 的键 —— 否则 lambda 身份翻面即变，
++                    // drawBackdrop 会判不等并整块重建绘制缓存（v22 那个椭圆伪影是同一类坑）。
++                    if (glassBlurEnabled()) {
++                        blur(blurRadius.dp.toPx())
++                        if (refraction != CardRefractionLevel.OFF) {
++                            lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
++                        }
+                     }
+                 }
+             }
+@@ -249,6 +257,10 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
+         }
+         while (true) {
+             val now = LocalTime.now()
++            // 下一次唤醒间隔。原来固定 1s：一屏几十行就是几十次/秒的
++            // LocalTime.now + Duration.between + 三四次状态比较，纯空转；
++            // 而文案粒度本来就是分钟（只有最后一分钟才显示秒）。
++            var nextTickMs = 1_000L
+             when {
+                 startTime == null || endTime == null -> {
+                     if (courseStatus != "未知") courseStatus = "未知"
+@@ -257,6 +269,10 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
+                 }
+                 now.isBefore(startTime) -> {
+                     if (courseStatus != "未开始") courseStatus = "未开始"
++                    // 睡到开课时刻，但上限 60s —— 保持与改造前"跨天/日期变化最多晚 1 分钟
++                    // 才发现"完全一致的边界行为，不引入新的跨日语义。
++                    val untilStart = java.time.Duration.between(now, startTime).toMillis()
++                    nextTickMs = untilStart.coerceIn(1_000L, 60_000L)
+                 }
+                 now.isAfter(endTime) -> {
+                     if (courseStatus != "已结束") courseStatus = "已结束"
+@@ -273,9 +289,20 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
+                     if (newMinutes != remainingMinutes) remainingMinutes = newMinutes
+                     // 秒数只在最后一分钟文案使用
+                     if (newMinutes <= 0 && newSeconds != remainingSeconds) remainingSeconds = newSeconds
++                    // 关键：下一次唤醒**从当前剩余秒数推**，不要从"下一个整分"推。
++                    //
++                    // 显示用的是 floor 语义（totalSeconds / 60），分钟值 v 的窗口是
++                    // (end-60(v+1), end-60v]，所以下一个跳变点距现在恰好 totalSeconds % 60 + 1 秒。
++                    // 而"睡到下一个整分"在**进入循环的瞬间恰好压在跳变点上**时会取到退化值：
++                    // 此时 floor(end-now) 还是旧的一档（例如开课那一刻算出来仍是 45，
++                    // 可 40ms 后就是 44），于是那一分钟（44）会被整个跳过，肉眼看到 45 → 43。
++                    // 未开始分支正好睡到 start（整分），必然踩到这个边界，所以必须这样推。
++                    // +1 秒是为了跨过跳变点那一瞬间本身；落在退化点上时下一轮会自愈。
++                    nextTickMs = if (newMinutes <= 0) 1_000L
++                    else ((totalSeconds % 60 + 1) * 1_000L)
+                 }
+             }
+-            delay(1000L.milliseconds)
++            delay(nextTickMs)
+         }
+     }
+ 
+@@ -553,7 +580,11 @@ fun TodayScreen(
+                     .pagerAxisTakeoverGesture(pagerState = pagerState),
+                 userScrollEnabled = false,
+             ) { page ->
+-                val pageListState = remember(page) { LazyListState() }
++                // rememberSaveable + Saver：Today pager 会回收视口外的页，
++                // 用裸 remember 的话每次回收重建都要把整列重新测量一遍（滚动位置也没了）。
++                val pageListState = rememberSaveable(page, saver = LazyListState.Saver) {
++                    LazyListState()
++                }
+                 // 只把当前页的滚动状态报给 Activity（顶栏折叠 / 液态玻璃重录）
+                 LaunchedEffect(pageListState, page) {
+                     snapshotFlow {
+@@ -1499,7 +1530,9 @@ private fun QuoteCard(
+             if (nextScene != scene) scene = nextScene
+             val nextHour = LocalTime.now().hour
+             if (nextHour != hour) hour = nextHour
+-            delay(1_000L.milliseconds)
++            // 场景由课节边界决定、hour 由整点决定，都是分钟对齐的：
++            // 不必每秒重算 computeQuoteScene（内部同样要建时间区间），睡到下一个整分。
++            delay(millisToNextMinute().milliseconds)
+         }
+     }
+ 
+@@ -1562,9 +1595,14 @@ private fun CourseSectionTitle(
+         val sectionEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
+             remember(blurRadius, refraction) {
+                 {
+-                    blur(blurRadius.dp.toPx())
+-                    if (refraction != CardRefractionLevel.OFF) {
+-                        lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
++                    // 滑动/翻页进行中降级：跳过 blur + lens（每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器）。
++                    // 只在**绘制期**读开关，绝不进 remember 的键 —— 否则 lambda 身份翻面即变，
++                    // drawBackdrop 会判不等并整块重建绘制缓存（v22 那个椭圆伪影是同一类坑）。
++                    if (glassBlurEnabled()) {
++                        blur(blurRadius.dp.toPx())
++                        if (refraction != CardRefractionLevel.OFF) {
++                            lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
++                        }
+                     }
+                 }
+             }
+diff --git a/app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt b/app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
+new file mode 100644
+index 0000000..271319f
+--- /dev/null
++++ b/app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
+@@ -0,0 +1,33 @@
++package com.haooz.chedule.ui.utils
++
++import androidx.compose.runtime.MutableState
++import androidx.compose.runtime.mutableStateOf
++
++/**
++ * 「毛玻璃是否全量渲染」的全局开关 —— 滑动/翻页进行中降级，停下恢复。
++ *
++ * 为什么是全局单例而不是参数一路传下去：
++ * 课表卡、今日页玻璃卡、边光描边分散在 4~5 个文件里，参数化要穿一整条调用链，
++ * 而这些调用点**都已经在绘制期读状态**了（drawBackdrop 的 effects / onDrawSurface lambda、
++ * EdgeLightNode.draw），所以只要提供一个稳定的读取入口，翻面就是"只失效绘制、不触发重组"。
++ *
++ * 用法（**务必在 lambda 里读，不要读进 composition**）：
++ * ```
++ * effects = remember(...) { { if (glassBlurEnabled()) { blur(...); lens(...) } } }
++ * ```
++ * 关键：**不要把 glassBlurEnabled() 的结果进 remember 的键** ——
++ * 那会让 lambda 身份每次翻面都变，等于把 drawBackdrop 的绘制缓存整块重建
++ * （v22 那个"椭圆伪影"就是这个坑的同一类：实例稳定但内容会变的东西不能当键）。
++ */
++object GlassPerf {
++    /** true = 全量毛玻璃；false = 降级（跳过 blur / lens 与边光描边） */
++    val enabled: MutableState<Boolean> = mutableStateOf(true)
++}
++
++/**
++ * 绘制期读取：当前是否应该画全量毛玻璃（不要再加 inline：编译器提示收益不显著，
++ * 而且内联会把快照读取点复制到每个调用点，反而不利于排查）。
++ * 在 DrawModifierNode.draw / drawBackdrop 的 lambda 里调用会登记"绘制期依赖"，
++ * 翻面时只失效这一层绘制，不会触发任何重组。
++ */
++fun glassBlurEnabled(): Boolean = GlassPerf.enabled.value
+diff --git a/app/src/main/java/com/haooz/chedule/ui/utils/MinuteTick.kt b/app/src/main/java/com/haooz/chedule/ui/utils/MinuteTick.kt
+new file mode 100644
+index 0000000..94ac4b2
+--- /dev/null
++++ b/app/src/main/java/com/haooz/chedule/ui/utils/MinuteTick.kt
+@@ -0,0 +1,19 @@
++package com.haooz.chedule.ui.utils
++
++import java.time.LocalTime
++
++/**
++ * 距离下一个整分还有多少毫秒（多给 40ms 余量，保证醒来时已经跨过边界）。
++ *
++ * 为什么需要它：只到「分钟」粒度的倒计时文案，原来一律 `delay(1000)` 每秒轮询，
++ * 一分钟里 59 次都是白算——例如助手页的 `generateSmartTip` 每次都要跑两遍
++ * buildCourseTimeRanges（DateTimeFormatter 解析 + 排序），QuoteCard 的
++ * `computeQuoteScene` 同理。改成睡到整分，唤醒次数降到 1/60。
++ *
++ * 用「本地时间算出的剩余毫秒」而不是固定 60_000：每次 tick 都会多花掉几十毫秒，
++ * 固定间隔会慢慢漂移并最终错过整分边界（凌晨/长时间前台时最明显）。
++ */
++internal fun millisToNextMinute(now: LocalTime = LocalTime.now()): Long {
++    val sinceMinuteStart = now.second * 1000L + now.nano / 1_000_000L
++    return (60_000L - sinceMinuteStart + 40L).coerceIn(200L, 61_000L)
++}
+-- 
+2.55.0
+

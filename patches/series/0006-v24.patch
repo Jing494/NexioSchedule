@@ -1,0 +1,207 @@
+From 09aaa4e8de096767aeddb162c6777ae7b8de1522 Mon Sep 17 00:00:00 2001
+From: dsh-local <dsh@local>
+Date: Sun, 27 Sep 2026 08:21:53 +0800
+Subject: [PATCH 06/16] =?UTF-8?q?v24=EF=BC=9A=E4=BF=AE=E8=AF=BE=E8=A1=A8?=
+ =?UTF-8?q?=E6=8B=96=E6=8B=BD=E8=90=BD=E7=82=B9=E9=94=99=E4=BD=8D=EF=BC=88?=
+ =?UTF-8?q?+=20=E4=B8=89=E9=A1=B9=E4=BD=8E=E9=A3=8E=E9=99=A9=E5=AE=A1?=
+ =?UTF-8?q?=E8=AE=A1=E9=A1=B9=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+【拖拽落点错一格 —— 上游 bug，不是本次改动引入】
+用户实测：拖课到空格子，底部阴影却落在下面一格（那格有课），松手变成"是否与下面那节合并"。
+
+根因：computeSpecialGridLayout 会让**特殊块**（自习/自定义时间块）在其时间起点占位，
+把下方节次整体下移：sectionTop[g] = origSectionTop[g] + 该节以上所有特殊块高度。
+而 computeDropTarget 是按"均匀高度 + 两个 24dp 分界带"自己推的，完全没算这层偏移。
+两者是同一个提交 33620d9 v1.5.3beta9 引入的 —— 属于同一份几何两套口径。
+用户截图里「某个 1.5 格高的特殊块」= 1.5 格高，所以第 7 节起落点固定偏下 1.5 格；
+第 11/12 节更糟：均匀模型直接走空、返回 null，**那两行根本没法落点**。
+
+修：ScheduleGridGeometry 带上渲染实际用的 sectionTopDp 与特殊块占位区间；
+computeDropTarget 改成用 sectionTop 反查（与 DayColumn 空白格点击的反查同一口径），
+压在特殊块上返回 null；拿不到时退回旧均匀模型兜底。
+
+离线复算（dist-v24/verify_droptarget.py）：
+  第 1~6 节 old/new 一致；第 7~12 节 old 固定偏 +1.5 格（11/12 为 None），new 全部正确。
+
+【同一轮的低风险审计项】
+- AlarmReceiver：一次课前闹钟原来把当天课表解析两遍（两次 getTodayCourses），改为只解析一次
+- ClassDndHelper.handBack：applyCurrentState 每分钟都会被调，而功能从没接管过时
+  原实现仍会构造 Editor + commitToMemory + 抓 prefs 监视器，加会话键早退
+- 课中实况 ProgressStyle 分支：BigTextStyle 随后被 ProgressStyle 覆盖，
+  expandedText（含教室）被整个丢掉，降级路径却有教室；用 setSubText 把教室补回来
+---
+ .../haooz/chedule/reminder/AlarmReceiver.kt   | 27 ++++++++--------
+ .../haooz/chedule/reminder/ClassDndHelper.kt  | 10 +++++-
+ .../chedule/reminder/CourseReminderHelper.kt  |  4 +++
+ .../chedule/ui/activities/MainActivity.kt     | 32 +++++++++++++++++++
+ .../chedule/ui/screens/MainScheduleScreen.kt  | 16 ++++++++--
+ 5 files changed, 73 insertions(+), 16 deletions(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
+index 397c142..f8d3d13 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
+@@ -47,14 +47,22 @@ class AlarmReceiver : BroadcastReceiver() {
+                 // 避免用户改时间后旧闹钟带着旧 startTime 算 dedupId，与 checkPending
+                 // 用新 startTime 算的 dedupId 双发（均落入不同 dedupId，互相不拦截）。
+                 // 如果回查失败再退化为闹钟里快照的 name+section+time。
+-                val matchedEarly = CourseReminderHelper.getTodayCourses(context).firstOrNull { course ->
+-                    if (courseId.isNotEmpty()) course.id == courseId
+-                    else course.name == courseName && course.getTimeDisplayText() == section
+-                }
++                // 当前课表只解析**一次**：原来这里和下面各调一次 getTodayCourses()，
++                // 也就是一次课前闹钟要把当天课表解析两遍（假期查询 + 逐课时间 + 排序）。
++                val todayCourses = CourseReminderHelper.getTodayCourses(context)
++                fun matchCourse(course: com.haooz.chedule.data.Course): Boolean =
++                    if (courseId.isNotEmpty()) {
++                        course.id == courseId
++                    } else {
++                        // 旧版闹钟没有 courseId，退化为按课程名+节次匹配
++                        course.name == courseName && course.getTimeDisplayText() == section
++                    }
++
++                val matchedEarly = todayCourses.firstOrNull { matchCourse(it) }
+                 val dedupId = if (matchedEarly != null) {
+                     val freshStart = CourseReminderHelper.getCourseStartTime(
+                         matchedEarly,
+-                        CourseRepository(context)
++                        repository
+                     ) ?: startTime
+                     "${matchedEarly.name}|${matchedEarly.getTimeDisplayText()}|$freshStart"
+                 } else {
+@@ -78,14 +86,7 @@ class AlarmReceiver : BroadcastReceiver() {
+                 // 关键：闹钟里携带的是"注册那一刻"的课程快照。
+                 // 课程可能已被删除、改了时间/教室、或因换课表/云同步换了 ID，
+                 // 若直接照快照发送就会弹出旧数据提醒。这里一律以当前课表为准重新解析。
+-                val matched = CourseReminderHelper.getTodayCourses(context).firstOrNull { course ->
+-                    if (courseId.isNotEmpty()) {
+-                        course.id == courseId
+-                    } else {
+-                        // 旧版闹钟没有 courseId，退化为按课程名+节次匹配
+-                        course.name == courseName && course.getTimeDisplayText() == section
+-                    }
+-                }
++                val matched = todayCourses.firstOrNull { matchCourse(it) }
+                 if (matched == null) {
+                     // 课表可能已变更：全量重注册，清掉过期闹钟
+                     Log.d("AlarmReceiver", "Stale alarm: $courseName($startTime) no longer in today's schedule")
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/ClassDndHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/ClassDndHelper.kt
+index 44a9488..7c8ccd2 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/ClassDndHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/ClassDndHelper.kt
+@@ -212,7 +212,15 @@ object ClassDndHelper {
+     private fun handBack(context: Context, requireConsistency: Boolean) {
+         val p = prefs(context)
+         if (!p.getBoolean(KEY_APPLIED, false)) {
+-            clearSession(context)
++            // 早退：只有 KEY_APPLIED=false 且会话键还在时才真的需要清。
++            // applyCurrentState 每分钟（刷新链）都会被调一次，而绝大多数时候这门功能
++            // 从没接管过 —— 原实现每次都要构造一个 Editor、跑一遍 commitToMemory、
++            // 抓一次 prefs 监视器，纯白做。
++            if (p.contains(KEY_SET_STATE) || p.contains(KEY_APPLIED_MODE) ||
++                p.contains(KEY_ORIGINAL_RINGER) || p.contains(KEY_ORIGINAL_FILTER)
++            ) {
++                clearSession(context)
++            }
+             return
+         }
+         val mode = p.getInt(KEY_APPLIED_MODE, MODE_DND)
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+index 52dcab9..61fd25c 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+@@ -1561,7 +1561,11 @@ object CourseReminderHelper {
+                 .setSmallIcon(R.mipmap.ic_launcher)
+                 .setContentTitle("$courseName | 上课中")
+                 .setContentText(infoLine)
++                // BigTextStyle 随后会被 ProgressStyle 覆盖，expandedText（含教室）会整个丢掉 ——
++                // 降级路径（NotificationCompat + BigTextStyle）是带教室的，两条路观感不一致。
++                // subText 正是"展开视图第三行"的官方位置，用它把教室补回来。
+                 .setStyle(Notification.BigTextStyle().bigText(expandedText))
++                .apply { if (classroom.isNotBlank()) setSubText(classroom) }
+                 .setContentIntent(contentIntent)
+                 .setOngoing(true)
+                 .setOnlyAlertOnce(true)
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
+index 62d7dd3..7c93045 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
+@@ -2211,6 +2211,38 @@ fun CourseScheduleApp() {
+         val relY = firstSectionCenterY - topY
+         if (relY < 0f) return null
+         val sectionH = geom.sectionHeightPx
++
++        /*
++         * 优先用**渲染实际用的 sectionTop** 反查落点。
++         *
++         * computeSpecialGridLayout 会让特殊块（自习 / 自定义时间块）在它的时间起点占位，
++         * 把下方节次整体下移：sectionTop[g] = origSectionTop[g] + 该节以上所有特殊块高度。
++         * 而下面那段"均匀高度 + 两个 24dp 分界带"的推算是**没有这层偏移**的 ——
++         * 于是只要课表里有特殊块（截图里那个「某个 1.5 格高的特殊块」就是），
++         * 第 7 节往下的落点就会整体偏下约一格：拖到空格子，阴影却落在下面那格（有课的那格），
++         * 松手就变成"是否与下面这节课合并"。
++         *
++         * 空白格点击的反查本来就用 sectionTop（见 DayColumn 的 detectTapGestures），
++         * 这里之前是漏的，属于同一份几何两套口径 —— 对齐之后就一致了。
++         */
++        val tops = geom.sectionTopDp
++        if (tops.isNotEmpty()) {
++            val totalSections = geom.morningSections + geom.afternoonSections + geom.eveningSections
++            // 压在特殊块上不是有效落点
++            for ((bandTopDp, bandHeightDp) in geom.specialBandRangesDp) {
++                val bt = with(density) { bandTopDp.dp.toPx() }
++                val bh = with(density) { bandHeightDp.dp.toPx() }
++                if (bh > 0f && relY >= bt && relY < bt + bh) return null
++            }
++            for (s in 1..totalSections) {
++                val topDp = tops[s] ?: continue
++                val topPx = with(density) { topDp.dp.toPx() }
++                if (relY >= topPx && relY < topPx + sectionH) return day to s
++            }
++            return null
++        }
++
++        // 兜底：拿不到实际 sectionTop 时退回均匀模型（旧行为）
+         val dividerH = with(density) { 24.dp.toPx() }
+         var cursor = 0f
+         for (s in 1..geom.morningSections) {
+diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
+index 09ce3b6..2032a2c 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
+@@ -164,7 +164,17 @@ data class ScheduleGridGeometry(
+     val morningSections: Int,
+     val afternoonSections: Int,
+     val eveningSections: Int,
+-    val showBreakDividers: Boolean
++    val showBreakDividers: Boolean,
++    /**
++     * 渲染**实际**用的「节次 → 顶部（dp）」表。
++     *
++     * 必须带上它：computeSpecialGridLayout 会让特殊块（自习、自定义块）在时间起点占位，
++     * 把下方节次整体下移（sectionTop[g] = origSectionTop[g] + 特殊块高度之和）。
++     * 拖拽落点如果按"均匀高度"自己推，有特殊块时就会整体偏下。
++     */
++    val sectionTopDp: Map<Int, Float> = emptyMap(),
++    /** 特殊块占位区间 (topDp, heightDp)；落在这里不算有效落点 */
++    val specialBandRangesDp: List<Pair<Float, Float>> = emptyList()
+ )
+ 
+ @SuppressLint("ConfigurationScreenWidthHeight")
+@@ -1043,7 +1053,9 @@ fun MainScheduleScreen(
+                                         morningSections = morningSections,
+                                         afternoonSections = afternoonSections,
+                                         eveningSections = eveningSections,
+-                                        showBreakDividers = showBreakDividers
++                                        showBreakDividers = showBreakDividers,
++                                        sectionTopDp = specialGrid.sectionTop,
++                                        specialBandRangesDp = specialGrid.specialBands.map { it.top to it.height }
+                                     )
+                                 )
+                             }
+-- 
+2.55.0
+

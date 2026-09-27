@@ -1,0 +1,111 @@
+From 94728e65cda4c1a291eae6b68be4ecf82aaeb5a5 Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Sun, 27 Sep 2026 11:44:20 +0800
+Subject: [PATCH 12/16] =?UTF-8?q?v30:=20=E4=BF=AE=E6=AF=9B=E7=8E=BB?=
+ =?UTF-8?q?=E7=92=83=E8=BF=87=E6=B8=A1=E7=9A=84=E3=80=8C=E6=89=AB=E8=BF=87?=
+ =?UTF-8?q?=E3=80=8D=E6=84=9F=20=E2=80=94=E2=80=94=20=E6=8A=98=E5=B0=84?=
+ =?UTF-8?q?=E5=AE=BD=E5=BA=A6=E6=81=92=E5=AE=9A=E3=80=81=E5=8F=AA=E6=B7=A1?=
+ =?UTF-8?q?=E5=BC=BA=E5=BA=A6?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+反馈："还是感觉像蹭的一下冒出来"。
+
+根因在库实现 app/src/main/java/com/kyant/backdrop/effects/Lens.kt：
+    fun lens(refractionHeight: Float, refractionAmount: Float, ...)
+    - refractionHeight 是那圈折射**高光的宽度**，refractionAmount 才是强度；
+    - v29 把宽度也乘了系数 → 高光环随系数向卡片边缘收拢/扫过 → 观感就是"蹭的一下冒出来"，
+      而不是淡下去；
+    - 而且 padding 按 `padding - refractionHeight` 计算 → 宽度每帧变，
+      层的几何（padding / 采样偏移）也跟着每帧抖。
+
+改法：四个调用点都改为 **lens(宽度, 强度 * 系数)** —— 宽度恒定、只淡强度，
+位移在原地均匀衰减，1→0 与 0→1 都不可能出现扫动。blur 仍缩半径（模糊无方向性结构）。
+
+其余不动：150ms 淡出 / 250ms 防抖 + 250ms 淡入、边光乘 layer.alpha、
+系数 <=0.01 不追加任何 effect（RenderEffect 为空 → 仍走 canDirectBlit）。
+
+验证：verify_glass_v30.py 29 项全过，其中 3 项是新增的几何稳定性回归守卫
+（库语义确认 refractionHeight 参与 padding 计算 / 四个调用点都只淡强度 /
+没有任何调用点把折射宽度乘系数 —— 这条专门钉死 v29 那个 bug）；
+assembleRelease 通过；签名与 sha256 通过；
+包内容确实变了（v29 classes.dex sha71f4b93e… → v30 sha13286820…，
+APK 总大小三版同为 6130530 是 zip 对齐的巧合）。
+---
+ .../java/com/haooz/chedule/ui/components/CourseCard.kt |  8 +++++++-
+ .../java/com/haooz/chedule/ui/components/DayColumn.kt  |  8 +++++++-
+ .../java/com/haooz/chedule/ui/screens/TodayScreen.kt   | 10 ++++++++--
+ 3 files changed, 22 insertions(+), 4 deletions(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
+index 1143d68..c065fa0 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
+@@ -212,7 +212,13 @@ fun CourseCard(
+                                 blur(blurPx * glassFactor)
+                             }
+                             if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
+-                                lens(lensRadiusPx * glassFactor, lensStrengthPx * glassFactor)
++                            // 折射：**宽度（refractionHeight）保持不变，只淡强度（refractionAmount）**。
++                            // 库实现（effects/Lens.kt）里 refractionHeight 是高光环的宽度：
++                            // 把它一起乘系数，光环会随系数向卡片边缘**收拢/扫过**，
++                            // 观感就是"蹭的一下冒出来"（实测反馈）；而且 padding 也按
++                            // padding - refractionHeight 每帧变，几何跟着抖。
++                            // 只淡强度则是位移在原地均匀衰减，无论 1→0 还是 0→1 都不会有扫动。
++                                lens(lensRadiusPx, lensStrengthPx * glassFactor)
+                             }
+                         }
+                     }
+diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
+index d0397ec..2a1ef34 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
+@@ -752,7 +752,13 @@ fun SpecialBandOverlay(
+                                 blur(blurPx * glassFactor)
+                             }
+                             if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
+-                                lens(lensRadiusPx * glassFactor, lensStrengthPx * glassFactor)
++                            // 折射：**宽度（refractionHeight）保持不变，只淡强度（refractionAmount）**。
++                            // 库实现（effects/Lens.kt）里 refractionHeight 是高光环的宽度：
++                            // 把它一起乘系数，光环会随系数向卡片边缘**收拢/扫过**，
++                            // 观感就是"蹭的一下冒出来"（实测反馈）；而且 padding 也按
++                            // padding - refractionHeight 每帧变，几何跟着抖。
++                            // 只淡强度则是位移在原地均匀衰减，无论 1→0 还是 0→1 都不会有扫动。
++                                lens(lensRadiusPx, lensStrengthPx * glassFactor)
+                             }
+                         }
+                     }
+diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
+index 1b48d75..596847a 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
+@@ -135,8 +135,11 @@ fun BlurCard(
+                     if (glassFactor > 0.01f) {
+                         blur(blurRadius.dp.toPx() * glassFactor)
+                         if (refraction != CardRefractionLevel.OFF) {
++                            // 折射宽度不乘系数、只淡强度：乘宽度会让高光环向边缘收拢/扫过，
++                            // 观感是"蹭的一下冒出来"（库 effects/Lens.kt 里 refractionHeight
++                            // 是高光环宽度，refractionAmount 才是强度；padding 也按高度变）。
+                             lens(
+-                                refraction.lensRadiusDp.dp.toPx() * glassFactor,
++                                refraction.lensRadiusDp.dp.toPx(),
+                                 refraction.lensStrengthDp.dp.toPx() * glassFactor
+                             )
+                         }
+@@ -1612,8 +1615,11 @@ private fun CourseSectionTitle(
+                     if (glassFactor > 0.01f) {
+                         blur(blurRadius.dp.toPx() * glassFactor)
+                         if (refraction != CardRefractionLevel.OFF) {
++                            // 折射宽度不乘系数、只淡强度：乘宽度会让高光环向边缘收拢/扫过，
++                            // 观感是"蹭的一下冒出来"（库 effects/Lens.kt 里 refractionHeight
++                            // 是高光环宽度，refractionAmount 才是强度；padding 也按高度变）。
+                             lens(
+-                                refraction.lensRadiusDp.dp.toPx() * glassFactor,
++                                refraction.lensRadiusDp.dp.toPx(),
+                                 refraction.lensStrengthDp.dp.toPx() * glassFactor
+                             )
+                         }
+-- 
+2.55.0
+
