@@ -179,6 +179,8 @@ class AlarmReceiver : BroadcastReceiver() {
                             courseName = returnName,
                             section = returnSection,
                             startTime = returnStart,
+                            // 次日提醒这条路，正文列的就是明天的课 → 日子词自然是「明天返校」
+                            targetDate = tomorrow,
                             holidayLabel = returnLabel,
                             progressPercent = span?.progressPercent,
                         )
@@ -189,6 +191,8 @@ class AlarmReceiver : BroadcastReceiver() {
                             courseName = returnName,
                             section = returnSection,
                             startTime = returnStart,
+                            // 次日提醒这条路，正文列的就是明天的课 → 日子词自然是「明天返校」
+                            targetDate = tomorrow,
                             holidayLabel = returnLabel,
                             progressPercent = span?.progressPercent,
                         )
