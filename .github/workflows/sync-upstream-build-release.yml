@@ -345,25 +345,13 @@ jobs:
             --data-urlencode "access_token=$GT" \
             --data-urlencode "tag_name=$TAG" \
             --data-urlencode "name=$TAG" \
-            --data-urlencode "target_commitish=${{ github.sha }}" \
+            --data-urlencode "target_commitish=master" \
             --data-urlencode "body=本包与 GitHub Release 同一构建产物：https://github.com/${{ github.repository }}/releases/tag/$TAG")
-          RID=$(printf '%s' "$RESP" | python3 -c "
-import json,sys
-try:
-    d=json.load(sys.stdin)
-    print(d.get('id','') if isinstance(d,dict) else '')
-except Exception:
-    print('')" 2>/dev/null || true)
+          RID=$(printf '%s' "$RESP" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('id','') if isinstance(d,dict) else '')" 2>/dev/null || true)
           if [ -z "$RID" ]; then
             echo "::warning::Gitee release 创建失败，原始响应：$RESP"
             RESP2=$(curl -s "$API/releases/tags/$TAG?access_token=$GT")
-            RID=$(printf '%s' "$RESP2" | python3 -c "
-import json,sys
-try:
-    d=json.load(sys.stdin)
-    print(d.get('id','') if isinstance(d,dict) else '')
-except Exception:
-    print('')" 2>/dev/null || true)
+            RID=$(printf '%s' "$RESP2" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('id','') if isinstance(d,dict) else '')" 2>/dev/null || true)
             [ -n "$RID" ] || echo "::warning::按 tag 查也拿不到 id，原始响应：$RESP2"
           fi
           if [ -z "$RID" ]; then echo "::warning::Gitee release 创建/查询失败，跳过附件上传"; exit 0; fi
