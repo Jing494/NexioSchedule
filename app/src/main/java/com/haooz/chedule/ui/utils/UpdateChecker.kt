@@ -74,10 +74,13 @@ internal object UpdateChecker {
                 .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                 .build()
 
+            // 更新源 = **本 fork 自己的两个仓库**（不再指向上游）：
+            // 上游包与本 fork 签名不同，下载过去会装不上/要求卸载重装。
+            // 国内优先 Gitee（默认 source=gitee），GitHub 作为备选。
             val baseUrl = if (source == "github") {
-                "https://api.github.com/repos/HaoZai000/NexioSchedule/releases"
+                "https://api.github.com/repos/Jing494/NexioSchedule/releases"
             } else {
-                "https://gitee.com/api/v5/repos/com_haooz_account/hyper_schedule/releases"
+                "https://gitee.com/api/v5/repos/jing494/nexio-schedule_fork/releases"
             }
             val url = "$baseUrl?page=1&per_page=10&direction=desc&t=${System.currentTimeMillis()}"
             val request = okhttp3.Request.Builder().url(url).apply {
@@ -103,8 +106,13 @@ internal object UpdateChecker {
 
                 if (channel == "stable") {
                     val isPre = release.get("prerelease")?.asBoolean ?: false
-                    // 正式通道：不检测 beta（含第4段版本号的预发布）
-                    if (isPre || isBetaVersion(ver)) continue
+                    // 正式通道：只跳过**显式预发布**。
+                    //
+                    // 原来还额外跳过"第4段版本号"（isBetaVersion），那是为了避开**上游**的 beta 包；
+                    // 但更新源已改成本 fork 自己的仓库，而本 fork 正是用第 4 段递增
+                    //（1.5.6.1 / 1.5.6.2 …）来让 App 识别出"有新版本"的（MAJOR.MINOR.PATCH 与上游相同，
+                    // 不动它才能保持版本号与上游对齐）。所以这里不能再按第 4 段过滤。
+                    if (isPre) continue
                 }
                 // beta 通道：正式 + beta 均可；stable 通道已在上方过滤
 
