@@ -1,0 +1,135 @@
+# 本地定制改动清单 · 与「跟上上游」合并指南
+
+> 这份文档是**本地自用**加的，不推上游。
+> 目的只有一个：**上游发新版本时，能把下面这些定制机械地叠上去**，而不用重新摸一遍代码。
+> 每次本地改动都请追加一节，并把 commit SHA 记上。
+
+---
+
+## 一、基线与身份
+
+| 项 | 值 |
+|---|---|
+| **上游基线**（本定制栈的起点） | `1f46721` — `v1.5.6beta13` |
+| **本地分支** | `local/audit-v21`（worktree 就是本目录 `projects/nexio-schedule/src`） |
+| **栈深度** | 9 个本地提交 |
+| 包名 / versionCode | `com.haooz.chedule` / `156` |
+| versionName | `1.5.6-0926-audit`（更新判定只看 `MAJOR.MINOR.PATCH`，`-` 之后的后缀不影响更新） |
+
+远端（都只是**只读参考**，本地定制一律**不推上游**）：
+
+- `origin` → gitee `com_haooz_account/hyper_schedule`（本 worktree 的源）
+- `github` → `HaoZai000/NexioSchedule`（已加为只读远端；另外 `_src/github/` 是它的独立 clone）
+- 两边版本并不总是同步：本机当前 gitee `master` 在 `16ea289`，github 在 `8e596fc`
+
+---
+
+## 二、本地提交栈（从旧到新）
+
+| # | 提交 | 日期 | 主题 | 文件数 |
+|---|---|---|---|---|
+| 1 | `0b47862` | 2026-09-26 | 本地修复:返校节次豁免 + 底栏避让导航栏 + 横屏导航判定 + 实况/岛同步 | 21 |
+| 2 | `3ba856b` | 2026-09-26 | 余额/清单改为精确闹钟（自续） | 2 |
+| 3 | `99990be` | 2026-09-26 | 审计修复 + 性能优化（v21） | 16 |
+| 4 | `48e434f` | 2026-09-27 | v22：修椭圆伪影（回滚 EdgeLight 值比较）+ 文案 + 按小米岛/Android 实时更新规范修正 | 5 |
+| 5 | `c628397` | 2026-09-27 | v23：修超级岛「下课后回落成普通通知」——取消没走绕白名单窗口 + 连续通知各自开窗 + 自愈掀窗 | 2 |
+| 6 | `f2ddcd1` | 2026-09-27 | v24：修课表拖拽落点错位（+ 三项低风险审计项） | 5 |
+| 7 | `5deac7b` | 2026-09-27 | v25：拖拽第二阶段 —— 落点格子对了，卡片仍吸附到偏高 1.5 格 | 1 |
+| 8 | `b39a0c4` | 2026-09-27 | v26：修「假期余额提醒」在假期最后一天永远不发 | 1 |
+| 9 | `2246fd2` | 2026-09-27 | v27：假期余额独立成卡 + 跟随豁免开关 + 只在最后N天 + 测试按钮 + 提醒体检 | 4 |
+
+> 一整条栈是**线性**的，直接 `git rebase --onto <新上游> 1f46721 local/audit-v21` 就能整体搬过去。
+
+---
+
+## 三、按主题索引（冲突时按这里定位）
+
+上游如果改了同一个文件，先看这张表知道**本地为什么动它**，再决定怎么合。
+
+| 主题 | 涉及提交 | 关键文件 |
+|---|---|---|
+| 底栏避让系统导航栏 / 横屏导航判定 | 1 | `ScheduleBottomBar.kt` `MainActivity.kt` `MainScheduleScreen.kt` |
+| 返校节次豁免（新功能：假期最后一天放出指定节次） | 1 | `data/ReturnDayReminder.kt`(新) `CourseReminderHelper.kt` `CourseRepository.kt` `DayColumn.kt` `MainScheduleScreen.kt` |
+| 假期余额 / 返校清单（通知+精确闹钟） | 1, 8, 9 | `CourseReminderHelper.kt` `CourseRepository.kt` `HolidaySettingsScreen.kt` |
+| 超级岛 / 实时动态 同步与规范修正 | 1, 4, 5 | `IslandNotificationHelper.kt` `CourseReminderHelper.kt` |
+| **XMSF 绕白名单改成批量窗口**（取消也走窗口、按提交顺序串行、自愈不掀窗） | 5 | `IslandNotificationHelper.kt` `ShizukuManager.kt` |
+| 性能（假期 JSON 缓存 / 刷新链唤醒门控 / Compose 重组热点） | 3 | `HolidayManager.kt` `CourseReminderHelper.kt` `MainActivity.kt` `TodayScreen.kt` `WidgetUpdateCache.kt` 等 |
+| **节次几何单一真源**（拖拽落点 / 吸附位置 / 卡片高度都要用 `sectionTop`） | 6, 7 | `MainActivity.kt`（`computeDropTarget` / `sectionTopPx`）`MainScheduleScreen.kt`（`ScheduleGridGeometry`） |
+| `drawBackdrop` lambda 记忆化（避免每帧重建毛玻璃） | 3 | `TodayScreen.kt` `ShortcutMenu.kt` `CustomizeScheduleScreen.kt` |
+| 提醒设置页「提醒体检」自检 | 9 | `CourseReminderScreen.kt` |
+
+---
+
+## 四、上游发新版了，怎么合
+
+### 方案 A（推荐）：`rebase --onto`
+
+```bash
+cd projects/nexio-schedule/src
+git fetch origin                 # 或 git fetch github
+git branch backup/v27 HEAD       # 先留个后路
+
+# 把 1f46721 之后的本地 9 个提交整体搬到新上游上
+git rebase --onto <新上游sha> 1f46721 local/audit-v21
+```
+
+冲突处理原则：**先看第三节的主题索引**，确认本地为什么改那几行，再决定保留哪边。
+一般规律：本地改的是"新增分支/新增函数/修几何口径"，优先保留本地的语义、把上游的新结构套进来。
+
+### 方案 B：只挑一部分
+
+```bash
+git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
+```
+
+### 方案 C：没有 git 对象时（离线）
+
+- 逐提交补丁：`patches/series/0001-.patch … 0009-….patch`（`git format-patch` 产物，可直接 `git am`）
+- 整体补丁：`patches/local-fixes.patch`（旧的）、`patches/audit-v21…v26.patch`
+- 完整仓库快照（含全部提交与上游历史）：`_archive/nexio-local-fix-v27.bundle`
+  ```bash
+  git clone _archive/nexio-local-fix-v27.bundle nexio-restored
+  ```
+
+---
+
+## 五、构建与签名
+
+- 构建工作副本在 **app 私有目录**：`$HOME/build/nexio`（与 `src/` 内容一致，`src/` 是 git worktree）
+- 构建脚本：`$HOME/build-nexio.sh`（含 JDK21 / SDK / aapt2 override 等坑的规避，注释见 `FINAL-REPORT.md`）
+- 建议加资源限制，免得吃满手机：`nice -n 19 ./build-nexio.sh :app:assembleRelease --max-workers=2`
+- 签名：`$HOME/nexio-local.jks`，alias `nexio`。**口令不写在这里**（工作区禁止落密钥），见 `REVISION-v2.md`
+- 产物目录：`dist-v21/ … dist-v27/`，每次都是"同签名可直接覆盖安装"
+
+---
+
+## 六、验证脚本（可复跑，不依赖真机）
+
+| 脚本 | 覆盖 |
+|---|---|
+| `dist-v27/verify_balance_v27.py` | 假期余额/清单：发不发 6 种条件 × 提前天数边界 × 文案矩阵（含豁免开关）× 25 项源码正则核对 |
+| `dist-v25/verify_droptarget.py` | 拖拽几何：落点在哪一格 + 那一格画在哪个 Y（旧模型 ±1.5 格） |
+| `dist-v24/verify_droptarget.py`、`dist-v22/`、`dist-v22/verify_logic_v22.py` | 早期版本的同名复算 |
+
+> 这批脚本的价值在于：**新功能算的是不是源码里那套公式**（正则比对源码），
+> 所以能挡住"测了个替身"。新加逻辑时请照这个模式补一份。
+
+---
+
+## 七、合并时要小心的几个"故意取舍"
+
+这些是**有意为之**，别在上游合并时顺手改回去（详细理由见 `AUDIT-v22.md` 第 3.3 节）：
+
+1. **岛的 XMSF 绕白名单必须是"批量窗口"**：发送与取消共用同一个断网窗口、按提交顺序串行、
+   自愈要避开在飞窗口。改回"每条各开一次"会重现"下课后回落成普通通知"。
+2. **节的 Y 坐标只有一套真源**：`ScheduleGridGeometry.sectionTopDp`。
+   `sectionTopPx()` / `computeDropTarget()` 都必须优先用它（含特殊块偏移）。
+   若上游改了 `computeSpecialGridLayout` 的 `sectionOffset`，这两个函数要一起复核。
+3. **`EdgeLightElement.equals` 不能按值比较**：动态 shape（`rememberDynamicCornerRadiusShape`）
+   实例不变、轮廓随动画变，按值比会让 `update()` 不再被调用、轮廓冻结成椭圆。
+4. **假期余额在假期最后一天必须发**（原来 `daysLeft > 0 && !isReturnDay` 两个条件把最后一天排除掉了）。
+5. **余额/清单的文案只有一份实现**（`balanceNotificationText` / `prepNotification*`），
+   主路径与"立即测试"共用；别写第二份。
+6. **测试按钮不能写"当天只发一次"去重键**，否则点一下就顶掉当天的正式提醒。
+7. 性能那批改动里有几处是"看起来能省、其实会破坏可靠性"的边界，见 `AUDIT-v21.md`
+   第 3.1/3.2 节与 `AUDIT-v22.md` 第 4 节（例如刷新链**不能**降级成非精确闹钟）。
