@@ -12,7 +12,7 @@
 |---|---|
 | **上游基线**（本定制栈的起点） | `1f46721` — `v1.5.6beta13` |
 | **本地分支** | `local/audit-v21`（worktree 就是本目录 `projects/nexio-schedule/src`） |
-| **栈深度** | 16 个本地提交 |
+| **栈深度** | 18 个本地提交 |
 | 包名 / versionCode | `com.haooz.chedule` / `156` |
 | versionName | `1.5.6-0926-audit`（更新判定只看 `MAJOR.MINOR.PATCH`，`-` 之后的后缀不影响更新） |
 
@@ -44,6 +44,8 @@
 | 14 | （docs 提交，SHA 见 `git log -1`） | 2026-09-27 | docs: LOCAL-CHANGES 补 v28/v29（栈深度 14、取舍 8 升级为“必须系数+淡入淡出”） | 1 |
 | 15 | `9b63b8b` | 2026-09-27 | v30：修毛玻璃过渡的「扫过」感 —— 折射宽度恒定、只淡强度 | 3 |
 | 16 | （docs 提交，SHA 见 `git log -1`） | 2026-09-27 | docs: LOCAL-CHANGES 补 v30（栈深度 16、折射宽度恒定约束入清单） | 1 |
+| 17 | `f33dfb4` | 2026-09-27 | v31：修「返校」提醒的日子词（标题写死“明天返校”而正文是今晚的课） | 3 |
+| 18 | （docs 提交，SHA 见 `git log -1`） | 2026-09-27 | docs: LOCAL-CHANGES 补 v31（栈深度 18、取舍 11 日子词必须由目标日推导） | 1 |
 
 > 一整条栈是**线性**的，直接 `git rebase --onto <新上游> 1f46721 local/audit-v21` 就能整体搬过去。
 
@@ -68,6 +70,7 @@
 | **轮询节拍**（助手/格言/课程行倒计时：分钟节拍；课程行按剩余秒数推跳变点） | 11 | `ui/utils/MinuteTick.kt`(新) `TodayAssistant.kt` `TodayScreen.kt` |
 | 预合成页数 / 页作用域内的 state 读取 / 壳 pager key lambda / 跨页 LazyListState | 11 | `MainScheduleScreen.kt` `MainActivity.kt` `TodayScreen.kt` |
 | 旧版残留闹钟 RC 的一次性清理标记 | 11 | `CourseReminderHelper.kt` |
+| **「返校」日子词**（今天/今晚/明天必须与正文所依据的日期一致；原生实时动态与超级岛共用一份） | 17 | `CourseReminderHelper.kt` `IslandNotificationHelper.kt` `AlarmReceiver.kt` |
 
 ---
 
@@ -80,7 +83,7 @@ cd projects/nexio-schedule/src
 git fetch origin                 # 或 git fetch github
 git branch backup/v27 HEAD       # 先留个后路
 
-# 把 1f46721 之后的本地 16 个提交整体搬到新上游上
+# 把 1f46721 之后的本地 18 个提交整体搬到新上游上
 git rebase --onto <新上游sha> 1f46721 local/audit-v21
 ```
 
@@ -110,7 +113,7 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 - 构建脚本：`$HOME/build-nexio.sh`（含 JDK21 / SDK / aapt2 override 等坑的规避，注释见 `FINAL-REPORT.md`）
 - 建议加资源限制，免得吃满手机：`nice -n 19 ./build-nexio.sh :app:assembleRelease --max-workers=2`
 - 签名：`$HOME/nexio-local.jks`，alias `nexio`。**口令不写在这里**（工作区禁止落密钥），见 `REVISION-v2.md`
-- 产物目录：`dist-v21/ … dist-v30/`，每次都是"同签名可直接覆盖安装"
+- 产物目录：`dist-v21/ … dist-v31/`，每次都是"同签名可直接覆盖安装"
 
 ---
 
@@ -120,6 +123,7 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 |---|---|
 | `dist-v30/verify_glass_v30.py` | 毛玻璃降级的**源码约束**核对（29 项，替代 v29 那份）：布尔开关无残留 / 四个调用点都乘系数且有 `<=0.01` 归零守卫 / 系数不进 `remember` 键 / 驱动是 150-250-250 / 边光乘 `alpha` 未改 `intensity` / **折射宽度未被乘系数（几何稳定性，钉死 v29 的「扫过」根因）** |
 | `dist-v29/verify_glass_v29.py`（已废弃，见该目录 README） | 毛玻璃降级的**源码约束**核对（26 项）：旧布尔开关无残留 / 四个 effects 调用点都乘系数且有 `<=0.01` 归零守卫 / 系数没有任何一处进 `remember` 键 / 驱动是 150-250-250 而非写 0f-1f / 边光乘 `alpha` 且未改 `intensity` |
+| `dist-v31/verify_returnday_v31.py` | 「返校」日子词：7 组日子/时刻逻辑复算 + 11 项源码约束（只有一份实现 / 写死字面量只剩 `returnDayVerb` 内部一处 / 三个调用点都传 `targetDate` / 16:00 口径与清单通知互补）+ `isReturnDay` 公式核对 |
 | `dist-v28/verify_perf_v28.py` | 性能改动的离线复算：分钟节拍（24h 唤醒数/漂移/值域）+ 课程行取值窗口覆盖（15 相位×3 作息，skip=0/无跳档/末分钟秒级/唤醒 3300→115）+ 唤醒间隔值域 |
 | `dist-v27/verify_balance_v27.py` | 假期余额/清单：发不发 6 种条件 × 提前天数边界 × 文案矩阵（含豁免开关）× 25 项源码正则核对 |
 | `dist-v25/verify_droptarget.py` | 拖拽几何：落点在哪一格 + 那一格画在哪个 Y（旧模型 ±1.5 格） |
@@ -163,5 +167,12 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
    **不能**写成"睡到下一个整分"：显示用 floor 语义，进循环那一瞬若压在跳变点上
    （"未开始"分支会睡到 `start`，正好是整分），会取到退化值并把那一分钟的文案整段跳过
    （肉眼 45 → 43）。相反，助手/格言的文案是 ceil 语义，睡到整分才对 —— 两者**不能统一**。
+11. **「返校」提醒的日子词必须由「正文所依据的那一天」推导，且原生实时动态与超级岛共用一份**：
+   `isReturnDay(d) = isRestDay(d) && isSchoolDay(d+1)` → 返校日就是假期最后一天，
+   正文列的可能是**今天**被豁免放出来的晚自习，此时标题写死「明天返校」就自相矛盾
+   （真机实测即是此例）。规则：目标日在今天之后→「明天返校」；目标是今天且首节 ≥16:00→「今晚返校」；
+   目标是今天但首节更早→「今天返校」。16:00 口径与 `prepNotificationTitle` 必须一致。
+   这次两个通道同时中招，正因为当初各写了一套 —— 别再分叉。
+
 10. **`beyondViewportPageCount` 现在是 1**：调回 2 等于同时多养两页的组合/测量/布局，
     是本轮最大的一笔白干。若上游为了别的原因改大，要连带评估课表页开销。
