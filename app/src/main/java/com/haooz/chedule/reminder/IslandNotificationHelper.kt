@@ -396,6 +396,26 @@ object IslandNotificationHelper {
     }
 
     // 测试岛含倒计时/已上课/课中三个 ID
+    // 课中岛缩略态 B 区：0=正在上课（静态文案），1=距下课倒计时，-1=**未设置**
+    private const val KEY_IN_CLASS_RIGHT_MODE = "island_in_class_right_mode"
+
+    /**
+     * 课中岛缩略态 B 区**实际生效**的模式。
+     *
+     * 课前与课中用的是同一个缩略态区域的 B 区，但历史上是两个互不相干的下拉，
+     * 而课中那个默认值是 0（静态「正在上课」）。后果就是实测反馈的那句
+     * 「点测试：上课倒计时没问题，下课倒计时飞了」—— 上课前那块区域在跳秒，
+     * 上课后同一块区域突然变成静态文案，看着就像倒计时没了。
+     *
+     * 规则：用户显式选过（0/1）就听他的；没选过（哨兵 -1）则跟随课前 B 区 ——
+     * 课前选了「距上课倒计时」，课中同一区域就给「距下课倒计时」。
+     */
+    fun effectiveInClassRightMode(prefs: android.content.SharedPreferences): Int {
+        val explicit = prefs.getInt(KEY_IN_CLASS_RIGHT_MODE, -1)
+        if (explicit >= 0) return explicit
+        return if (prefs.getInt("island_right_mode", 1) == 2) 1 else 0
+    }
+
     fun isIslandTestId(notificationId: Int): Boolean =
         notificationId == ISLAND_TEST_NOTIFICATION_ID ||
             notificationId == ISLAND_STARTED_TEST_NOTIFICATION_ID ||
@@ -701,8 +721,8 @@ object IslandNotificationHelper {
         val prefs = context.getSharedPreferences("course_reminder_prefs", Context.MODE_PRIVATE)
         val expandGlowEnabled = prefs.getBoolean(KEY_ISLAND_EXPAND_GLOW_ENABLED, true)
         val aodMode = prefs.getInt("island_aod_mode", 0)
-        // 课中岛缩略态 B 区：0=正在上课（静态文案），1=距下课倒计时
-        val inClassRightMode = prefs.getInt("island_in_class_right_mode", 0)
+        // 课中岛缩略态 B 区：0=正在上课（静态文案），1=距下课倒计时；未设置则跟随课前 B 区
+        val inClassRightMode = effectiveInClassRightMode(prefs)
 
         val now = System.currentTimeMillis()
         val counting = courseEndMillis > now
@@ -1108,7 +1128,15 @@ object IslandNotificationHelper {
         )
     }
 
-    fun sendTestIslandNotification(context: Context) {
+    fun sendTestIslandNotification(
+        context: Context,
+        /** 距"上课"还有多久发这条倒计时（0 = 已经上课了） */
+        startDelayMs: Long = 70_000L,
+        /** 课时长度 */
+        durationMs: Long = 120_000L,
+        /** 直接落到哪个状态；COUNTDOWN 走完整时序（到点由对账/闹钟自动切换） */
+        phase: ReminderTestPhase = ReminderTestPhase.COUNTDOWN,
+    ) {
         if (!isIslandSupported(context)) {
             Log.w(TAG, "Island not supported on this device")
             return
@@ -1122,9 +1150,9 @@ object IslandNotificationHelper {
         val testNotificationId = ISLAND_TEST_NOTIFICATION_ID
 
         // 时间串也由这两个时间戳派生，否则岛上显示与倒计时对不上，无法判断是否正确
-        // 测试课：课前 1 分 10 秒倒计时 + 课中 2 分钟
-        val courseStartTimestamp = System.currentTimeMillis() + 70_000L
-        val courseEndTimestamp = courseStartTimestamp + 120_000L
+        // 测试课：默认课前 1 分 10 秒倒计时 + 课中 2 分钟；场景可覆盖
+        val courseStartTimestamp = System.currentTimeMillis() + startDelayMs
+        val courseEndTimestamp = courseStartTimestamp + durationMs
         val startTime = formatClock(courseStartTimestamp)
         val endTime = formatClock(courseEndTimestamp)
 
@@ -1148,6 +1176,36 @@ object IslandNotificationHelper {
         kickWidgetRefresh(context)
         // 测试课也要走「上课自动开启、下课自动关闭」，否则勿扰链路在测试里跑不到
         ClassDndHelper.syncTestClassDndAlarms(context)
+
+        // 场景要直接落到「已上课」/「课中」：走主路径那两支函数本身，
+        // 只是**绕过用户开关**（测试工具的意义就是把某一条分支单独验出来）。
+        // 倒计时场景不在这里发：它留给到点后的对账/闹钟自动切换，才是真实时序。
+        if (phase != ReminderTestPhase.COUNTDOWN) {
+            if (phase == ReminderTestPhase.STARTED) {
+                sendClassStartedNotification(
+                    context = context,
+                    courseName = courseName,
+                    classroom = classroom,
+                    section = section,
+                    startTime = startTime,
+                    endTime = endTime,
+                    notificationId = testNotificationId,
+                    testMode = true,
+                )
+            } else {
+                sendInClassIslandNotification(
+                    context = context,
+                    courseName = courseName,
+                    classroom = classroom,
+                    section = section,
+                    startTime = startTime,
+                    endTime = endTime,
+                    notificationId = testNotificationId,
+                    testMode = true,
+                )
+            }
+            return
+        }
 
         val contentIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
