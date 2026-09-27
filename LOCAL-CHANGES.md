@@ -12,7 +12,7 @@
 |---|---|
 | **上游基线**（本定制栈的起点） | `1f46721` — `v1.5.6beta13` |
 | **本地分支** | `local/audit-v21`（worktree 就是本目录 `projects/nexio-schedule/src`） |
-| **栈深度** | 20 个本地提交 |
+| **栈深度** | 22 个本地提交 |
 | 包名 / versionCode | `com.haooz.chedule` / `156` |
 | versionName | `1.5.6-0926-audit`（更新判定只看 `MAJOR.MINOR.PATCH`，`-` 之后的后缀不影响更新） |
 
@@ -48,6 +48,8 @@
 | 18 | （docs 提交，SHA 见 `git log -1`） | 2026-09-27 | docs: LOCAL-CHANGES 补 v31（栈深度 18、取舍 11 日子词必须由目标日推导） | 1 |
 | 19 | `54d528e` | 2026-09-27 | v32：修课中倒计时“飞了”的根因（B 区开关不联动）+ 测试场景板块 | 5 |
 | 20 | （docs 提交，SHA 见 `git log -1`） | 2026-09-27 | docs: LOCAL-CHANGES 补 v32（栈深度 20、取舍 12 岛 B 区两开关必须联动） | 1 |
+| 21 | `8fc45f2` | 2026-09-27 | v33：测试独立成页 + 覆盖补齐（返校岛/实时动态）+ 体检卡折叠下移 | 9 |
+| 22 | （docs 提交，SHA 见 `git log -1`） | 2026-09-27 | docs: LOCAL-CHANGES 补 v33（栈深度 22、取舍 13 测试入口与体检卡位置） | 1 |
 
 > 一整条栈是**线性**的，直接 `git rebase --onto <新上游> 1f46721 local/audit-v21` 就能整体搬过去。
 
@@ -74,7 +76,8 @@
 | 旧版残留闹钟 RC 的一次性清理标记 | 11 | `CourseReminderHelper.kt` |
 | **「返校」日子词**（今天/今晚/明天必须与正文所依据的日期一致；原生实时动态与超级岛共用一份） | 17 | `CourseReminderHelper.kt` `IslandNotificationHelper.kt` `AlarmReceiver.kt` |
 | **超级岛缩略态 B 区**（课前/课中同一块区域，两个下拉必须联动；未设置时跟随课前） | 19 | `IslandNotificationHelper.kt`(effectiveInClassRightMode) `CourseReminderScreen.kt` |
-| **超级岛 / 实时动态 测试场景**（4 个场景，单独板块；只调主路径发送函数） | 19 | `reminder/ReminderTestScenario.kt`(新) `CourseReminderScreen.kt` `CourseReminderHelper.kt` |
+| **通知 / 超级岛 / 实时动态 测试页**（9 个场景，独立页面；只调主路径发送函数） | 19, 21 | `reminder/ReminderTestScenario.kt`(新) `ui/screens/ReminderTestScreen.kt`(新) `ui/activities/ReminderTestActivity.kt`(新) `SettingsScreen.kt` `CourseReminderHelper.kt` |
+| 提醒体检卡（默认粗略状态、点击展开；位置在总开关下方） | 21 | `CourseReminderScreen.kt` |
 
 ---
 
@@ -87,7 +90,7 @@ cd projects/nexio-schedule/src
 git fetch origin                 # 或 git fetch github
 git branch backup/v27 HEAD       # 先留个后路
 
-# 把 1f46721 之后的本地 20 个提交整体搬到新上游上
+# 把 1f46721 之后的本地 22 个提交整体搬到新上游上
 git rebase --onto <新上游sha> 1f46721 local/audit-v21
 ```
 
@@ -117,7 +120,7 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 - 构建脚本：`$HOME/build-nexio.sh`（含 JDK21 / SDK / aapt2 override 等坑的规避，注释见 `FINAL-REPORT.md`）
 - 建议加资源限制，免得吃满手机：`nice -n 19 ./build-nexio.sh :app:assembleRelease --max-workers=2`
 - 签名：`$HOME/nexio-local.jks`，alias `nexio`。**口令不写在这里**（工作区禁止落密钥），见 `REVISION-v2.md`
-- 产物目录：`dist-v21/ … dist-v32/`，每次都是"同签名可直接覆盖安装"
+- 产物目录：`dist-v21/ … dist-v33/`，每次都是"同签名可直接覆盖安装"
 
 ---
 
@@ -127,6 +130,7 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 |---|---|
 | `dist-v30/verify_glass_v30.py` | 毛玻璃降级的**源码约束**核对（29 项，替代 v29 那份）：布尔开关无残留 / 四个调用点都乘系数且有 `<=0.01` 归零守卫 / 系数不进 `remember` 键 / 驱动是 150-250-250 / 边光乘 `alpha` 未改 `intensity` / **折射宽度未被乘系数（几何稳定性，钉死 v29 的「扫过」根因）** |
 | `dist-v29/verify_glass_v29.py`（已废弃，见该目录 README） | 毛玻璃降级的**源码约束**核对（26 项）：旧布尔开关无残留 / 四个 effects 调用点都乘系数且有 `<=0.01` 归零守卫 / 系数没有任何一处进 `remember` 键 / 驱动是 150-250-250 而非写 0f-1f / 边光乘 `alpha` 且未改 `intensity` |
+| `dist-v33/verify_testpage_v33.py` | 测试覆盖矩阵（真实通知类型/岛状态逐条对场景表）+ 独立成页（Manifest/入口/旧板块已移除）+ 体检卡（默认折叠/展开重查/位置在总开关之后）+ 次日文案只有一份实现 |
 | `dist-v32/verify_islandtest_v32.py` | 岛 B 区模式联动（5 组判定，含"没设过不惊扰老用户"）+ 只有一份判定 + 14 项测试场景板约束（走主路径发送函数 / 通道判定一致 / 状态键同构 / UI 独立板块 / 老按钮与默认参数未改） |
 | `dist-v31/verify_returnday_v31.py` | 「返校」日子词：7 组日子/时刻逻辑复算 + 11 项源码约束（只有一份实现 / 写死字面量只剩 `returnDayVerb` 内部一处 / 三个调用点都传 `targetDate` / 16:00 口径与清单通知互补）+ `isReturnDay` 公式核对 |
 | `dist-v28/verify_perf_v28.py` | 性能改动的离线复算：分钟节拍（24h 唤醒数/漂移/值域）+ 课程行取值窗口覆盖（15 相位×3 作息，skip=0/无跳档/末分钟秒级/唤醒 3300→115）+ 唤醒间隔值域 |
@@ -172,6 +176,12 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
    **不能**写成"睡到下一个整分"：显示用 floor 语义，进循环那一瞬若压在跳变点上
    （"未开始"分支会睡到 `start`，正好是整分），会取到退化值并把那一分钟的文案整段跳过
    （肉眼 45 → 43）。相反，助手/格言的文案是 ceil 语义，睡到整分才对 —— 两者**不能统一**。
+13. **测试入口只有一个（设置 → 特色功能 →「通知与超级岛测试」），别再塞回提醒设置页**：
+   场景表在 `reminder/ReminderTestScenario.kt`，页面只做列表与展示，发送一律走主路径函数 ——
+   千万别在页面里另写一套文案（本项目已两次踩到"两处各写一套"）。新增通知类型时，
+   请同时往场景表补一条，否则又会出现"测不到"的盲区（本轮就是这样发现次日提醒文案
+   写死在 AlarmReceiver 里、因此无法测试的）。
+
 12. **超级岛缩略态 B 区：课前/课中两个设置必须联动**：
    它们是**同一块区域**，但历史上是两个独立下拉，课中那个默认是静态「正在上课」。
    于是"课前在跳秒、上课后变静态文案"——用户读作"下课倒计时飞了"。
