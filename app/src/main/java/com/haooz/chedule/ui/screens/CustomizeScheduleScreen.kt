@@ -985,9 +985,22 @@ fun CustomizeScheduleScreen(
                                         vibrancy()
                                     },
                                     highlight = null,
-                                    shadow = exitShadow,
-                                    layerBlock = exitLayerBlock,
-                                    onDrawSurface = onExitSurface
+                                    shadow = { Shadow(alpha = 0.3f) },
+                                    layerBlock = {
+                                        val progress = exitHighlight.pressProgress
+                                        val scale = 1f + 2f.dp.toPx() / 40.dp.toPx() * progress
+                                        scaleX = scale
+                                        scaleY = scale
+                                        val offset = exitHighlight.offset
+                                        translationX =
+                                            size.minDimension * 0.05f * offset.x / size.maxDimension
+                                        translationY =
+                                            size.minDimension * 0.05f * offset.y / size.maxDimension
+                                    },
+                                    onDrawSurface = {
+                                        drawRect(exitContainerColor)
+                                        drawRect(Color.Black.copy(alpha = 0.03f * exitHighlight.pressProgress))
+                                    }
                                 )
                                 .edgeLight(
                                     shape = ContinuousCapsule(),
@@ -1104,9 +1117,22 @@ fun CustomizeScheduleScreen(
                                         vibrancy()
                                     },
                                     highlight = null,
-                                    shadow = applyShadow,
-                                    layerBlock = applyLayerBlock,
-                                    onDrawSurface = onApplySurface
+                                    shadow = { Shadow(alpha = 0.3f) },
+                                    layerBlock = {
+                                        val progress = applyHighlight.pressProgress
+                                        val scale = 1f + 2f.dp.toPx() / 40.dp.toPx() * progress
+                                        scaleX = scale
+                                        scaleY = scale
+                                        val offset = applyHighlight.offset
+                                        translationX =
+                                            size.minDimension * 0.05f * offset.x / size.maxDimension
+                                        translationY =
+                                            size.minDimension * 0.05f * offset.y / size.maxDimension
+                                    },
+                                    onDrawSurface = {
+                                        drawRect(primaryColor.copy(0.8f))
+                                        drawRect(Color.Black.copy(alpha = 0.03f * applyHighlight.pressProgress))
+                                    }
                                 )
                                 .edgeLight(
                                     shape = ContinuousCapsule(),

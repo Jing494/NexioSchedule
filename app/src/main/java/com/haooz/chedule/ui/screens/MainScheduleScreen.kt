@@ -998,7 +998,6 @@ fun MainScheduleScreen(
                                 isHoliday = isHoliday,
                                 holidayExemptCourseIds = holidayExemptCourseIds,
                                 isWorkSwap = isWorkSwap,
-                                exemptSections = dayFlags.exemptSections,
                                 pendingDay = pendingDay,
                                 pendingSection = pendingSection,
                                 onPendingChange = onPendingChange,
