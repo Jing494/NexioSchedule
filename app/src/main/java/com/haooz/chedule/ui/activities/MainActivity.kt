@@ -1860,9 +1860,21 @@ fun CourseScheduleApp() {
     fun dividerPxFor(geom: ScheduleGridGeometry): Float =
         if (geom.showBreakDividers) with(density) { 24.dp.toPx() } else 0f
 
+    /**
+     * 节次顶部 → root px。
+     *
+     * **优先用渲染实际用的 sectionTop**（`geom.sectionTopDp`）：computeSpecialGridLayout 会让
+     * 特殊块（自习/自定义时间块）在其时间起点占位，把下方节次整体下移；
+     * 下面那段"均匀高度 + 两个分界带"是**没有这层偏移**的旧模型。
+     *
+     * 这里曾经只用旧模型，而落点反查（computeDropTarget）在 v24 已改成用实际 sectionTop ——
+     * 于是出现"落点格子对了、卡片却吸附到偏高 1.5 格的位置"（用户实测：阴影对了，课程图标上移一格）。
+     * 统一到同一张表，三处调用（吸附位置 / 拖拽起点 / 卡片高度）一起修好。
+     */
     fun sectionTopPx(geom: ScheduleGridGeometry, section: Int, dividerPx: Float): Float {
         val sectionH = geom.sectionHeightPx
         if (sectionH <= 0f) return 0f
+        geom.sectionTopDp[section]?.let { return with(density) { it.dp.toPx() } }
         val morning = geom.morningSections
         val afternoon = geom.afternoonSections
         return when {
@@ -3436,11 +3448,21 @@ fun CourseScheduleApp() {
                                                 // 落点仅跨格时写 state，避免逐帧重组课表
                                                 val course = draggedCardCourse
                                                 if (course != null) {
+                                                    val dragGeom = gridGeometry
                                                     val sectionH =
-                                                        gridGeometry?.sectionHeightPx ?: 0f
-                                                    val sectionCount =
-                                                        course.endSection - course.startSection + 1
-                                                    val cardHeightPx = sectionCount * sectionH
+                                                        dragGeom?.sectionHeightPx ?: 0f
+                                                    // 高度必须与浮层/锚点同源（含分界缝与特殊块），
+                                                    // 否则跨分界带的课在拖拽中会算错首节中心 → 落点偏
+                                                    val cardHeightPx = if (dragGeom != null) {
+                                                        courseVisualHeightPx(
+                                                            dragGeom,
+                                                            course.startSection,
+                                                            course.endSection,
+                                                            dividerPxFor(dragGeom)
+                                                        )
+                                                    } else {
+                                                        (course.endSection - course.startSection + 1) * sectionH
+                                                    }
                                                     val centerX = draggedCardPosition.x + offsetX
                                                     val cardTopY =
                                                         draggedCardPosition.y + offsetY - cardHeightPx / 2f
@@ -4382,10 +4404,20 @@ fun CourseScheduleApp() {
                         val centerX = swapFlightOriginCenter.x + swapFlightOffsetX.value
                         val centerY = swapFlightOriginCenter.y + swapFlightOffsetY.value
                         val widthPx = swapFlightWidth
-                        val sectionCount = swapCourse.endSection - swapCourse.startSection + 1
                         val sectionH = gridGeometry?.sectionHeightPx
                             ?: with(density) { displayAppearance.cardHeight.dp.toPx() }
-                        val heightPx = sectionCount * sectionH
+                        // 与网格里卡片的外接框同源（含分界缝），避免跨分界带的课飞行动画高度偏矮
+                        val swapGeom = gridGeometry
+                        val heightPx = if (swapGeom != null) {
+                            courseVisualHeightPx(
+                                swapGeom,
+                                swapCourse.startSection,
+                                swapCourse.endSection,
+                                dividerPxFor(swapGeom)
+                            )
+                        } else {
+                            (swapCourse.endSection - swapCourse.startSection + 1) * sectionH
+                        }
                         val offsetX = with(density) { (centerX - widthPx / 2f).toDp() }
                         val offsetY = with(density) { (centerY - heightPx / 2f).toDp() }
                         val width = with(density) { widthPx.toDp() }
