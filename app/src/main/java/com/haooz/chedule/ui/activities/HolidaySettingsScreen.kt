@@ -560,23 +560,6 @@ fun HolidaySettingsScreen(
                     description = "• 长假可能带来教学周的重组，并引发后续教学周的顺延更改\n• 可在此进行教学周重组，后续教学周将重新分配计算",
                     liquidGlassBackdrop = liquidGlassBackdrop,
                 )
-                SectionTitleRow(
-                    text = "假期余额提醒",
-                    description = "• 假期期间每天一条，含假期最后一天（不占超级岛/实时动态的位置）\n" +
-                        "• 独立开关：不再挂在「返校节次豁免」下面 —— 关掉豁免不会连带关掉余额提醒",
-                    liquidGlassBackdrop = liquidGlassBackdrop,
-                )
-                HolidayBalanceCard()
-            }
-
-            item {
-                SectionTitleRow(
-                    text = "返校节次豁免",
-                    description = "• 假期最后一天整天算假期、默认空课不提醒；这里把指定节次豁免出来\n" +
-                        "• 豁免的是课表里当天的真实课程，点开详情正常，不会出现空白页\n" +
-                        "• 只在学期内、且「次日是上课日」的日子生效（假期最后一天、周日）",
-                    liquidGlassBackdrop = liquidGlassBackdrop,
-                )
                 if (teachingWeekReorganizations.isNotEmpty()) {
                     Card(
                         cornerRadius = 20.dp,
@@ -624,6 +607,17 @@ fun HolidaySettingsScreen(
                         onClick = { startAddingTeachingWeekRule() },
                     )
                 }
+            }
+            }
+
+            item {
+                SectionTitleRow(
+                    text = "假期余额提醒",
+                    description = "• 假期期间每天一条，含假期最后一天（不占超级岛/实时动态的位置）\n" +
+                        "• 独立开关：不再挂在「返校节次豁免」下面 —— 关掉豁免不会连带关掉余额提醒",
+                    liquidGlassBackdrop = liquidGlassBackdrop,
+                )
+                HolidayBalanceCard()
             }
 
             item {
