@@ -49,6 +49,7 @@ import com.haooz.chedule.data.TeachingWeekReorganization
 import com.haooz.chedule.data.TimeConfig
 import com.haooz.chedule.ui.activities.AboutActivity
 import com.haooz.chedule.ui.activities.CourseReminderActivity
+import com.haooz.chedule.ui.activities.ReminderTestActivity
 import com.haooz.chedule.ui.activities.CourseTimeSettingsActivity
 import com.haooz.chedule.ui.activities.HolidaySettingsActivity
 import com.haooz.chedule.ui.activities.PreferenceSettingsActivity
@@ -395,6 +396,16 @@ fun SettingsScreen(
                                         FeatureLog.reminder("open")
                                         val intent = Intent(context, CourseReminderActivity::class.java)
                                         reminderSettingsLauncher.launch(intent)
+                                    }
+                                )
+                                ArrowPreference(
+                                    title = "通知与超级岛测试",
+                                    summary = "课前/课中/返校岛与实时动态，逐个试",
+                                    holdDownState = "ReminderTestActivity" in activeSecondaryActivities,
+                                    onClick = {
+                                        context.startActivity(
+                                            Intent(context, ReminderTestActivity::class.java)
+                                        )
                                     }
                                 )
                                 ArrowPreference(

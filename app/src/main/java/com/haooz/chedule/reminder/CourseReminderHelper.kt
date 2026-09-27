@@ -1328,6 +1328,55 @@ object CourseReminderHelper {
         }
     }
 
+    /**
+     * 次日提醒的文案 —— **主路径（AlarmReceiver）与测试页共用这一份**。
+     *
+     * 原来这段文本写死在 AlarmReceiver 的 onReceive 里，结果是：
+     * 测试页没法单独验这条通知（"测试范围不全"里的一处），而且以后改文案得记得改一处不存在的地方。
+     * 抽出来后两边都调它，文案只有一份。
+     */
+    fun nextDayReminderText(context: Context, repository: CourseRepository): Pair<String, String> =
+        nextDayReminderText(getTomorrowCourses(context), repository)
+
+    /**
+     * 同上，但课表已由调用方取好 —— AlarmReceiver 里同一份"明天课表"还要给返校岛用，
+     * 传进来可以避免一次闹钟把当天课表解析两遍（那正是这个项目已经优化过的点）。
+     */
+    fun nextDayReminderText(
+        tomorrowCourses: List<Course>,
+        repository: CourseRepository,
+    ): Pair<String, String> {
+        if (tomorrowCourses.isEmpty()) return "明日无课" to "明天没有课程安排"
+        val firstCourse = tomorrowCourses.first()
+        val firstStart = getCourseStartTime(firstCourse, repository)
+        val firstHour = firstStart?.split(":")?.firstOrNull()?.toIntOrNull() ?: 9
+        val details = when {
+            firstHour < 9 -> "明早有早${chineseNumberHour(firstHour)}，${firstCourse.name}"
+            firstHour < 12 -> "明早有课，${firstCourse.name} $firstStart"
+            firstHour < 18 -> "下午有课，${firstCourse.name} $firstStart"
+            else -> "晚上有课，${firstCourse.name} $firstStart"
+        }
+        return "明天共${tomorrowCourses.size}节课" to details
+    }
+
+    /** 星期几/钟点用的中文数字（原来在 AlarmReceiver 里，随文案一起搬过来） */
+    private fun chineseNumberHour(n: Int): String {
+        if (n <= 0 || n > 23) return n.toString()
+        val digit = listOf("", "一", "二", "三", "四", "五", "六", "七", "八", "九")
+        return when {
+            n < 10 -> digit[n]
+            n < 20 -> "十" + digit[n - 10]
+            else -> digit[n / 10] + "十" + digit[n % 10]
+        }
+    }
+
+    /** 测试用：立刻发一条次日提醒。不写任何"已发"状态，不影响正式提醒 */
+    fun sendNextDayReminderNow(context: Context) {
+        val repository = CourseRepository(context)
+        val (title, body) = nextDayReminderText(context, repository)
+        showReminderNotification(context, TYPE_NEXT_DAY, title, body)
+    }
+
     fun getTomorrowCourses(context: Context): List<Course> =
         resolveDaySchedule(context, forTomorrow = true).courses
 
