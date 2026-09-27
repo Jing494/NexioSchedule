@@ -112,11 +112,14 @@ internal class EdgeLightNode(
 
         drawContent()
 
-        // 滑动/翻页进行中降级：跳过边光描边。
+        // 滑动/翻页进行中降级：边光随全局系数**连续淡出**，不是硬切 ——
+        // 描边是很细的一条线，硬切反而比玻璃更扎眼。layer.alpha 是可连续量，
+        // 乘上去不会触发重新录制（recordedIntensity 比的是原始 intensity，不变）。
         // 它是"每张卡每帧一次的前景 RuntimeShader + 一次 native SkMaskFilter"，
-        // 与 blur/lens 同属每帧每卡的开销。读的是同一个全局开关 ——
-        // DrawModifierNode.draw 里的快照读会登记成绘制期依赖，翻面只失效绘制、不触发重组。
-        if (!com.haooz.chedule.ui.utils.glassBlurEnabled()) return
+        // 与 blur/lens 同属每帧每卡的开销。读的是同一个全局系数 ——
+        // DrawModifierNode.draw 里的快照读会登记成绘制期依赖，变化只失效绘制、不触发重组。
+        val edgeLightFade = com.haooz.chedule.ui.utils.glassPerfFactor()
+        if (edgeLightFade <= 0.01f) return
 
         val edgeLightLayer = edgeLightLayer
         if (edgeLightLayer != null) {
@@ -205,7 +208,8 @@ internal class EdgeLightNode(
                 }
             }
 
-            edgeLightLayer.alpha = intensity
+            // 乘淡出系数（不改 intensity：改了会触发 recordedIntensity 失配、每帧重录）
+            edgeLightLayer.alpha = intensity * edgeLightFade
 
             translate(-1f, -1f) {
                 drawLayer(edgeLightLayer)

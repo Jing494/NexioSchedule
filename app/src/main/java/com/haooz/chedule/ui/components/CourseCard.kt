@@ -48,7 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.haooz.chedule.data.Course
-import com.haooz.chedule.ui.utils.glassBlurEnabled
+import com.haooz.chedule.ui.utils.glassPerfFactor
 import com.haooz.chedule.ui.utils.isAppDarkTheme
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.SharedBlurBackdrop
@@ -210,12 +210,16 @@ fun CourseCard(
                         // 这两项是课表页最贵的两笔 —— 每帧 × 每张可见卡各一次 GPU 模糊 + 一次 AGSL 着色器。
                         // 只在**绘制期**读开关，绝不进 remember 的键：否则 lambda 身份每次翻面都变，
                         // drawBackdrop 会判不等并整块重建绘制缓存（那正是 v22 椭圆伪影的同一类坑）。
-                        if (glassBlurEnabled()) {
+                        // 滑动/翻页进行中：按全局系数连续淡出（不是硬切）；系数归零时
+                        // **一个 effect 都不追加** → RenderEffect 为空 → 走 canDirectBlit
+                        // 直采共享预模糊层，连每卡离屏录制一起省掉。
+                        val glassFactor = glassPerfFactor()
+                        if (glassFactor > 0.01f) {
                             if (!isSharedBlur) {
-                                blur(blurPx)
+                                blur(blurPx * glassFactor)
                             }
                             if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
-                                lens(lensRadiusPx, lensStrengthPx)
+                                lens(lensRadiusPx * glassFactor, lensStrengthPx * glassFactor)
                             }
                         }
                     }

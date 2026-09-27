@@ -2561,14 +2561,15 @@ fun CourseScheduleApp() {
             else -> 1f
         }
         /*
-         * 毛玻璃降级：滑动/翻页进行中把 blur + lens 关掉，停下 180ms 再恢复。
+         * 毛玻璃降级：滑动/翻页进行中按**系数**淡出，停下淡入。
+         *
+         * 不能做成布尔硬切：那样滑动一开始整屏玻璃同一帧变平、停下整片弹回，
+         * 实测反馈"感觉有点突兀"。现在 150ms 淡出 / 停滑 250ms 后 250ms 淡入。
          *
          * 这里特意用 snapshotFlow 而不是在 composition 里读这些 isScrollInProgress ——
          * 那会让整个四千多行的 body 在每次滑动开始/结束时重跑一遍。
-         * 真正"读"这个开关的地方是各卡片 effects lambda 的**绘制期**，所以翻面只失效绘制层，
-         * 一次重组都不会产生。
-         *
-         * 180ms 的滞后是为了防抖：惯性滑动尾部会连续开关几次，没有滞后就会看到玻璃闪烁。
+         * 真正"读"这个系数的地方是各卡片 effects lambda / DrawModifierNode.draw 的**绘制期**，
+         * 所以过渡的每一帧只失效绘制层，一次重组都不会产生。
          */
         LaunchedEffect(
             scheduleScrollState, pagerState, todayPagerState, mainPagerState, todayListScrollInProgress
@@ -2583,10 +2584,12 @@ fun CourseScheduleApp() {
                 .distinctUntilChanged()
                 .collectLatest { scrolling ->
                     if (scrolling) {
-                        GlassPerf.enabled.value = false
+                        // 淡出比淡入快：起滑时尽快省下渲染开销，观感上"变糊"要跟手
+                        GlassPerf.anim.animateTo(0f, tween(durationMillis = 150))
                     } else {
-                        delay(180)
-                        GlassPerf.enabled.value = true
+                        // 250ms 防抖：惯性滑行尾部会连续开关几次，没有滞后会看到玻璃闪烁
+                        delay(250)
+                        GlassPerf.anim.animateTo(1f, tween(durationMillis = 250))
                     }
                 }
         }
