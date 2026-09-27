@@ -261,6 +261,8 @@ class CourseRepository private constructor(context: Context) {
         private const val KEY_RETURN_DAY_BALANCE_ENABLED = "return_day_balance_enabled"
         private const val KEY_RETURN_DAY_BALANCE_HOUR = "return_day_balance_hour"
         private const val KEY_RETURN_DAY_BALANCE_MINUTE = "return_day_balance_minute"
+        /** 「只在假期最后 N 天开始提醒」；0 = 假期期间每天都提醒 */
+        private const val KEY_RETURN_DAY_BALANCE_LEAD_DAYS = "return_day_balance_lead_days"
         private const val KEY_RETURN_DAY_PREP_ENABLED = "return_day_prep_enabled"
         private const val KEY_RETURN_DAY_PREP_HOUR = "return_day_prep_hour"
         private const val KEY_RETURN_DAY_PREP_MINUTE = "return_day_prep_minute"
@@ -1284,6 +1286,17 @@ class CourseRepository private constructor(context: Context) {
 
     fun setReturnDayBalanceMinute(minute: Int) {
         prefs.edit { putInt(KEY_RETURN_DAY_BALANCE_MINUTE, minute.coerceIn(0, 59)) }
+    }
+
+    /**
+     * 「只在假期最后 N 天开始提醒」。0（默认）= 假期期间每天都提醒。
+     * 语义：剩余天数 < N 才发 —— N=2 表示只提醒最后两天（含最后一天）。
+     */
+    fun getReturnDayBalanceLeadDays(): Int =
+        safeGetInt(KEY_RETURN_DAY_BALANCE_LEAD_DAYS, 0).coerceIn(0, 7)
+
+    fun setReturnDayBalanceLeadDays(days: Int) {
+        prefs.edit { putInt(KEY_RETURN_DAY_BALANCE_LEAD_DAYS, days.coerceIn(0, 7)) }
     }
 
     /** 返校准备清单：返校日到点推一条普通通知（默认关，文案可自定义） */

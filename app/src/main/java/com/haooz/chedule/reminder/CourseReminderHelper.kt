@@ -1417,15 +1417,16 @@ object CourseReminderHelper {
         // 现在统一为：只要在假期内就发；最后一天换成「最后一天」的文案。
         if (span != null &&
             repository.getReturnDayBalanceEnabled() &&
+            balanceLeadDaysAllow(repository, span) &&
             !java.time.LocalTime.now().isBefore(balanceTarget) &&
             prefs.getString(KEY_RETURN_BALANCE_DATE, null) != todayKey
         ) {
-            val lastDay = span.daysLeft <= 0
+            val (title, body) = balanceNotificationText(repository, span)
             showReminderNotification(
                 context,
                 NOTIFY_ID_RETURN_BALANCE,
-                if (lastDay) "今天是${span.name}最后一天" else "${span.name}还剩 ${span.daysLeft} 天",
-                if (lastDay) "最后一天了，收拾一下准备返校吧" else "好好休息，返校前我会再提醒你",
+                title,
+                body,
                 channelId = CHANNEL_HOLIDAY_ID,
             )
             prefs.edit { putString(KEY_RETURN_BALANCE_DATE, todayKey) }
@@ -1440,25 +1441,11 @@ object CourseReminderHelper {
             if (!java.time.LocalTime.now().isBefore(target) &&
                 prefs.getString(KEY_RETURN_PREP_DATE, null) != todayKey
             ) {
-                // 逐行显示：BigTextStyle 展开后按行排；折叠行会自动并成一行。
-                // 用户若直接用换行分隔就照用，否则按常见分隔符拆开。
-                val rawPrep = repository.getReturnDayPrepText()
-                val multiLinePrep = if (rawPrep.contains('\n')) {
-                    rawPrep
-                } else {
-                    rawPrep.split('/', '、', '，', ',')
-                        .map { it.trim() }
-                        .filter { it.isNotEmpty() }
-                        .joinToString("\n")
-                        .ifBlank { rawPrep }
-                }
                 showReminderNotification(
                     context,
                     NOTIFY_ID_RETURN_PREP,
-                    // 原来写死「今晚返校」：默认提醒时间是 12:00，且时间可自定义，
-                    // 中午收到一条"今晚返校"是明显说错话。按实际时刻选措辞。
-                    if (java.time.LocalTime.now().hour >= 16) "今晚返校，别忘了带" else "返校别忘了带这些",
-                    multiLinePrep,
+                    prepNotificationTitle(),
+                    prepNotificationBody(repository),
                     channelId = CHANNEL_HOLIDAY_ID,
                 )
                 prefs.edit { putString(KEY_RETURN_PREP_DATE, todayKey) }
@@ -1500,6 +1487,80 @@ object CourseReminderHelper {
                 KEY_RETURN_PREP_ALARM_AT, KEY_RETURN_PREP_ALARM_SET,
             )
         }
+    }
+
+    /**
+     * 余额通知的标题/正文。**主路径与"立即测试"按钮共用这一份**，
+     * 否则两处文案迟早会分叉（这正是本项目已经踩过的坑）。
+     *
+     * 「返校节次豁免」开着时，最后一天说"收拾一下准备返校吧"；
+     * 关着时说明用户当天并没有返校课，就只说"好好休息"。
+     */
+    private fun balanceNotificationText(
+        repository: CourseRepository,
+        span: ReturnDayReminder.HolidaySpan,
+    ): Pair<String, String> {
+        val lastDay = span.daysLeft <= 0
+        val title = if (lastDay) "今天是${span.name}最后一天" else "${span.name}还剩 ${span.daysLeft} 天"
+        val body = when {
+            !lastDay -> "好好休息，返校前我会再提醒你"
+            repository.getReturnDayReminder() -> "最后一天了，收拾一下准备返校吧"
+            else -> "最后一天了，好好休息吧"
+        }
+        return title to body
+    }
+
+    /** 「只在假期最后 N 天开始提醒」：N=0（默认）表示不限制，假期期间每天都提醒。 */
+    private fun balanceLeadDaysAllow(
+        repository: CourseRepository,
+        span: ReturnDayReminder.HolidaySpan,
+    ): Boolean {
+        val lead = repository.getReturnDayBalanceLeadDays()
+        return lead <= 0 || span.daysLeft < lead
+    }
+
+    /** 清单通知标题：按实际时刻选措辞（写死"今晚"在中午会明显说错话）。 */
+    private fun prepNotificationTitle(): String =
+        if (java.time.LocalTime.now().hour >= 16) "今晚返校，别忘了带" else "返校别忘了带这些"
+
+    /** 清单正文：逐行显示（BigTextStyle 展开后按行排）；用换行分隔就照用，否则按常见分隔符拆开。 */
+    private fun prepNotificationBody(repository: CourseRepository): String {
+        val raw = repository.getReturnDayPrepText()
+        if (raw.contains('\n')) return raw
+        return raw.split('/', '、', '，', ',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString("\n")
+            .ifBlank { raw }
+    }
+
+    /**
+     * 「立即发一条」——仅供设置页的测试按钮使用。
+     *
+     * 与正式提醒**共用同一套文案函数**，但**不写"当天只发一次"去重键**，
+     * 所以随便点、点几次都行，也不会把当天的正式提醒顶掉。
+     * 不在假期里时给一条演示文案，方便先看样式。
+     */
+    fun sendReturnDayReminderNow(context: Context, prep: Boolean) {
+        val repository = CourseRepository(context)
+        if (prep) {
+            showReminderNotification(
+                context,
+                NOTIFY_ID_RETURN_PREP,
+                prepNotificationTitle(),
+                prepNotificationBody(repository),
+                channelId = CHANNEL_HOLIDAY_ID,
+            )
+            return
+        }
+        val span = ReturnDayReminder.currentHolidaySpan(context, java.time.LocalDate.now())
+        val (title, body) = if (span != null) {
+            balanceNotificationText(repository, span)
+        } else {
+            // 不在假期里：正式提醒不会发，这里给演示
+            "假期余额提醒（测试）" to "当前不在假期内，正式提醒会在假期中按设定时间发出"
+        }
+        showReminderNotification(context, NOTIFY_ID_RETURN_BALANCE, title, body, channelId = CHANNEL_HOLIDAY_ID)
     }
 
     /**
