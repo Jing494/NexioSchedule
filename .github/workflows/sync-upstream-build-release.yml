@@ -424,6 +424,35 @@ jobs:
           if git push "$GURL" origin/master:refs/heads/master; then echo "✅ master 已镜像到 Gitee"; else echo "::warning::master 镜像失败（Gitee 侧可能已分叉）"; fi
           if git push "$GURL" origin/local-audit-v21:refs/heads/local-audit-v21 2>/dev/null; then echo "✅ local-audit-v21 已镜像到 Gitee"; else echo "::warning::源码分支镜像失败（可忽略）"; fi
 
+      - name: 被取消/失败时清理「没有安装包」的 Gitee release
+        # 真事：concurrency.cancel-in-progress 会在**下一轮 dispatch 时取消正在跑的这轮**，
+        # 而 Gitee 建 release 与上传 .apk 之间有几秒~几分钟的窗口（跨国上传实测 8 分钟）。
+        # 被取消就留下一条"有 release 却没有安装包"的记录 —— App 侧虽然会跳过它（v37 起只认带包的），
+        # 但 Gitee 上那条会一直挂着，看着像"新版发不出来"。
+        # 这里在取消/失败时把它删掉，保持「要么完整、要么没有」。
+        continue-on-error: true
+        if: cancelled() || failure()
+        env:
+          GT: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: ${{ vars.GITEE_REPO }}
+        run: |
+          set -uo pipefail
+          VER="${{ steps.build.outputs.FORK_VER }}"
+          if [ -z "$GT" ] || [ -z "$GITEE_REPO" ] || [ -z "$VER" ]; then
+            echo "未配置 token / 没有算出版本号，跳过清理"; exit 0
+          fi
+          TAG="v$VER"
+          API="https://gitee.com/api/v5/repos/$GITEE_REPO"
+          RID=$(curl -s "$API/releases/tags/$TAG?access_token=$GT" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('id','') if isinstance(d,dict) else '')" 2>/dev/null || true)
+          if [ -z "$RID" ]; then echo "Gitee 上没有 $TAG，无需清理"; exit 0; fi
+          APK_N=$(curl -s "$API/releases/$RID?access_token=$GT" | python3 -c "import json,sys;d=json.load(sys.stdin);print(sum(1 for a in (d.get('assets') or []) if str(a.get('name','')).endswith('.apk')) if isinstance(d,dict) else 0)" 2>/dev/null || echo 0)
+          if [ "${APK_N:-0}" = "0" ]; then
+            echo "::warning::$TAG 在 Gitee 上没有 .apk（上传被中断），删除这条 release 以免留下半成品"
+            curl -s -X DELETE "$API/releases/$RID?access_token=$GT" | head -c 200; echo
+          else
+            echo "$TAG 在 Gitee 上已带 .apk，保留"
+          fi
+
       - name: 失败时开 Issue 提醒（补丁冲突等）
         continue-on-error: true
         if: failure()
