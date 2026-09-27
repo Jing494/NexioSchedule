@@ -127,16 +127,19 @@ jobs:
           #
           # ★ 必须 set -o pipefail：bash 里管道的退出码是**最后一个命令**的，
           #   写成 `python3 ci_check.py . | tee log` 时 python 的失败会被 tee 吞掉、步骤照样绿。
-          #   这个坑真实存在过：ci_check.py 根本不在仓库里（python 报 can't open file），
-          #   门禁却一路 success，Release 说明还写着"质量门禁：全部通过"。别删这一行。
+          # ★ 路径也别靠猜：`git archive <ref> tools` 解出来就是 <目录>/tools/ci_check.py。
+          #   这里原来写成 /tmp/tools/tools/ci_check.py（多套了一层 tools/），脚本永远找不到 ——
+          #   这是"门禁一直空转"的另一半原因（前半是管道吞掉退出码）。现在用 find 定位。
           set -euo pipefail
-          rm -rf /tmp/tools && mkdir -p /tmp/tools
-          git archive origin/master tools | tar -x -C /tmp
-          if [ ! -f /tmp/tools/tools/ci_check.py ]; then
+          rm -rf /tmp/gate && mkdir -p /tmp/gate
+          git archive origin/master tools | tar -x -C /tmp/gate
+          GATE=$(find /tmp/gate -name ci_check.py -print -quit)
+          if [ -z "$GATE" ]; then
             echo "::error::tools/ci_check.py 不在 master 上 —— 门禁脚本缺失，直接挡住发版（宁可不发，也不要假绿灯）"
             exit 1
           fi
-          python3 /tmp/tools/tools/ci_check.py . | tee /tmp/ci_check.log
+          echo "门禁脚本: $GATE"
+          python3 "$GATE" . | tee /tmp/ci_check.log
 
       - name: 设置 JDK 21
         if: github.event_name == 'workflow_dispatch'
