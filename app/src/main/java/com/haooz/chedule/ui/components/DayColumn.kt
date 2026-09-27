@@ -46,7 +46,7 @@ import com.haooz.chedule.data.Course
 import com.haooz.chedule.data.ReturnDayReminder
 import com.haooz.chedule.ui.effects.edgelight.edgeLight
 import com.haooz.chedule.ui.effects.edgelight.rememberCourseCardEdgeLight
-import com.haooz.chedule.ui.utils.glassBlurEnabled
+import com.haooz.chedule.ui.utils.glassPerfFactor
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.SharedBlurBackdrop
 import com.kyant.backdrop.drawBackdrop
@@ -747,12 +747,16 @@ fun SpecialBandOverlay(
                 remember(isSharedBlur, blurPx, lensRadiusPx, lensStrengthPx, cardRefraction) {
                     {
                         // 特殊块卡片同 CourseCard：滑动中降级 blur+lens（绘制期读、不进键）
-                        if (glassBlurEnabled()) {
+                        // 滑动/翻页进行中：按全局系数连续淡出（不是硬切）；系数归零时
+                        // **一个 effect 都不追加** → RenderEffect 为空 → 走 canDirectBlit
+                        // 直采共享预模糊层，连每卡离屏录制一起省掉。
+                        val glassFactor = glassPerfFactor()
+                        if (glassFactor > 0.01f) {
                             if (!isSharedBlur) {
-                                blur(blurPx)
+                                blur(blurPx * glassFactor)
                             }
                             if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
-                                lens(lensRadiusPx, lensStrengthPx)
+                                lens(lensRadiusPx * glassFactor, lensStrengthPx * glassFactor)
                             }
                         }
                     }

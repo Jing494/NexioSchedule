@@ -67,7 +67,7 @@ import com.haooz.chedule.ui.basic.collapsibleTopInset
 import com.haooz.chedule.ui.effects.edgelight.edgeLight
 import com.haooz.chedule.ui.effects.edgelight.rememberCardEdgeLight
 import com.haooz.chedule.ui.effects.edgelight.rememberDefaultEdgeLight
-import com.haooz.chedule.ui.utils.glassBlurEnabled
+import com.haooz.chedule.ui.utils.glassPerfFactor
 import com.haooz.chedule.ui.utils.isAppDarkTheme
 import com.haooz.chedule.ui.utils.overScrollVertical
 import com.haooz.chedule.ui.utils.pagerAxisTakeoverGesture
@@ -135,13 +135,20 @@ fun BlurCard(
         val glassEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
             remember(refraction, blurPx) {
                 {
-                    // 滑动/翻页进行中降级：跳过 blur + lens（每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器）。
-                    // 只在**绘制期**读开关，绝不进 remember 的键 —— 否则 lambda 身份翻面即变，
+                    // 滑动/翻页进行中降级：按全局系数连续淡出 blur + lens
+                    //（它们是每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器），
+                    // 系数归零时一个 effect 都不追加 → RenderEffect 为空 →
+                    // 走 canDirectBlit 直采共享预模糊层，连每卡离屏录制一起省掉。
+                    // 只在**绘制期**读系数，绝不进 remember 的键 —— 否则 lambda 身份随系数变化，
                     // drawBackdrop 会判不等并整块重建绘制缓存（v22 那个椭圆伪影是同一类坑）。
-                    if (glassBlurEnabled()) {
-                        blur(blurPx)
+                    val glassFactor = glassPerfFactor()
+                    if (glassFactor > 0.01f) {
+                        blur(blurPx * glassFactor)
                         if (refraction != CardRefractionLevel.OFF) {
-                            lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
+                            lens(
+                                refraction.lensRadiusDp.dp.toPx() * glassFactor,
+                                refraction.lensStrengthDp.dp.toPx() * glassFactor
+                            )
                         }
                     }
                 }
@@ -1715,13 +1722,20 @@ private fun CourseSectionTitle(
         val titleEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
             remember(refraction, blurPx) {
                 {
-                    // 滑动/翻页进行中降级：跳过 blur + lens（每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器）。
-                    // 只在**绘制期**读开关，绝不进 remember 的键 —— 否则 lambda 身份翻面即变，
+                    // 滑动/翻页进行中降级：按全局系数连续淡出 blur + lens
+                    //（它们是每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器），
+                    // 系数归零时一个 effect 都不追加 → RenderEffect 为空 →
+                    // 走 canDirectBlit 直采共享预模糊层，连每卡离屏录制一起省掉。
+                    // 只在**绘制期**读系数，绝不进 remember 的键 —— 否则 lambda 身份随系数变化，
                     // drawBackdrop 会判不等并整块重建绘制缓存（v22 那个椭圆伪影是同一类坑）。
-                    if (glassBlurEnabled()) {
-                        blur(blurPx)
+                    val glassFactor = glassPerfFactor()
+                    if (glassFactor > 0.01f) {
+                        blur(blurPx * glassFactor)
                         if (refraction != CardRefractionLevel.OFF) {
-                            lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
+                            lens(
+                                refraction.lensRadiusDp.dp.toPx() * glassFactor,
+                                refraction.lensStrengthDp.dp.toPx() * glassFactor
+                            )
                         }
                     }
                 }
