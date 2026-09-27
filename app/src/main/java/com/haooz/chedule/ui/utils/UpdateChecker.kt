@@ -64,9 +64,21 @@ internal object UpdateChecker {
         return false
     }
 
+    /** 取该 release 里第一个 .apk 附件的下载地址；没有 .apk 附件则返回空串 */
+    private fun apkUrlOf(release: com.google.gson.JsonObject): String {
+        val assets = release.getAsJsonArray("assets") ?: return ""
+        for (i in 0 until assets.size()) {
+            val a = assets[i].asJsonObject
+            val assetName = a.get("name")?.asString ?: ""
+            if (assetName.endsWith(".apk")) return a.get("browser_download_url")?.asString ?: ""
+        }
+        return ""
+    }
+
     // 需在 IO 线程调用。
-    // stable: 正式通道，跳过 prerelease 与 beta 版本（含第4段版本号）
+    // stable: 正式通道，只跳过显式预发布（prerelease）
     // beta: 可检测正式版 + beta 版
+    // 两个通道都额外要求：release 必须带 .apk 附件（见循环里的说明）
     fun checkForUpdate(context: Context, source: String = "gitee", channel: String = "stable"): Pair<Boolean, GiteeRelease?> {
         return try {
             val client = okhttp3.OkHttpClient.Builder()
@@ -99,6 +111,7 @@ internal object UpdateChecker {
             val arr = com.google.gson.JsonParser.parseString(responseBody).asJsonArray
             var best: com.google.gson.JsonObject? = null
             var bestVer = ""
+            var bestApkUrl = ""
             for (i in 0 until arr.size()) {
                 val release = arr[i].asJsonObject
                 val tag = release.get("tag_name")?.asString ?: continue
@@ -116,9 +129,18 @@ internal object UpdateChecker {
                 }
                 // beta 通道：正式 + beta 均可；stable 通道已在上方过滤
 
+                // ★ 只认「带安装包」的版本。
+                //   Gitee 建 release 时会**自动挂上源码 zip**，而 APK 是 CI 过一会儿才
+                //   attach 上去的（实测 gh5 差了 8 分钟）。这段窗口里"最新 release"没有 .apk，
+                //   一旦选中它，下载地址就是空的 —— 点「开始下载」只会弹「未找到下载链接」。
+                //   所以没有 .apk 的版本直接跳过，继续找「最新的、且带包的」。
+                val apk = apkUrlOf(release)
+                if (apk.isBlank()) continue
+
                 if (best == null || isNewerVersion(ver, bestVer)) {
                     best = release
                     bestVer = ver
+                    bestApkUrl = apk
                 }
             }
             val json = best
@@ -128,19 +150,7 @@ internal object UpdateChecker {
             val body = json.get("body")?.asString ?: ""
             val htmlUrl = json.get("html_url")?.asString ?: ""
             val createdAt = json.get("created_at")?.asString ?: ""
-
-            val assets = json.getAsJsonArray("assets")
-            var apkUrl = ""
-            if (assets != null) {
-                for (i in 0 until assets.size()) {
-                    val a = assets[i].asJsonObject
-                    val assetName = a.get("name")?.asString ?: ""
-                    if (assetName.endsWith(".apk")) {
-                        apkUrl = a.get("browser_download_url")?.asString ?: ""
-                        break
-                    }
-                }
-            }
+            val apkUrl = bestApkUrl
 
             val currentVersion = try {
                 context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
