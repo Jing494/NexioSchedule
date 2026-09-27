@@ -253,7 +253,7 @@ jobs:
           UP_SHORT=$(git rev-parse --short "$UPSTREAM_BASE")
           LATEST_UP=$(git rev-parse --short upstream/master 2>/dev/null || echo unknown)
           UP_LOG=$(git log "$UPSTREAM_BASE"..upstream/master --oneline --no-merges -10 2>/dev/null | sed 's/^/- /')
-          [ -n "$UP_LOG" ] || UP_LOG="（上游无新提交）"
+          [ -n "$UP_LOG" ] || UP_LOG="（上游无新提交，基准即最新）"
           CUSTOM_LOG=$(git log "$UPSTREAM_BASE"..HEAD --format='- %s' | head -40)
           CERT=$("$SDK_ROOT/build-tools/37.0.0/apksigner" verify --print-certs \
             "app/build/outputs/final/Nexio.v${{ steps.build.outputs.FORK_VER }}.apk" 2>/dev/null \
@@ -265,7 +265,9 @@ jobs:
           - **签名证书 SHA-256**：\`${CERT}\`
           - **构建方式**：GitHub Actions 全程构建（本地不参与）；干净上游代码 + \`patches/series/*.patch\` 逐个应用
 
-          ### 🔄 上游最近变更（本次同步带入）
+          ### 🔄 上游在此基准之后的新提交（**注意：尚未并入本包**）
+          > 本包 = 上游基准 ${UP_SHORT} + 本 fork 的补丁序列，**下面这些上游提交不包含在本包内**。
+          > 要并入它们：把定制栈 rebase 到上游最新 → 重新生成 patches/series/ → 改 workflow 顶部的 UPSTREAM_BASE。
           ${UP_LOG}
 
           ### 🧩 本 fork 的定制（补丁序列，按应用顺序）
