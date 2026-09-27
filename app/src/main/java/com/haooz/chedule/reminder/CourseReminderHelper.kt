@@ -1408,17 +1408,24 @@ object CourseReminderHelper {
             repository.getReturnDayBalanceHour(),
             repository.getReturnDayBalanceMinute(),
         )
-        if (span != null && span.daysLeft > 0 &&
+        // 「假期余额」= 假期期间**每天**一条，**含最后一天**。
+        //
+        // 原来有两个排除条件：`daysLeft > 0` 与 `!isReturnDay(today)`。
+        // 而假期的最后一天必然同时命中这两条（剩 0 天 + 次日要上课），
+        // 于是整个假期里最该提醒的那天一条都不发 —— 用户实测「余额提醒设了 10:00 却没收到」。
+        // 今日页早就在最后一天显示「今天是X第 N 天 · 最后一天」了，通知却漏掉同一天，两边口径不一致。
+        // 现在统一为：只要在假期内就发；最后一天换成「最后一天」的文案。
+        if (span != null &&
             repository.getReturnDayBalanceEnabled() &&
             !java.time.LocalTime.now().isBefore(balanceTarget) &&
-            !ReturnDayReminder.isReturnDay(context, today) &&
             prefs.getString(KEY_RETURN_BALANCE_DATE, null) != todayKey
         ) {
+            val lastDay = span.daysLeft <= 0
             showReminderNotification(
                 context,
                 NOTIFY_ID_RETURN_BALANCE,
-                "${span.name}还剩 ${span.daysLeft} 天",
-                "好好休息，返校前我会再提醒你",
+                if (lastDay) "今天是${span.name}最后一天" else "${span.name}还剩 ${span.daysLeft} 天",
+                if (lastDay) "最后一天了，收拾一下准备返校吧" else "好好休息，返校前我会再提醒你",
                 channelId = CHANNEL_HOLIDAY_ID,
             )
             prefs.edit { putString(KEY_RETURN_BALANCE_DATE, todayKey) }
