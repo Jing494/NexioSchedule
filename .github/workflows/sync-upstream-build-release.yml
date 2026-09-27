@@ -335,15 +335,39 @@ jobs:
           API="https://gitee.com/api/v5/repos/$GITEE_REPO"
           echo "同步到 Gitee: $GITEE_REPO $TAG"
           # 建 release（已存在则取回 id）
-          RID=$(curl -s -X POST "$API/releases" --data-urlencode "access_token=$GT" \
-                  --data-urlencode "tag_name=$TAG" --data-urlencode "name=$TAG" \
-                  --data-urlencode "body=本包与 GitHub Release 同一构建产物：https://github.com/${{ github.repository }}/releases/tag/$TAG" \
-                | python3 -c "import json,sys;print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+          #
+          # 踩过的坑（这就是"Gitee 从来没有自动同步"的根因）：
+          #   1) Gitee 建 release **必须传 target_commitish**，否则 400 target_commitish is missing；
+          #   2) 兜底查询 /releases/tags/{tag} 在不存在时返回 HTTP 200 + body `null`，
+          #      直接 `.get('id')` 会抛异常并把真实错误吞掉（日志只剩一句 warning）。
+          # 现在：显式传 target_commitish、解析时判 null、失败时把**原始响应**打出来。
+          RESP=$(curl -s -X POST "$API/releases" \
+            --data-urlencode "access_token=$GT" \
+            --data-urlencode "tag_name=$TAG" \
+            --data-urlencode "name=$TAG" \
+            --data-urlencode "target_commitish=${{ github.sha }}" \
+            --data-urlencode "body=本包与 GitHub Release 同一构建产物：https://github.com/${{ github.repository }}/releases/tag/$TAG")
+          RID=$(printf '%s' "$RESP" | python3 -c "
+import json,sys
+try:
+    d=json.load(sys.stdin)
+    print(d.get('id','') if isinstance(d,dict) else '')
+except Exception:
+    print('')" 2>/dev/null || true)
           if [ -z "$RID" ]; then
-            RID=$(curl -s "$API/releases/tags/$TAG?access_token=$GT" \
-                  | python3 -c "import json,sys;print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+            echo "::warning::Gitee release 创建失败，原始响应：$RESP"
+            RESP2=$(curl -s "$API/releases/tags/$TAG?access_token=$GT")
+            RID=$(printf '%s' "$RESP2" | python3 -c "
+import json,sys
+try:
+    d=json.load(sys.stdin)
+    print(d.get('id','') if isinstance(d,dict) else '')
+except Exception:
+    print('')" 2>/dev/null || true)
+            [ -n "$RID" ] || echo "::warning::按 tag 查也拿不到 id，原始响应：$RESP2"
           fi
           if [ -z "$RID" ]; then echo "::warning::Gitee release 创建/查询失败，跳过附件上传"; exit 0; fi
+          echo "Gitee release id=$RID，上传附件…"
           curl -s -X POST "$API/releases/$RID/attach_files" -F "access_token=$GT" -F "file=@$APK" | head -c 300
           echo "✅ Gitee 附件上传完成"
 
