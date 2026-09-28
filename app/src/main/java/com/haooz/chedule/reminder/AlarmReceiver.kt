@@ -140,7 +140,7 @@ class AlarmReceiver : BroadcastReceiver() {
 
                 // 明天是「返校日」（假期/周末最后一天、次日要上课）→ 顺带推一条超级岛。
                 // 复用既有岛发送路径（含 XMSF 绕白名单），这里只是多一个调用方。
-                // 注意用带 repository 的重载：它会一并检查「返校节次豁免」总开关，
+                // 注意用带 repository 的重载：它会一并检查「节假日末期课程排除」总开关，
                 // 否则用户关掉功能后仍会收到「明天返校」的岛 / 实时动态。
                 val tomorrow = java.time.LocalDate.now().plusDays(1)
                 if (com.haooz.chedule.data.ReturnDayReminder.isReturnDay(context, repository, tomorrow)) {

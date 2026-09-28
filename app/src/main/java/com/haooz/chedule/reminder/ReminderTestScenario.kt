@@ -98,7 +98,7 @@ enum class ReminderTestScenario(
     ),
     PLAIN_BALANCE(
         label = "假期余额（普通通知）",
-        detail = "文案跟随「返校节次豁免」开关；不在假期内会给演示文案",
+        detail = "文案跟随「节假日末期课程排除」开关；不在假期内会给演示文案",
         kind = ReminderTestKind.PLAIN_BALANCE,
     ),
 

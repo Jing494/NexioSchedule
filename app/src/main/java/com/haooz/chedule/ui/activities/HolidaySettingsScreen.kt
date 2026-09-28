@@ -613,7 +613,7 @@ fun HolidaySettingsScreen(
                 SectionTitleRow(
                     text = "假期余额提醒",
                     description = "• 假期期间每天一条，含假期最后一天（不占超级岛/实时动态的位置）\n" +
-                        "• 独立开关：不再挂在「返校节次豁免」下面 —— 关掉豁免不会连带关掉余额提醒",
+                        "• 独立开关：不再挂在「节假日末期课程排除」下面 —— 关掉豁免不会连带关掉余额提醒",
                     liquidGlassBackdrop = liquidGlassBackdrop,
                 )
                 HolidayBalanceCard()
@@ -662,7 +662,7 @@ fun HolidaySettingsScreen(
                 SectionTitleRow(
                     text = "返校准备清单",
                     description = "• 返校日到点推一条普通通知，内容自己写\n" +
-                        "• 独立开关：不依赖「返校节次豁免」，关掉豁免它照样会响",
+                        "• 独立开关：不依赖「节假日末期课程排除」，关掉豁免它照样会响",
                     liquidGlassBackdrop = liquidGlassBackdrop,
                 )
                 ReturnDayPrepCard()
@@ -2036,75 +2036,6 @@ private fun pickerTextStyle() = MiuixTheme.textStyles.body1.copy(
 
 // ===================== 返校提醒（周末 / 节假日最后一天） =====================
 
-private fun totalSectionCount(repository: CourseRepository): Int =
-    (repository.getMorningSections() + repository.getAfternoonSections() + repository.getEveningSections())
-        .coerceAtLeast(1)
-
-/** 某一节次的时间区间（"HH:mm-HH:mm"），拿不到返回 null。口径与 CourseTimeResolver 一致。 */
-private fun sectionTimeRange(repository: CourseRepository, section: Int): String? {
-    if (section <= 0) return null
-    val morning = repository.getMorningSections()
-    val afternoon = repository.getAfternoonSections()
-    val (times, relative) = when {
-        section <= morning -> repository.getPeriodTimes("morning") to section
-        section <= morning + afternoon ->
-            repository.getPeriodTimes("afternoon") to (section - morning)
-        else -> repository.getPeriodTimes("evening") to (section - morning - afternoon)
-    }
-    return times[relative]?.takeIf { it.isNotBlank() }
-}
-
-/** 节次区间的起止时间文案，如 "18:30–20:10"；任一端缺失就退化或留空。 */
-private fun sectionRangeTimeText(
-    repository: CourseRepository,
-    startSection: Int,
-    endSection: Int,
-): String {
-    val startRaw = sectionTimeRange(repository, startSection)
-    val endRaw = sectionTimeRange(repository, endSection)
-    // 只有真的含 "-" 才切分；否则 "08:00".substringAfter("-") 会原样返回 "08:00"，
-    // 摘要会变成毫无意义的 "08:00–08:00"
-    val start = startRaw?.substringBefore("-")?.trim().orEmpty()
-    val end = endRaw?.takeIf { it.contains('-') }?.substringAfter("-")?.trim().orEmpty()
-    return when {
-        start.isNotEmpty() && end.isNotEmpty() -> "$start–$end"
-        start.isNotEmpty() -> start
-        else -> ""
-    }
-}
-
-/** 把散乱节次合并成连续区间，用于摘要文案（"第9节、第11–12节"） */
-private fun mergeSectionRanges(sections: Collection<Int>): List<Pair<Int, Int>> {
-    val sorted = sections.filter { it > 0 }.distinct().sorted()
-    if (sorted.isEmpty()) return emptyList()
-    val out = mutableListOf<Pair<Int, Int>>()
-    var start = sorted.first()
-    var prev = start
-    for (section in sorted.drop(1)) {
-        if (section == prev + 1) {
-            prev = section
-            continue
-        }
-        out += start to prev
-        start = section
-        prev = section
-    }
-    out += start to prev
-    return out
-}
-
-/**
- * 返校节次豁免设置。
- *
- * 假期最后一天整天被算作假期，正常解析结果是空课表，所以默认不会有任何提醒。
- * 这里让用户指定「返校当天要上的节次」（通常是晚自习），由 [ReturnDayReminder]
- * 在解析当天课表时把这些节次从假期清空里豁免出来，取课表里的**真实课程**，
- * 从而走既有提醒链路（课前闹钟 / 今日页 / 小部件 / 次日提醒 / 超级岛）。
- *
- * 节次是**多选**（支持第 9、11 节这种跳选），不是连续区间。
- */
-    // 提醒时间选择：清单与余额共用同一套两个 NumberPicker 的形态
-    @Composable
 private fun timePickerDialog(
         title: String,
         show: Boolean,
@@ -2160,7 +2091,7 @@ private fun timePickerDialog(
 /**
  * 「返校准备清单」独立成卡。
  *
- * 原来它在「返校节次豁免」卡的 `if (enabled)` 里面，但它的触发只依赖自己的开关
+ * 原来它在「节假日末期课程排除」卡的 `if (enabled)` 里面，但它的触发只依赖自己的开关
  * （`getReturnDayPrepEnabled() && isReturnDay(今天)`）—— 豁免关掉它照样会在周日/假期最后一天响。
  * "配置被藏起来、功能却还在跑"是同一类毛病，所以一并抬出来自己一张卡。
  */
@@ -2215,7 +2146,7 @@ private fun ReturnDayPrepCard() {
             }
             Text(
                 "• 触发条件：当天休息 且 次日要上课（普通周日、假期最后一天）\n" +
-                    "• 独立开关：不依赖「返校节次豁免」，关掉豁免它照样会响",
+                    "• 独立开关：不依赖「节假日末期课程排除」，关掉豁免它照样会响",
                 style = MiuixTheme.textStyles.body1.copy(
                     fontSize = 13.sp,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
@@ -2284,7 +2215,7 @@ private fun ReturnDayPrepCard() {
 /**
  * 「假期余额提醒」独立成卡。
  *
- * 原来它被放在「返校节次豁免」卡的 `if (enabled)` 里面 —— 关掉豁免，余额提醒就凭空消失了，
+ * 原来它被放在「节假日末期课程排除」卡的 `if (enabled)` 里面 —— 关掉豁免，余额提醒就凭空消失了，
  * 而两者其实没有从属关系（余额是"假期还剩几天"，豁免是"返校那天上哪几节"）。
  * 现在单独一张卡，开关/时间/开始提醒/测试都在这里。
  */
@@ -2341,7 +2272,7 @@ private fun HolidayBalanceCard() {
             }
             Text(
                 "• 假期期间每天都发一条，含假期最后一天（以前最后一天会漏掉）\n" +
-                    "• 文案跟着「返校节次豁免」走：开着，最后一天说「收拾一下准备返校」；" +
+                    "• 文案跟着「节假日末期课程排除」走：开着，最后一天说「收拾一下准备返校」；" +
                     "关着只说「好好休息」\n" +
                     "• 不占超级岛/实时动态的位置，只是普通通知",
                 style = MiuixTheme.textStyles.body1.copy(
@@ -2412,211 +2343,3 @@ private fun HolidayBalanceCard() {
     }
 }
 
-@Composable
-private fun ReturnDayReminderCard() {
-    val context = LocalContext.current
-    val repository = remember { CourseRepository(context) }
-    val totalSections = remember { totalSectionCount(repository) }
-    var enabled by remember { mutableStateOf(repository.getReturnDayReminder()) }
-    var selectedSections by remember { mutableStateOf(repository.getReturnDayReminderSections()) }
-    var followWeekday by remember { mutableIntStateOf(repository.getReturnDayFollowWeekday()) }
-    var showSectionDialog by remember { mutableStateOf(false) }
-    var showWeekdayDialog by remember { mutableStateOf(false) }
-    // 清单时间也做成 state：原来摘要直接读 repository，改完时间要靠别的 state 变化
-    // 触发重组才刷新，读值与本地 state 混用容易看到旧值。
-
-    fun applySections(next: Set<Int>) {
-        selectedSections = next
-        repository.setReturnDayReminderSections(next)
-        CourseReminderHelper.onHolidayDataChanged(context)
-    }
-
-    fun applyWeekday(weekday: Int) {
-        followWeekday = weekday
-        repository.setReturnDayFollowWeekday(weekday)
-        CourseReminderHelper.onHolidayDataChanged(context)
-    }
-
-    val sectionSummary = if (selectedSections.isEmpty()) {
-        "未选择（不会豁免任何节次）"
-    } else {
-        buildString {
-            append(
-                mergeSectionRanges(selectedSections).joinToString("、") { (from, to) ->
-                    if (from == to) "第${from}节" else "第${from}–${to}节"
-                }
-            )
-            append("（共 $totalSections 节）")
-            val from = selectedSections.minOrNull()
-            val to = selectedSections.maxOrNull()
-            if (from != null && to != null) {
-                val times = sectionRangeTimeText(repository, from, to)
-                if (times.isNotEmpty()) append("｜").append(times)
-            }
-        }
-    }
-    val weekdaySummary = if (followWeekday in 1..7) {
-        "按${WEEKDAYS[followWeekday - 1]}课表取课"
-    } else {
-        "按当天星期几"
-    }
-
-    Card(
-        cornerRadius = 20.dp,
-        modifier = Modifier.fillMaxWidth(),
-        insideMargin = PaddingValues(0.dp),
-    ) {
-        Column {
-            SwitchPreference(
-                title = "返校节次豁免",
-                summary = "假期/周末最后一天，指定节次照常上课与提醒",
-                checked = enabled,
-                onCheckedChange = { checked ->
-                    enabled = checked
-                    repository.setReturnDayReminder(checked)
-                    CourseReminderHelper.onHolidayDataChanged(context)
-                },
-            )
-            if (enabled) {
-                ArrowPreference(
-                    title = "豁免节次",
-                    summary = sectionSummary,
-                    onClick = { showSectionDialog = true },
-                )
-                ArrowPreference(
-                    title = "按哪天课表",
-                    summary = weekdaySummary,
-                    onClick = { showWeekdayDialog = true },
-                )
-                Text(
-                    "命中条件：当天休息 且 次日要上课（假期最后一天 / 周日）\n" +
-                        "豁免的是课表里当天的真实课程 —— 节次里没课就不会显示",
-                    style = MiuixTheme.textStyles.body1.copy(
-                        fontSize = 13.sp,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    ),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                )
-            }
-        }
-    }
-
-    OverlayDialog(
-        title = "豁免节次",
-        summary = null,
-        show = showSectionDialog,
-        liquidGlassBackdrop = null,
-        onDismissRequest = { showSectionDialog = false },
-    ) {
-        // 草稿：点「取消」不落库
-        var draft by remember(showSectionDialog) { mutableStateOf(selectedSections) }
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                "这些节次在假期最后一天照常保留（取课表里当天的真实课程）",
-                style = MiuixTheme.textStyles.body1.copy(
-                    fontSize = 14.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                ),
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(
-                    "最后两节",
-                    { draft = ((totalSections - 1).coerceAtLeast(1)..totalSections).toSet() },
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton("清空", { draft = emptySet() }, modifier = Modifier.weight(1f))
-            }
-            (1..totalSections).toList().chunked(4).forEach { rowSections ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    rowSections.forEach { section ->
-                        val on = section in draft
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(38.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(
-                                    if (on) {
-                                        MiuixTheme.colorScheme.primary
-                                    } else {
-                                        MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.12f)
-                                    }
-                                )
-                                .clickable {
-                                    draft = if (on) draft - section else draft + section
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                "第${section}节",
-                                fontSize = 13.sp,
-                                color = if (on) {
-                                    Color.White
-                                } else {
-                                    MiuixTheme.colorScheme.onSurfaceVariantSummary
-                                },
-                            )
-                        }
-                    }
-                    // 补齐末行空位，保持列宽一致
-                    repeat(4 - rowSections.size) { Spacer(Modifier.weight(1f)) }
-                }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton("取消", { showSectionDialog = false }, modifier = Modifier.weight(1f))
-                TextButton(
-                    "保存",
-                    {
-                        applySections(draft)
-                        showSectionDialog = false
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-
-    OverlayDialog(
-        title = "按哪天课表",
-        summary = null,
-        show = showWeekdayDialog,
-        liquidGlassBackdrop = null,
-        onDismissRequest = { showWeekdayDialog = false },
-    ) {
-        var draftWeekday by remember(showWeekdayDialog) { mutableIntStateOf(followWeekday) }
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                "假期那天用哪一天的课表取课。默认按当天星期几；" +
-                    "若你的返校晚自习固定按周日排，就选周日。",
-                style = MiuixTheme.textStyles.body1.copy(
-                    fontSize = 14.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                ),
-            )
-            NumberPicker(
-                draftWeekday,
-                { draftWeekday = it },
-                range = 0..7,
-                visibleItemCount = 3,
-                itemHeight = 44.dp,
-                textStyle = pickerTextStyle(),
-                label = { if (it == 0) "按当天" else WEEKDAYS[it - 1] },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton("取消", { showWeekdayDialog = false }, modifier = Modifier.weight(1f))
-                TextButton(
-                    "保存",
-                    {
-                        applyWeekday(draftWeekday)
-                        showWeekdayDialog = false
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-
-
-
-}

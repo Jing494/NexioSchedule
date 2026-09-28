@@ -253,10 +253,6 @@ class CourseRepository private constructor(context: Context) {
         private const val KEY_NEXT_DAY_REMINDER = "next_day_reminder"
         private const val KEY_NEXT_DAY_REMINDER_HOUR = "next_day_reminder_hour"
         private const val KEY_NEXT_DAY_REMINDER_MINUTE = "next_day_reminder_minute"
-        private const val KEY_RETURN_DAY_REMINDER = "return_day_reminder"
-        private const val KEY_RETURN_DAY_REMINDER_SECTIONS = "return_day_reminder_sections"
-        private const val KEY_RETURN_DAY_FOLLOW_WEEKDAY = "return_day_follow_weekday"
-        private const val KEY_RETURN_DAY_MIGRATED = "return_day_scoped_migrated"
         private const val KEY_LIVE_PROGRESS_STYLE = "live_progress_style"
         private const val KEY_RETURN_DAY_BALANCE_ENABLED = "return_day_balance_enabled"
         private const val KEY_RETURN_DAY_BALANCE_HOUR = "return_day_balance_hour"
@@ -1205,58 +1201,6 @@ class CourseRepository private constructor(context: Context) {
         prefs.edit { putInt(KEY_NEXT_DAY_REMINDER_MINUTE, minute) }
     }
 
-    // ===== 周末 / 节假日最后一天的返校节次豁免 =====
-    // 假期最后一天整天算假期，正常课表解析为空，需要用户指定「返校当天要上的节次」
-    // （典型是晚自习）：这些节次从假期清空里豁免出来，取课表里的真实课程。
-    // 见 data/ReturnDayReminder.kt。
-
-    /**
-     * 豁免配置改为**按课表**保存（换课表时不再串味）。
-     * 一次性迁移：把旧的全局值搬到当前课表名下，否则升级后看起来像被重置。
-     */
-    private fun migrateReturnDayKeys() {
-        if (prefs.getBoolean(KEY_RETURN_DAY_MIGRATED, false)) return
-        val prefix = getScheduleKeyPrefix()
-        val scopedSwitch = "$prefix$KEY_RETURN_DAY_REMINDER"
-        prefs.edit {
-            if (!prefs.contains(scopedSwitch) && prefs.contains(KEY_RETURN_DAY_REMINDER)) {
-                putBoolean(scopedSwitch, prefs.getBoolean(KEY_RETURN_DAY_REMINDER, false))
-                prefs.getString(KEY_RETURN_DAY_REMINDER_SECTIONS, null)?.let {
-                    putString("$prefix$KEY_RETURN_DAY_REMINDER_SECTIONS", it)
-                }
-                putInt(
-                    "$prefix$KEY_RETURN_DAY_FOLLOW_WEEKDAY",
-                    prefs.getInt(KEY_RETURN_DAY_FOLLOW_WEEKDAY, 0),
-                )
-            }
-            putBoolean(KEY_RETURN_DAY_MIGRATED, true)
-        }
-    }
-
-    fun getReturnDayReminder(): Boolean {
-        migrateReturnDayKeys()
-        return prefs.getBoolean("${getScheduleKeyPrefix()}$KEY_RETURN_DAY_REMINDER", false)
-    }
-
-    fun setReturnDayReminder(enabled: Boolean) {
-        prefs.edit { putBoolean("${getScheduleKeyPrefix()}$KEY_RETURN_DAY_REMINDER", enabled) }
-    }
-
-    fun getReturnDayReminderSections(): Set<Int> {
-        migrateReturnDayKeys()
-        val raw = prefs.getString("${getScheduleKeyPrefix()}$KEY_RETURN_DAY_REMINDER_SECTIONS", null)
-            ?: return emptySet()
-        return raw.split(',')
-            .mapNotNull { it.trim().toIntOrNull() }
-            .filter { it > 0 }
-            .toSet()
-    }
-
-    fun setReturnDayReminderSections(sections: Set<Int>) {
-        val value = sections.filter { it > 0 }.sorted().joinToString(",")
-        prefs.edit { putString("${getScheduleKeyPrefix()}$KEY_RETURN_DAY_REMINDER_SECTIONS", value) }
-    }
-
     /**
      * 实时动态是否使用 API 36 的 ProgressStyle（带 tracker 图标的进度组件）。
      * 默认开；部分机型（如本机 HyperOS）该分支不激活、会落成普通通知，此时可关掉降级。
@@ -1332,18 +1276,6 @@ class CourseRepository private constructor(context: Context) {
                 KEY_RETURN_DAY_PREP_TEXT,
                 text.trim().ifBlank { DEFAULT_RETURN_DAY_PREP_TEXT },
             )
-        }
-    }
-
-    /** 返校日按哪一天课表取课：0 = 不指定（用日历星期几），1~7 = 固定跟随该星期 */
-    fun getReturnDayFollowWeekday(): Int {
-        migrateReturnDayKeys()
-        return safeGetInt("${getScheduleKeyPrefix()}$KEY_RETURN_DAY_FOLLOW_WEEKDAY", 0)
-    }
-
-    fun setReturnDayFollowWeekday(weekday: Int) {
-        prefs.edit {
-            putInt("${getScheduleKeyPrefix()}$KEY_RETURN_DAY_FOLLOW_WEEKDAY", weekday.coerceIn(0, 7))
         }
     }
 
