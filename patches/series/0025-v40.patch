@@ -1,0 +1,94 @@
+From 8fcdbd413cc8b43a3caa0d707bfe12cb629e3fbc Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Mon, 28 Sep 2026 21:56:54 +0800
+Subject: [PATCH 25/25] =?UTF-8?q?v40=EF=BC=9A=E4=BF=AE=E5=A4=87=E4=BB=BD/?=
+ =?UTF-8?q?=E4=BA=91=E5=90=8C=E6=AD=A5=E6=BC=8F=E6=8E=89=E5=85=A8=E9=83=A8?=
+ =?UTF-8?q?=E3=80=8C=E4=B8=8D=E5=B8=A6=E5=89=8D=E7=BC=80=E7=9A=84=E7=94=A8?=
+ =?UTF-8?q?=E6=88=B7=E8=AE=BE=E7=BD=AE=E3=80=8D?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+发现：exportAllPreferences() 用的是**白名单** —— 只导 schedule_ / time_config_ /
+schedule_time_config_ 前缀的键，外加 8 个全局键。于是所有不带前缀的用户设置都不进备份：
+课前提醒、次日提醒、超级岛开关、勿扰模式、假期余额提醒、返校准备清单、
+小部件档位、搭配外观（comb_*）、教学周重组规则 ……
+换设备或重装后恢复备份（本地全量备份与 WebDAV 云同步都走这个函数），
+这些会悄悄回到默认值，且不报错。
+
+改为**黑名单**：除 KEY_DEFAULT_FOLDER_MIGRATED（迁移标记，恢复流程会按
+preserveFolderMembership 重新决定）外，prefs.schedule 里的键全部导出。
+校验逻辑只认结构（课表名/课程），加键不会被拒；恢复后仍会走
+onHolidayDataChanged 重排提醒与闹钟。
+
+同时给质量门禁补一条不变量（第 22 条）：禁止把这里退回白名单式实现 ——
+这类"漏掉不带前缀的设置"不会有编译错误，只能靠约束钉住。
+
+(cherry picked from commit afb5096e10fa98c172f4cd4ed3287985e0f63f43)
+---
+ .../haooz/chedule/data/CourseRepository.kt    | 46 +++++++++----------
+ 1 file changed, 23 insertions(+), 23 deletions(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
+index e79bc40..3809286 100644
+--- a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
++++ b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
+@@ -2584,32 +2584,32 @@ class CourseRepository private constructor(context: Context) {
+         }
+     }
+ 
+-    /** 导出 schedule_ / time_config_ 等前缀与全局课表配置，供云备份 */
++    /**
++     * 导出课表设置，供云备份（WebDAV）与本地全量备份共用。
++     *
++     * ★ 这里必须是**黑名单**，不能退回白名单。
++     *   原实现只导"带 schedule_/time_config_ 前缀的键 + 8 个全局键"，
++     *   于是所有**不带前缀的用户设置**都进不了备份 —— 课前提醒 / 次日提醒 / 超级岛开关 /
++     *   勿扰模式 / 假期余额提醒 / 返校准备清单 / 小部件档位 / 搭配外观（comb_*）/
++     *   教学周重组规则 …… 换设备或重装后恢复备份，这些会**悄悄回到默认值**（还不报错）。
++     *   改动前请先确认新增的设置项是否带前缀：不带前缀的，只有靠这条黑名单才进得了备份。
++     */
+     fun exportAllPreferences(): Map<String, Any> {
+         val result = mutableMapOf<String, Any>()
+-        val relevantKeys = listOf(
+-            KEY_SCHEDULE_NAMES,
+-            KEY_SCHEDULE_FOLDERS,
+-            KEY_CURRENT_SCHEDULE_ID,
+-            KEY_SHIFT_MODE,
+-            KEY_SHIFT_SELECTED_SCHEDULES,
+-            KEY_DEFAULT_HOMEPAGE,
+-            KEY_TIME_CONFIG_IDS,
+-            KEY_CURRENT_TIME_CONFIG_ID
+-        )
++        // 唯一要排除的是"不该跨设备复制的内部状态"：
++        // 迁移标记由恢复流程按 preserveFolderMembership 重新决定，不该跟着备份走。
++        val excludedKeys = setOf(KEY_DEFAULT_FOLDER_MIGRATED)
+         for ((key, value) in prefs.all) {
+-            if (key.startsWith(SCHEDULE_KEY_PREFIX) || key.startsWith(TIME_CONFIG_PREFIX) ||
+-                key.startsWith(SCHEDULE_TIME_CONFIG_PREFIX) || key in relevantKeys) {
+-                when (value) {
+-                    is String -> result[key] = value
+-                    is Int -> result[key] = value
+-                    is Boolean -> result[key] = value
+-                    is Float -> result[key] = value
+-                    is Long -> result[key] = value
+-                    is Set<*> -> {
+-                        @Suppress("UNCHECKED_CAST")
+-                        result[key] = (value as Set<String>).toList()
+-                    }
++            if (key in excludedKeys) continue
++            when (value) {
++                is String -> result[key] = value
++                is Int -> result[key] = value
++                is Boolean -> result[key] = value
++                is Float -> result[key] = value
++                is Long -> result[key] = value
++                is Set<*> -> {
++                    @Suppress("UNCHECKED_CAST")
++                    result[key] = (value as Set<String>).toList()
+                 }
+             }
+         }
+-- 
+2.55.0
+

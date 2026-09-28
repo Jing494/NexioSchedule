@@ -179,6 +179,12 @@ CHECKS = [
         [],
     ),
     (
+        "备份导出必须是黑名单式（白名单会漏掉所有不带前缀的用户设置）",
+        f"{J}/data/CourseRepository.kt",
+        [r"val excludedKeys = setOf\(KEY_DEFAULT_FOLDER_MIGRATED\)"],
+        [r"val relevantKeys = listOf\("],
+    ),
+    (
         "切换下载源要失效缓存重查",
         F_UPDSET,
         [r"LaunchedEffect\(effectiveDownloadSource, updateChannel\)"],
