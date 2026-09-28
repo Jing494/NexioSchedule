@@ -474,7 +474,7 @@ object HolidayManager {
     }
 
     /**
-     * 让「假期相关设置」也参与版本号：返校节次豁免 / 假期余额 / 准备清单这些开关
+     * 让「假期相关设置」也参与版本号：节假日末期课程排除 / 假期余额 / 准备清单这些开关
      * 并不经过 [save]，若不 bump 版本号，`semesterStartMonday`+`holidayVersion` 这类
      * `remember(...)` 键不变 → 今日页状态卡与课表页豁免标记会一直显示旧状态。
      */

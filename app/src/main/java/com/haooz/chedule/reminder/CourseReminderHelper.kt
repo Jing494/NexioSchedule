@@ -1244,7 +1244,7 @@ object CourseReminderHelper {
     /** 节假日/调休数据变更后：重排提醒并立即刷新已放置的小部件 */
     fun onHolidayDataChanged(context: Context) {
         // 顺手 bump 假期版本号：今日页状态卡、课表页豁免标记、小部件都靠它做 remember 键。
-        // 返校节次豁免 / 余额 / 清单这些开关不走 HolidayManager.save，不 bump 的话
+        // 节假日末期课程排除 / 余额 / 清单这些开关不走 HolidayManager.save，不 bump 的话
         // 关掉开关后今日页还会一直显示旧的「返校啦」卡片。
         HolidayManager.notifyConfigChanged(context)
         startReminderService(context)
@@ -1492,7 +1492,7 @@ object CourseReminderHelper {
             !java.time.LocalTime.now().isBefore(balanceTarget) &&
             prefs.getString(KEY_RETURN_BALANCE_DATE, null) != todayKey
         ) {
-            val (title, body) = balanceNotificationText(repository, span)
+            val (title, body) = balanceNotificationText(context, repository, span)
             showReminderNotification(
                 context,
                 NOTIFY_ID_RETURN_BALANCE,
@@ -1564,10 +1564,15 @@ object CourseReminderHelper {
      * 余额通知的标题/正文。**主路径与"立即测试"按钮共用这一份**，
      * 否则两处文案迟早会分叉（这正是本项目已经踩过的坑）。
      *
-     * 「返校节次豁免」开着时，最后一天说"收拾一下准备返校吧"；
+     * 「节假日末期课程排除」开着时，最后一天说"收拾一下准备返校吧"；
      * 关着时说明用户当天并没有返校课，就只说"好好休息"。
+     *
+     * ★ 判据必须是**上游那个开关**（[ReturnDayReminder.isExclusionEnabled]）：
+     * 本 fork 早期那套自有豁免偏好已经没有设置入口了，读它会永远得到 false，
+     * 于是出现"开关明明开着、最后一天却只说好好休息"。
      */
     private fun balanceNotificationText(
+        context: Context,
         repository: CourseRepository,
         span: ReturnDayReminder.HolidaySpan,
     ): Pair<String, String> {
@@ -1575,7 +1580,7 @@ object CourseReminderHelper {
         val title = if (lastDay) "今天是${span.name}最后一天" else "${span.name}还剩 ${span.daysLeft} 天"
         val body = when {
             !lastDay -> "好好休息，返校前我会再提醒你"
-            repository.getReturnDayReminder() -> "最后一天了，收拾一下准备返校吧"
+            ReturnDayReminder.isExclusionEnabled(context) -> "最后一天了，收拾一下准备返校吧"
             else -> "最后一天了，好好休息吧"
         }
         return title to body
@@ -1626,7 +1631,7 @@ object CourseReminderHelper {
         }
         val span = ReturnDayReminder.currentHolidaySpan(context, java.time.LocalDate.now())
         val (title, body) = if (span != null) {
-            balanceNotificationText(repository, span)
+            balanceNotificationText(context, repository, span)
         } else {
             // 不在假期里：正式提醒不会发，这里给演示
             "假期余额提醒（测试）" to "当前不在假期内，正式提醒会在假期中按设定时间发出"
@@ -1716,8 +1721,9 @@ object CourseReminderHelper {
         repository: CourseRepository,
     ) {
         if (repository.getIslandNotification() && IslandNotificationHelper.isIslandSupported(context)) return
-        // 功能总开关关掉就不再推（原来只判 isReturnDay，关掉开关照样会推）
-        if (!repository.getReturnDayReminder()) return
+        // 功能总开关关掉就不再推（原来只判 isReturnDay，关掉开关照样会推）。
+        // 判据同上：上游「节假日末期课程排除」的开关。
+        if (!ReturnDayReminder.isExclusionEnabled(context)) return
         val today = java.time.LocalDate.now()
         val tomorrow = today.plusDays(1)
         val todayIsReturn = ReturnDayReminder.isReturnDay(context, today)
@@ -1756,7 +1762,7 @@ object CourseReminderHelper {
      *
      * 为什么不能写死「明天返校」：目标日（正文所依据的那天）可能是**今天**。
      * `ReturnDayReminder.isReturnDay(d) = isRestDay(d) && isSchoolDay(d+1)`，
-     * 所以「返校日」就是假期最后一天：被「返校节次豁免」放出来的课（例如第11节 18:30 晚自习）
+     * 所以「返校日」就是假期最后一天：被「节假日末期课程排除」放出来的课（例如第11节 18:30 晚自习）
      * 是**今晚**的课。此时标题说「明天返校」、正文列今晚的课，自相矛盾
      * （真机实测：标题「明天返校 · 中秋节最后一天」，正文「道法｜第11节 18:30」）。
      * 而清单通知那边（prepNotificationTitle）一直说的是「今晚返校」 ——

@@ -5,18 +5,18 @@ import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
 /**
- * 周末 / 节假日「最后一天」的返校节次豁免。
+ * 「返校」提醒侧的判定与文案（本文件**不再实现豁免本身**）。
  *
- * 背景：假期数据会把假期最后一天整天算作假期，
- * [com.haooz.chedule.reminder.CourseReminderHelper.resolveDaySchedule] 直接返回空课表，
- * 于是当天不会有任何课前提醒。但学生通常在假期最后一天傍晚返校上晚自习。
+ * 假期最后一天整天算假期，课表解析为空、当天没有课前提醒；但学生通常在假期最后一天
+ * 傍晚返校上晚自习。这条链路的两半现在分属两处，别再混：
  *
- * 做法（豁免式，而不是造课）：
- * 在「返校日」把用户指定的节次**从假期清空里豁免出来** ——
- * 取当天课表里落在这些节次的**真实课程**。这样：
- * - 是课表里真实存在的课，点进详情页正常，不会出现空白页；
- * - 走既有提醒链路（课前闹钟 / 今日页 / 小部件 / 次日提醒 / 超级岛）自动生效；
- * - 节次里没有课就什么都不显示，不会凭空造出「幽灵课」。
+ * - **豁免本身（哪些课算正常课）**：上游的 `HolidayCourseExclusion` +
+ *   `HolidayManager.load/saveEndCourseExclusion`，设置入口是假期设置页的
+ *   「节假日末期课程排除」（开关 + 节次范围）。课表页/今日页的「假」标由它决定。
+ * - **提醒本身（什么时候推、推什么词）**：本文件 + CourseReminderHelper。
+ *   是否启用一律看 [isExclusionEnabled]（即上游那个开关）——
+ *   本 fork 早期有一套自己的豁免偏好与设置卡，升基准后入口已删，
+ *   再去读旧偏好会永远得到 false，表现为"开关开着、文案却按关着说"。
  *
  * 「返校日」定义：当天是休息日，且次日是上课日。
  * - 普通周日（次日周一上课）→ 命中；
@@ -40,57 +40,26 @@ object ReturnDayReminder {
         isRestDay(context, date) && isSchoolDay(context, date.plusDays(1))
 
     /**
+     * 「节假日末期课程排除」是否开启。
+     *
+     * 这是**上游设置页那个开关**（HolidayEndCourseExclusion.enabled）。本 fork 早期有一套
+     * 自己的豁免偏好 + 自己的设置卡，升基准后入口已删（功能由上游接管），继续读那套偏好
+     * 会永远读到 false —— 于是"开关开着、文案却按关着说"。
+     */
+    fun isExclusionEnabled(context: Context): Boolean =
+        HolidayManager.loadEndCourseExclusion(context).enabled
+
+    /**
      * 对外提醒口径的返校日：必须功能已开启。
      *
      * 修掉的一处逻辑漏洞：AlarmReceiver 与刷新链原来只调上面那个纯日期重载，
-     * 于是用户把「返校节次豁免」关掉之后，「明天返校」的超级岛 / 实时动态照样会推。
+     * 于是用户把「节假日末期课程排除」关掉之后，「明天返校」的超级岛 / 实时动态照样会推。
      */
     fun isReturnDay(
         context: Context,
         repository: CourseRepository,
         date: LocalDate,
-    ): Boolean {
-        // 「已开启」以上游设置页为准（节假日末期课程排除 HolidayEndCourseExclusion.enabled），
-        // 同时兼容本 fork 早期的自有开关 —— 两处任一开着都算开启。
-        // 否则用户在上游那个设置项里打开了排除，返校提醒却因为读的是旧偏好而不跟。
-        val upstreamEnabled = HolidayManager.loadEndCourseExclusion(context).enabled
-        return (upstreamEnabled || repository.getReturnDayReminder()) && isReturnDay(context, date)
-    }
-
-    /**
-     * 返校日当天不被假期清空的节次。
-     * 未开启功能、或当天不是返校日时返回空集（即完全保持原有假期语义）。
-     */
-    fun exemptSections(
-        context: Context,
-        repository: CourseRepository,
-        date: LocalDate,
-    ): Set<Int> {
-        if (!repository.getReturnDayReminder()) return emptySet()
-        if (!isReturnDay(context, date)) return emptySet()
-        return repository.getReturnDayReminderSections().filter { it > 0 }.toSet()
-    }
-
-    /**
-     * 用户指定的「跟随星期」：0 表示不指定（用日历星期几）。
-     * 用于假期那天要按"周日课表"之类取的场景。
-     */
-    fun followWeekday(repository: CourseRepository): Int =
-        repository.getReturnDayFollowWeekday().takeIf { it in 1..7 } ?: 0
-
-    /** 课程是否与豁免节次有交集（跨节次的课只要压到一节就算）。 */
-    fun isExempt(course: Course, sections: Set<Int>): Boolean {
-        if (sections.isEmpty()) return false
-        if (course.startSection > course.endSection) return false
-        for (section in course.startSection..course.endSection) {
-            if (section in sections) return true
-        }
-        return false
-    }
-
-    /** 从课表里挑出落在豁免节次的课程，保持传入顺序。 */
-    fun exemptCourses(courses: List<Course>, sections: Set<Int>): List<Course> =
-        if (sections.isEmpty()) emptyList() else courses.filter { isExempt(it, sections) }
+    ): Boolean = isExclusionEnabled(context) && isReturnDay(context, date)
 
     /** 今天所在的一段假期（名称 + 最后一天 + 剩余天数）。 */
     data class HolidaySpan(
@@ -170,8 +139,8 @@ object ReturnDayReminder {
         val today = LocalDate.now()
         val isToday = date == today
         val span = currentHolidaySpan(context, date)
-        // 返校文案：受「返校节次豁免」总开关管
-        if (repository.getReturnDayReminder() && isReturnDay(context, date)) {
+        // 返校文案：受「节假日末期课程排除」总开关管
+        if (isExclusionEnabled(context) && isReturnDay(context, date)) {
             val label = dayLabel(date, today)
             // 注意：中文紧跟在 $label 后面会被当成标识符（$label是 不是 $label + 是），必须加花括号
             val where = if (span != null) "${label}是${span.name}最后一天" else "${label}是周末最后一天"
