@@ -2586,35 +2586,30 @@ class CourseRepository private constructor(context: Context) {
         }
     }
 
-    /** 搭配（combination/comb）相关键不进全量备份 */
-    private fun isCombinationBackupKey(key: String): Boolean {
-        return key == KEY_COMBINATION_IDS ||
-            key == KEY_CURRENT_COMBINATION_ID ||
-            key.startsWith("combination_") ||
-            key.startsWith("comb_")
-    }
-
-    /** 提醒、勿扰、小组件等应用功能设置不进全量备份 */
-    private fun isAppFeatureBackupKey(key: String): Boolean {
-        return key == KEY_PRE_CLASS_REMINDER ||
-            key == KEY_PRE_CLASS_REMINDER_MINUTES ||
-            key == KEY_NEXT_DAY_REMINDER ||
-            key == KEY_NEXT_DAY_REMINDER_HOUR ||
-            key == KEY_NEXT_DAY_REMINDER_MINUTE ||
-            key == KEY_ISLAND_NOTIFICATION ||
-            key == KEY_CLASS_DND ||
-            key == KEY_CLASS_DND_MODE ||
-            key == KEY_WIDGET_PADDING_MODE
-    }
-
     /**
-     * 全量备份：课表数据 + 节假日/调休。
-     * 不含搭配、提醒等应用功能设置，以及主题等应用偏好。
+     * 导出课表设置，供云备份（WebDAV）与本地全量备份共用。
+     *
+     * ★ 这里**故意与上游 1.6.0.2-beta33 的设计不同**（每次 rebase 都会在这里冲突）：
+     *   上游把「全量备份」重新定义成"课表数据 + 节假日/调休"，有意排除搭配/提醒/主题等
+     *   （其新增的 isCombinationBackupKey / isAppFeatureBackupKey 就是干这个的）。
+     *   本 fork 选择**带上全部用户设置** —— 换设备或重装后，课前提醒 / 超级岛开关 / 勿扰 /
+     *   假期余额 / 返校准备清单 / 小部件档位 / 搭配外观 / 教学周重组规则 不会静默回到默认值。
+     *   要改回上游语义：删掉下面的 excludedKeys，改用上游那两个 helper 即可。
+     *
+     * ★ 另外这里必须是**黑名单**，不能退回白名单。
+     *   原实现只导"带 schedule_/time_config_ 前缀的键 + 8 个全局键"，
+     *   于是所有**不带前缀的用户设置**都进不了备份 —— 课前提醒 / 次日提醒 / 超级岛开关 /
+     *   勿扰模式 / 假期余额提醒 / 返校准备清单 / 小部件档位 / 搭配外观（comb_*）/
+     *   教学周重组规则 …… 换设备或重装后恢复备份，这些会**悄悄回到默认值**（还不报错）。
+     *   改动前请先确认新增的设置项是否带前缀：不带前缀的，只有靠这条黑名单才进得了备份。
      */
     fun exportAllPreferences(): Map<String, Any> {
         val result = mutableMapOf<String, Any>()
+        // 唯一要排除的是"不该跨设备复制的内部状态"：
+        // 迁移标记由恢复流程按 preserveFolderMembership 重新决定，不该跟着备份走。
+        val excludedKeys = setOf(KEY_DEFAULT_FOLDER_MIGRATED)
         for ((key, value) in prefs.all) {
-            if (isCombinationBackupKey(key) || isAppFeatureBackupKey(key)) continue
+            if (key in excludedKeys) continue
             when (value) {
                 is String -> result[key] = value
                 is Int -> result[key] = value
