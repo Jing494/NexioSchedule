@@ -1,0 +1,717 @@
+From 2efbcc2f9faa7218c55c1e77270d6bb218be8793 Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Mon, 28 Sep 2026 21:31:46 +0800
+Subject: [PATCH 23/23] =?UTF-8?q?v39=EF=BC=9A=E4=BF=AE=E5=8D=87=E5=9F=BA?=
+ =?UTF-8?q?=E5=87=86=E5=90=8E=E7=9A=84=E3=80=8C=E5=90=8E=E9=81=97=E7=97=87?=
+ =?UTF-8?q?=E3=80=8D=E2=80=94=E2=80=94=20=E6=96=87=E6=A1=88=E6=94=B9?=
+ =?UTF-8?q?=E5=90=8D=20+=20=E6=8F=90=E9=86=92=E5=8F=A3=E5=BE=84=E6=94=B9?=
+ =?UTF-8?q?=E8=AF=BB=E4=B8=8A=E6=B8=B8=E7=9A=84=E6=8E=92=E9=99=A4=E5=BC=80?=
+ =?UTF-8?q?=E5=85=B3=20+=20=E6=B8=85=E6=AD=BB=E4=BB=A3=E7=A0=81?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+用户实测发现的两处：
+1) 假期设置页的说明文案还在说「返校节次豁免」，而那个入口在升基准时已经删了
+   （功能由上游的「节假日末期课程排除」接管）→ 全仓库 18 处统一改名。
+2) 更要紧的是**逻辑**：余额文案的"收拾一下准备返校 / 好好休息"分支、返校状态卡、
+   实时动态推送门槛，读的都是本 fork 早期那套自有偏好 —— 它已经没有设置入口，
+   永远读到 false，于是"上游那个开关明明开着，文案却按关着说"。
+   现在统一走 ReturnDayReminder.isExclusionEnabled()（= 上游
+   HolidayEndCourseExclusion.enabled）。
+
+顺带清掉同一来源的死代码（都是被上游接管的旧实现）：
+- ui/activities/HolidaySettingsScreen：我的 ReturnDayReminderCard（208 行）与随之
+  失去引用的 4 个助手（totalSectionCount / sectionTimeRange / sectionRangeTimeText /
+  mergeSectionRanges）；
+- data/ReturnDayReminder：exemptSections / followWeekday / isExempt / exemptCourses；
+- data/CourseRepository：旧偏好那整套（4 个键常量 + migrateReturnDayKeys + 5 个读写），
+  它们都已无任何读者。
+
+排查方式（可复跑）：把仓库里所有 get/set 配对扫一遍，找"有读没有写"（UI 上永远动不了）
+与"有写没有读"（死配置）的项 —— 当前全仓库 0 个。
+
+(cherry picked from commit 020b043b70932ef840d5f7804f8da4c4fdd86690)
+---
+ .../haooz/chedule/data/CourseRepository.kt    |  68 -----
+ .../com/haooz/chedule/data/HolidayManager.kt  |   2 +-
+ .../haooz/chedule/data/ReturnDayReminder.kt   |  79 ++---
+ .../haooz/chedule/reminder/AlarmReceiver.kt   |   2 +-
+ .../chedule/reminder/CourseReminderHelper.kt  |  22 +-
+ .../chedule/reminder/ReminderTestScenario.kt  |   2 +-
+ .../ui/activities/HolidaySettingsScreen.kt    | 289 +-----------------
+ 7 files changed, 47 insertions(+), 417 deletions(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
+index b02d689..e79bc40 100644
+--- a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
++++ b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
+@@ -253,10 +253,6 @@ class CourseRepository private constructor(context: Context) {
+         private const val KEY_NEXT_DAY_REMINDER = "next_day_reminder"
+         private const val KEY_NEXT_DAY_REMINDER_HOUR = "next_day_reminder_hour"
+         private const val KEY_NEXT_DAY_REMINDER_MINUTE = "next_day_reminder_minute"
+-        private const val KEY_RETURN_DAY_REMINDER = "return_day_reminder"
+-        private const val KEY_RETURN_DAY_REMINDER_SECTIONS = "return_day_reminder_sections"
+-        private const val KEY_RETURN_DAY_FOLLOW_WEEKDAY = "return_day_follow_weekday"
+-        private const val KEY_RETURN_DAY_MIGRATED = "return_day_scoped_migrated"
+         private const val KEY_LIVE_PROGRESS_STYLE = "live_progress_style"
+         private const val KEY_RETURN_DAY_BALANCE_ENABLED = "return_day_balance_enabled"
+         private const val KEY_RETURN_DAY_BALANCE_HOUR = "return_day_balance_hour"
+@@ -1203,58 +1199,6 @@ class CourseRepository private constructor(context: Context) {
+         prefs.edit { putInt(KEY_NEXT_DAY_REMINDER_MINUTE, minute) }
+     }
+ 
+-    // ===== 周末 / 节假日最后一天的返校节次豁免 =====
+-    // 假期最后一天整天算假期，正常课表解析为空，需要用户指定「返校当天要上的节次」
+-    // （典型是晚自习）：这些节次从假期清空里豁免出来，取课表里的真实课程。
+-    // 见 data/ReturnDayReminder.kt。
+-
+-    /**
+-     * 豁免配置改为**按课表**保存（换课表时不再串味）。
+-     * 一次性迁移：把旧的全局值搬到当前课表名下，否则升级后看起来像被重置。
+-     */
+-    private fun migrateReturnDayKeys() {
+-        if (prefs.getBoolean(KEY_RETURN_DAY_MIGRATED, false)) return
+-        val prefix = getScheduleKeyPrefix()
+-        val scopedSwitch = "$prefix$KEY_RETURN_DAY_REMINDER"
+-        prefs.edit {
+-            if (!prefs.contains(scopedSwitch) && prefs.contains(KEY_RETURN_DAY_REMINDER)) {
+-                putBoolean(scopedSwitch, prefs.getBoolean(KEY_RETURN_DAY_REMINDER, false))
+-                prefs.getString(KEY_RETURN_DAY_REMINDER_SECTIONS, null)?.let {
+-                    putString("$prefix$KEY_RETURN_DAY_REMINDER_SECTIONS", it)
+-                }
+-                putInt(
+-                    "$prefix$KEY_RETURN_DAY_FOLLOW_WEEKDAY",
+-                    prefs.getInt(KEY_RETURN_DAY_FOLLOW_WEEKDAY, 0),
+-                )
+-            }
+-            putBoolean(KEY_RETURN_DAY_MIGRATED, true)
+-        }
+-    }
+-
+-    fun getReturnDayReminder(): Boolean {
+-        migrateReturnDayKeys()
+-        return prefs.getBoolean("${getScheduleKeyPrefix()}$KEY_RETURN_DAY_REMINDER", false)
+-    }
+-
+-    fun setReturnDayReminder(enabled: Boolean) {
+-        prefs.edit { putBoolean("${getScheduleKeyPrefix()}$KEY_RETURN_DAY_REMINDER", enabled) }
+-    }
+-
+-    fun getReturnDayReminderSections(): Set<Int> {
+-        migrateReturnDayKeys()
+-        val raw = prefs.getString("${getScheduleKeyPrefix()}$KEY_RETURN_DAY_REMINDER_SECTIONS", null)
+-            ?: return emptySet()
+-        return raw.split(',')
+-            .mapNotNull { it.trim().toIntOrNull() }
+-            .filter { it > 0 }
+-            .toSet()
+-    }
+-
+-    fun setReturnDayReminderSections(sections: Set<Int>) {
+-        val value = sections.filter { it > 0 }.sorted().joinToString(",")
+-        prefs.edit { putString("${getScheduleKeyPrefix()}$KEY_RETURN_DAY_REMINDER_SECTIONS", value) }
+-    }
+-
+     /**
+      * 实时动态是否使用 API 36 的 ProgressStyle（带 tracker 图标的进度组件）。
+      * 默认开；部分机型（如本机 HyperOS）该分支不激活、会落成普通通知，此时可关掉降级。
+@@ -1333,18 +1277,6 @@ class CourseRepository private constructor(context: Context) {
+         }
+     }
+ 
+-    /** 返校日按哪一天课表取课：0 = 不指定（用日历星期几），1~7 = 固定跟随该星期 */
+-    fun getReturnDayFollowWeekday(): Int {
+-        migrateReturnDayKeys()
+-        return safeGetInt("${getScheduleKeyPrefix()}$KEY_RETURN_DAY_FOLLOW_WEEKDAY", 0)
+-    }
+-
+-    fun setReturnDayFollowWeekday(weekday: Int) {
+-        prefs.edit {
+-            putInt("${getScheduleKeyPrefix()}$KEY_RETURN_DAY_FOLLOW_WEEKDAY", weekday.coerceIn(0, 7))
+-        }
+-    }
+-
+     /** 获取今日课程/课程提醒标准版小组件的 padding 档位（0=标准, 1=4×6, 2=4×7） */
+     fun getWidgetPaddingMode(): Int {
+         return safeGetInt(KEY_WIDGET_PADDING_MODE, 1)
+diff --git a/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt b/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt
+index 09dfa58..8861161 100644
+--- a/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt
++++ b/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt
+@@ -474,7 +474,7 @@ object HolidayManager {
+     }
+ 
+     /**
+-     * 让「假期相关设置」也参与版本号：返校节次豁免 / 假期余额 / 准备清单这些开关
++     * 让「假期相关设置」也参与版本号：节假日末期课程排除 / 假期余额 / 准备清单这些开关
+      * 并不经过 [save]，若不 bump 版本号，`semesterStartMonday`+`holidayVersion` 这类
+      * `remember(...)` 键不变 → 今日页状态卡与课表页豁免标记会一直显示旧状态。
+      */
+diff --git a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
+index a4f4091..65fba7c 100644
+--- a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
++++ b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
+@@ -5,18 +5,18 @@ import java.time.LocalDate
+ import java.time.temporal.ChronoUnit
+ 
+ /**
+- * 周末 / 节假日「最后一天」的返校节次豁免。
++ * 「返校」提醒侧的判定与文案（本文件**不再实现豁免本身**）。
+  *
+- * 背景：假期数据会把假期最后一天整天算作假期，
+- * [com.haooz.chedule.reminder.CourseReminderHelper.resolveDaySchedule] 直接返回空课表，
+- * 于是当天不会有任何课前提醒。但学生通常在假期最后一天傍晚返校上晚自习。
++ * 假期最后一天整天算假期，课表解析为空、当天没有课前提醒；但学生通常在假期最后一天
++ * 傍晚返校上晚自习。这条链路的两半现在分属两处，别再混：
+  *
+- * 做法（豁免式，而不是造课）：
+- * 在「返校日」把用户指定的节次**从假期清空里豁免出来** ——
+- * 取当天课表里落在这些节次的**真实课程**。这样：
+- * - 是课表里真实存在的课，点进详情页正常，不会出现空白页；
+- * - 走既有提醒链路（课前闹钟 / 今日页 / 小部件 / 次日提醒 / 超级岛）自动生效；
+- * - 节次里没有课就什么都不显示，不会凭空造出「幽灵课」。
++ * - **豁免本身（哪些课算正常课）**：上游的 `HolidayCourseExclusion` +
++ *   `HolidayManager.load/saveEndCourseExclusion`，设置入口是假期设置页的
++ *   「节假日末期课程排除」（开关 + 节次范围）。课表页/今日页的「假」标由它决定。
++ * - **提醒本身（什么时候推、推什么词）**：本文件 + CourseReminderHelper。
++ *   是否启用一律看 [isExclusionEnabled]（即上游那个开关）——
++ *   本 fork 早期有一套自己的豁免偏好与设置卡，升基准后入口已删，
++ *   再去读旧偏好会永远得到 false，表现为"开关开着、文案却按关着说"。
+  *
+  * 「返校日」定义：当天是休息日，且次日是上课日。
+  * - 普通周日（次日周一上课）→ 命中；
+@@ -40,57 +40,26 @@ object ReturnDayReminder {
+         isRestDay(context, date) && isSchoolDay(context, date.plusDays(1))
+ 
+     /**
+-     * 对外提醒口径的返校日：必须功能已开启。
++     * 「节假日末期课程排除」是否开启。
+      *
+-     * 修掉的一处逻辑漏洞：AlarmReceiver 与刷新链原来只调上面那个纯日期重载，
+-     * 于是用户把「返校节次豁免」关掉之后，「明天返校」的超级岛 / 实时动态照样会推。
++     * 这是**上游设置页那个开关**（HolidayEndCourseExclusion.enabled）。本 fork 早期有一套
++     * 自己的豁免偏好 + 自己的设置卡，升基准后入口已删（功能由上游接管），继续读那套偏好
++     * 会永远读到 false —— 于是"开关开着、文案却按关着说"。
+      */
+-    fun isReturnDay(
+-        context: Context,
+-        repository: CourseRepository,
+-        date: LocalDate,
+-    ): Boolean {
+-        // 「已开启」以上游设置页为准（节假日末期课程排除 HolidayEndCourseExclusion.enabled），
+-        // 同时兼容本 fork 早期的自有开关 —— 两处任一开着都算开启。
+-        // 否则用户在上游那个设置项里打开了排除，返校提醒却因为读的是旧偏好而不跟。
+-        val upstreamEnabled = HolidayManager.loadEndCourseExclusion(context).enabled
+-        return (upstreamEnabled || repository.getReturnDayReminder()) && isReturnDay(context, date)
+-    }
++    fun isExclusionEnabled(context: Context): Boolean =
++        HolidayManager.loadEndCourseExclusion(context).enabled
+ 
+     /**
+-     * 返校日当天不被假期清空的节次。
+-     * 未开启功能、或当天不是返校日时返回空集（即完全保持原有假期语义）。
++     * 对外提醒口径的返校日：必须功能已开启。
++     *
++     * 修掉的一处逻辑漏洞：AlarmReceiver 与刷新链原来只调上面那个纯日期重载，
++     * 于是用户把「节假日末期课程排除」关掉之后，「明天返校」的超级岛 / 实时动态照样会推。
+      */
+-    fun exemptSections(
++    fun isReturnDay(
+         context: Context,
+         repository: CourseRepository,
+         date: LocalDate,
+-    ): Set<Int> {
+-        if (!repository.getReturnDayReminder()) return emptySet()
+-        if (!isReturnDay(context, date)) return emptySet()
+-        return repository.getReturnDayReminderSections().filter { it > 0 }.toSet()
+-    }
+-
+-    /**
+-     * 用户指定的「跟随星期」：0 表示不指定（用日历星期几）。
+-     * 用于假期那天要按"周日课表"之类取的场景。
+-     */
+-    fun followWeekday(repository: CourseRepository): Int =
+-        repository.getReturnDayFollowWeekday().takeIf { it in 1..7 } ?: 0
+-
+-    /** 课程是否与豁免节次有交集（跨节次的课只要压到一节就算）。 */
+-    fun isExempt(course: Course, sections: Set<Int>): Boolean {
+-        if (sections.isEmpty()) return false
+-        if (course.startSection > course.endSection) return false
+-        for (section in course.startSection..course.endSection) {
+-            if (section in sections) return true
+-        }
+-        return false
+-    }
+-
+-    /** 从课表里挑出落在豁免节次的课程，保持传入顺序。 */
+-    fun exemptCourses(courses: List<Course>, sections: Set<Int>): List<Course> =
+-        if (sections.isEmpty()) emptyList() else courses.filter { isExempt(it, sections) }
++    ): Boolean = isExclusionEnabled(context) && isReturnDay(context, date)
+ 
+     /** 今天所在的一段假期（名称 + 最后一天 + 剩余天数）。 */
+     data class HolidaySpan(
+@@ -170,8 +139,8 @@ object ReturnDayReminder {
+         val today = LocalDate.now()
+         val isToday = date == today
+         val span = currentHolidaySpan(context, date)
+-        // 返校文案：受「返校节次豁免」总开关管
+-        if (repository.getReturnDayReminder() && isReturnDay(context, date)) {
++        // 返校文案：受「节假日末期课程排除」总开关管
++        if (isExclusionEnabled(context) && isReturnDay(context, date)) {
+             val label = dayLabel(date, today)
+             // 注意：中文紧跟在 $label 后面会被当成标识符（$label是 不是 $label + 是），必须加花括号
+             val where = if (span != null) "${label}是${span.name}最后一天" else "${label}是周末最后一天"
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
+index dd6af7c..205df63 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
+@@ -140,7 +140,7 @@ class AlarmReceiver : BroadcastReceiver() {
+ 
+                 // 明天是「返校日」（假期/周末最后一天、次日要上课）→ 顺带推一条超级岛。
+                 // 复用既有岛发送路径（含 XMSF 绕白名单），这里只是多一个调用方。
+-                // 注意用带 repository 的重载：它会一并检查「返校节次豁免」总开关，
++                // 注意用带 repository 的重载：它会一并检查「节假日末期课程排除」总开关，
+                 // 否则用户关掉功能后仍会收到「明天返校」的岛 / 实时动态。
+                 val tomorrow = java.time.LocalDate.now().plusDays(1)
+                 if (com.haooz.chedule.data.ReturnDayReminder.isReturnDay(context, repository, tomorrow)) {
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+index 9d95b32..4f510a9 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+@@ -1214,7 +1214,7 @@ object CourseReminderHelper {
+     /** 节假日/调休数据变更后：重排提醒并立即刷新已放置的小部件 */
+     fun onHolidayDataChanged(context: Context) {
+         // 顺手 bump 假期版本号：今日页状态卡、课表页豁免标记、小部件都靠它做 remember 键。
+-        // 返校节次豁免 / 余额 / 清单这些开关不走 HolidayManager.save，不 bump 的话
++        // 节假日末期课程排除 / 余额 / 清单这些开关不走 HolidayManager.save，不 bump 的话
+         // 关掉开关后今日页还会一直显示旧的「返校啦」卡片。
+         HolidayManager.notifyConfigChanged(context)
+         startReminderService(context)
+@@ -1446,7 +1446,7 @@ object CourseReminderHelper {
+             !java.time.LocalTime.now().isBefore(balanceTarget) &&
+             prefs.getString(KEY_RETURN_BALANCE_DATE, null) != todayKey
+         ) {
+-            val (title, body) = balanceNotificationText(repository, span)
++            val (title, body) = balanceNotificationText(context, repository, span)
+             showReminderNotification(
+                 context,
+                 NOTIFY_ID_RETURN_BALANCE,
+@@ -1518,10 +1518,15 @@ object CourseReminderHelper {
+      * 余额通知的标题/正文。**主路径与"立即测试"按钮共用这一份**，
+      * 否则两处文案迟早会分叉（这正是本项目已经踩过的坑）。
+      *
+-     * 「返校节次豁免」开着时，最后一天说"收拾一下准备返校吧"；
++     * 「节假日末期课程排除」开着时，最后一天说"收拾一下准备返校吧"；
+      * 关着时说明用户当天并没有返校课，就只说"好好休息"。
++     *
++     * ★ 判据必须是**上游那个开关**（[ReturnDayReminder.isExclusionEnabled]）：
++     * 本 fork 早期那套自有豁免偏好已经没有设置入口了，读它会永远得到 false，
++     * 于是出现"开关明明开着、最后一天却只说好好休息"。
+      */
+     private fun balanceNotificationText(
++        context: Context,
+         repository: CourseRepository,
+         span: ReturnDayReminder.HolidaySpan,
+     ): Pair<String, String> {
+@@ -1529,7 +1534,7 @@ object CourseReminderHelper {
+         val title = if (lastDay) "今天是${span.name}最后一天" else "${span.name}还剩 ${span.daysLeft} 天"
+         val body = when {
+             !lastDay -> "好好休息，返校前我会再提醒你"
+-            repository.getReturnDayReminder() -> "最后一天了，收拾一下准备返校吧"
++            ReturnDayReminder.isExclusionEnabled(context) -> "最后一天了，收拾一下准备返校吧"
+             else -> "最后一天了，好好休息吧"
+         }
+         return title to body
+@@ -1580,7 +1585,7 @@ object CourseReminderHelper {
+         }
+         val span = ReturnDayReminder.currentHolidaySpan(context, java.time.LocalDate.now())
+         val (title, body) = if (span != null) {
+-            balanceNotificationText(repository, span)
++            balanceNotificationText(context, repository, span)
+         } else {
+             // 不在假期里：正式提醒不会发，这里给演示
+             "假期余额提醒（测试）" to "当前不在假期内，正式提醒会在假期中按设定时间发出"
+@@ -1670,8 +1675,9 @@ object CourseReminderHelper {
+         repository: CourseRepository,
+     ) {
+         if (repository.getIslandNotification() && IslandNotificationHelper.isIslandSupported(context)) return
+-        // 功能总开关关掉就不再推（原来只判 isReturnDay，关掉开关照样会推）
+-        if (!repository.getReturnDayReminder()) return
++        // 功能总开关关掉就不再推（原来只判 isReturnDay，关掉开关照样会推）。
++        // 判据同上：上游「节假日末期课程排除」的开关。
++        if (!ReturnDayReminder.isExclusionEnabled(context)) return
+         val today = java.time.LocalDate.now()
+         val tomorrow = today.plusDays(1)
+         val todayIsReturn = ReturnDayReminder.isReturnDay(context, today)
+@@ -1710,7 +1716,7 @@ object CourseReminderHelper {
+      *
+      * 为什么不能写死「明天返校」：目标日（正文所依据的那天）可能是**今天**。
+      * `ReturnDayReminder.isReturnDay(d) = isRestDay(d) && isSchoolDay(d+1)`，
+-     * 所以「返校日」就是假期最后一天：被「返校节次豁免」放出来的课（例如第11节 18:30 晚自习）
++     * 所以「返校日」就是假期最后一天：被「节假日末期课程排除」放出来的课（例如第11节 18:30 晚自习）
+      * 是**今晚**的课。此时标题说「明天返校」、正文列今晚的课，自相矛盾
+      * （真机实测：标题「明天返校 · 中秋节最后一天」，正文「道法｜第11节 18:30」）。
+      * 而清单通知那边（prepNotificationTitle）一直说的是「今晚返校」 ——
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt b/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
+index 0575006..9a0e623 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
+@@ -98,7 +98,7 @@ enum class ReminderTestScenario(
+     ),
+     PLAIN_BALANCE(
+         label = "假期余额（普通通知）",
+-        detail = "文案跟随「返校节次豁免」开关；不在假期内会给演示文案",
++        detail = "文案跟随「节假日末期课程排除」开关；不在假期内会给演示文案",
+         kind = ReminderTestKind.PLAIN_BALANCE,
+     ),
+ 
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
+index ea3ba8a..1e34fcd 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
+@@ -608,7 +608,7 @@ fun HolidaySettingsScreen(
+                 SectionTitleRow(
+                     text = "假期余额提醒",
+                     description = "• 假期期间每天一条，含假期最后一天（不占超级岛/实时动态的位置）\n" +
+-                        "• 独立开关：不再挂在「返校节次豁免」下面 —— 关掉豁免不会连带关掉余额提醒",
++                        "• 独立开关：不再挂在「节假日末期课程排除」下面 —— 关掉豁免不会连带关掉余额提醒",
+                     liquidGlassBackdrop = liquidGlassBackdrop,
+                 )
+                 HolidayBalanceCard()
+@@ -657,7 +657,7 @@ fun HolidaySettingsScreen(
+                 SectionTitleRow(
+                     text = "返校准备清单",
+                     description = "• 返校日到点推一条普通通知，内容自己写\n" +
+-                        "• 独立开关：不依赖「返校节次豁免」，关掉豁免它照样会响",
++                        "• 独立开关：不依赖「节假日末期课程排除」，关掉豁免它照样会响",
+                     liquidGlassBackdrop = liquidGlassBackdrop,
+                 )
+                 ReturnDayPrepCard()
+@@ -2025,75 +2025,6 @@ private fun pickerTextStyle() = MiuixTheme.textStyles.body1.copy(
+ 
+ // ===================== 返校提醒（周末 / 节假日最后一天） =====================
+ 
+-private fun totalSectionCount(repository: CourseRepository): Int =
+-    (repository.getMorningSections() + repository.getAfternoonSections() + repository.getEveningSections())
+-        .coerceAtLeast(1)
+-
+-/** 某一节次的时间区间（"HH:mm-HH:mm"），拿不到返回 null。口径与 CourseTimeResolver 一致。 */
+-private fun sectionTimeRange(repository: CourseRepository, section: Int): String? {
+-    if (section <= 0) return null
+-    val morning = repository.getMorningSections()
+-    val afternoon = repository.getAfternoonSections()
+-    val (times, relative) = when {
+-        section <= morning -> repository.getPeriodTimes("morning") to section
+-        section <= morning + afternoon ->
+-            repository.getPeriodTimes("afternoon") to (section - morning)
+-        else -> repository.getPeriodTimes("evening") to (section - morning - afternoon)
+-    }
+-    return times[relative]?.takeIf { it.isNotBlank() }
+-}
+-
+-/** 节次区间的起止时间文案，如 "18:30–20:10"；任一端缺失就退化或留空。 */
+-private fun sectionRangeTimeText(
+-    repository: CourseRepository,
+-    startSection: Int,
+-    endSection: Int,
+-): String {
+-    val startRaw = sectionTimeRange(repository, startSection)
+-    val endRaw = sectionTimeRange(repository, endSection)
+-    // 只有真的含 "-" 才切分；否则 "08:00".substringAfter("-") 会原样返回 "08:00"，
+-    // 摘要会变成毫无意义的 "08:00–08:00"
+-    val start = startRaw?.substringBefore("-")?.trim().orEmpty()
+-    val end = endRaw?.takeIf { it.contains('-') }?.substringAfter("-")?.trim().orEmpty()
+-    return when {
+-        start.isNotEmpty() && end.isNotEmpty() -> "$start–$end"
+-        start.isNotEmpty() -> start
+-        else -> ""
+-    }
+-}
+-
+-/** 把散乱节次合并成连续区间，用于摘要文案（"第9节、第11–12节"） */
+-private fun mergeSectionRanges(sections: Collection<Int>): List<Pair<Int, Int>> {
+-    val sorted = sections.filter { it > 0 }.distinct().sorted()
+-    if (sorted.isEmpty()) return emptyList()
+-    val out = mutableListOf<Pair<Int, Int>>()
+-    var start = sorted.first()
+-    var prev = start
+-    for (section in sorted.drop(1)) {
+-        if (section == prev + 1) {
+-            prev = section
+-            continue
+-        }
+-        out += start to prev
+-        start = section
+-        prev = section
+-    }
+-    out += start to prev
+-    return out
+-}
+-
+-/**
+- * 返校节次豁免设置。
+- *
+- * 假期最后一天整天被算作假期，正常解析结果是空课表，所以默认不会有任何提醒。
+- * 这里让用户指定「返校当天要上的节次」（通常是晚自习），由 [ReturnDayReminder]
+- * 在解析当天课表时把这些节次从假期清空里豁免出来，取课表里的**真实课程**，
+- * 从而走既有提醒链路（课前闹钟 / 今日页 / 小部件 / 次日提醒 / 超级岛）。
+- *
+- * 节次是**多选**（支持第 9、11 节这种跳选），不是连续区间。
+- */
+-    // 提醒时间选择：清单与余额共用同一套两个 NumberPicker 的形态
+-    @Composable
+ private fun timePickerDialog(
+         title: String,
+         show: Boolean,
+@@ -2149,7 +2080,7 @@ private fun timePickerDialog(
+ /**
+  * 「返校准备清单」独立成卡。
+  *
+- * 原来它在「返校节次豁免」卡的 `if (enabled)` 里面，但它的触发只依赖自己的开关
++ * 原来它在「节假日末期课程排除」卡的 `if (enabled)` 里面，但它的触发只依赖自己的开关
+  * （`getReturnDayPrepEnabled() && isReturnDay(今天)`）—— 豁免关掉它照样会在周日/假期最后一天响。
+  * "配置被藏起来、功能却还在跑"是同一类毛病，所以一并抬出来自己一张卡。
+  */
+@@ -2204,7 +2135,7 @@ private fun ReturnDayPrepCard() {
+             }
+             Text(
+                 "• 触发条件：当天休息 且 次日要上课（普通周日、假期最后一天）\n" +
+-                    "• 独立开关：不依赖「返校节次豁免」，关掉豁免它照样会响",
++                    "• 独立开关：不依赖「节假日末期课程排除」，关掉豁免它照样会响",
+                 style = MiuixTheme.textStyles.body1.copy(
+                     fontSize = 13.sp,
+                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+@@ -2273,7 +2204,7 @@ private fun ReturnDayPrepCard() {
+ /**
+  * 「假期余额提醒」独立成卡。
+  *
+- * 原来它被放在「返校节次豁免」卡的 `if (enabled)` 里面 —— 关掉豁免，余额提醒就凭空消失了，
++ * 原来它被放在「节假日末期课程排除」卡的 `if (enabled)` 里面 —— 关掉豁免，余额提醒就凭空消失了，
+  * 而两者其实没有从属关系（余额是"假期还剩几天"，豁免是"返校那天上哪几节"）。
+  * 现在单独一张卡，开关/时间/开始提醒/测试都在这里。
+  */
+@@ -2330,7 +2261,7 @@ private fun HolidayBalanceCard() {
+             }
+             Text(
+                 "• 假期期间每天都发一条，含假期最后一天（以前最后一天会漏掉）\n" +
+-                    "• 文案跟着「返校节次豁免」走：开着，最后一天说「收拾一下准备返校」；" +
++                    "• 文案跟着「节假日末期课程排除」走：开着，最后一天说「收拾一下准备返校」；" +
+                     "关着只说「好好休息」\n" +
+                     "• 不占超级岛/实时动态的位置，只是普通通知",
+                 style = MiuixTheme.textStyles.body1.copy(
+@@ -2401,211 +2332,3 @@ private fun HolidayBalanceCard() {
+     }
+ }
+ 
+-@Composable
+-private fun ReturnDayReminderCard() {
+-    val context = LocalContext.current
+-    val repository = remember { CourseRepository(context) }
+-    val totalSections = remember { totalSectionCount(repository) }
+-    var enabled by remember { mutableStateOf(repository.getReturnDayReminder()) }
+-    var selectedSections by remember { mutableStateOf(repository.getReturnDayReminderSections()) }
+-    var followWeekday by remember { mutableIntStateOf(repository.getReturnDayFollowWeekday()) }
+-    var showSectionDialog by remember { mutableStateOf(false) }
+-    var showWeekdayDialog by remember { mutableStateOf(false) }
+-    // 清单时间也做成 state：原来摘要直接读 repository，改完时间要靠别的 state 变化
+-    // 触发重组才刷新，读值与本地 state 混用容易看到旧值。
+-
+-    fun applySections(next: Set<Int>) {
+-        selectedSections = next
+-        repository.setReturnDayReminderSections(next)
+-        CourseReminderHelper.onHolidayDataChanged(context)
+-    }
+-
+-    fun applyWeekday(weekday: Int) {
+-        followWeekday = weekday
+-        repository.setReturnDayFollowWeekday(weekday)
+-        CourseReminderHelper.onHolidayDataChanged(context)
+-    }
+-
+-    val sectionSummary = if (selectedSections.isEmpty()) {
+-        "未选择（不会豁免任何节次）"
+-    } else {
+-        buildString {
+-            append(
+-                mergeSectionRanges(selectedSections).joinToString("、") { (from, to) ->
+-                    if (from == to) "第${from}节" else "第${from}–${to}节"
+-                }
+-            )
+-            append("（共 $totalSections 节）")
+-            val from = selectedSections.minOrNull()
+-            val to = selectedSections.maxOrNull()
+-            if (from != null && to != null) {
+-                val times = sectionRangeTimeText(repository, from, to)
+-                if (times.isNotEmpty()) append("｜").append(times)
+-            }
+-        }
+-    }
+-    val weekdaySummary = if (followWeekday in 1..7) {
+-        "按${WEEKDAYS[followWeekday - 1]}课表取课"
+-    } else {
+-        "按当天星期几"
+-    }
+-
+-    Card(
+-        cornerRadius = 20.dp,
+-        modifier = Modifier.fillMaxWidth(),
+-        insideMargin = PaddingValues(0.dp),
+-    ) {
+-        Column {
+-            SwitchPreference(
+-                title = "返校节次豁免",
+-                summary = "假期/周末最后一天，指定节次照常上课与提醒",
+-                checked = enabled,
+-                onCheckedChange = { checked ->
+-                    enabled = checked
+-                    repository.setReturnDayReminder(checked)
+-                    CourseReminderHelper.onHolidayDataChanged(context)
+-                },
+-            )
+-            if (enabled) {
+-                ArrowPreference(
+-                    title = "豁免节次",
+-                    summary = sectionSummary,
+-                    onClick = { showSectionDialog = true },
+-                )
+-                ArrowPreference(
+-                    title = "按哪天课表",
+-                    summary = weekdaySummary,
+-                    onClick = { showWeekdayDialog = true },
+-                )
+-                Text(
+-                    "命中条件：当天休息 且 次日要上课（假期最后一天 / 周日）\n" +
+-                        "豁免的是课表里当天的真实课程 —— 节次里没课就不会显示",
+-                    style = MiuixTheme.textStyles.body1.copy(
+-                        fontSize = 13.sp,
+-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+-                    ),
+-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+-                )
+-            }
+-        }
+-    }
+-
+-    OverlayDialog(
+-        title = "豁免节次",
+-        summary = null,
+-        show = showSectionDialog,
+-        liquidGlassBackdrop = null,
+-        onDismissRequest = { showSectionDialog = false },
+-    ) {
+-        // 草稿：点「取消」不落库
+-        var draft by remember(showSectionDialog) { mutableStateOf(selectedSections) }
+-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+-            Text(
+-                "这些节次在假期最后一天照常保留（取课表里当天的真实课程）",
+-                style = MiuixTheme.textStyles.body1.copy(
+-                    fontSize = 14.sp,
+-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+-                ),
+-            )
+-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                TextButton(
+-                    "最后两节",
+-                    { draft = ((totalSections - 1).coerceAtLeast(1)..totalSections).toSet() },
+-                    modifier = Modifier.weight(1f),
+-                )
+-                TextButton("清空", { draft = emptySet() }, modifier = Modifier.weight(1f))
+-            }
+-            (1..totalSections).toList().chunked(4).forEach { rowSections ->
+-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                    rowSections.forEach { section ->
+-                        val on = section in draft
+-                        Box(
+-                            modifier = Modifier
+-                                .weight(1f)
+-                                .height(38.dp)
+-                                .clip(RoundedCornerShape(10.dp))
+-                                .background(
+-                                    if (on) {
+-                                        MiuixTheme.colorScheme.primary
+-                                    } else {
+-                                        MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.12f)
+-                                    }
+-                                )
+-                                .clickable {
+-                                    draft = if (on) draft - section else draft + section
+-                                },
+-                            contentAlignment = Alignment.Center,
+-                        ) {
+-                            Text(
+-                                "第${section}节",
+-                                fontSize = 13.sp,
+-                                color = if (on) {
+-                                    Color.White
+-                                } else {
+-                                    MiuixTheme.colorScheme.onSurfaceVariantSummary
+-                                },
+-                            )
+-                        }
+-                    }
+-                    // 补齐末行空位，保持列宽一致
+-                    repeat(4 - rowSections.size) { Spacer(Modifier.weight(1f)) }
+-                }
+-            }
+-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                TextButton("取消", { showSectionDialog = false }, modifier = Modifier.weight(1f))
+-                TextButton(
+-                    "保存",
+-                    {
+-                        applySections(draft)
+-                        showSectionDialog = false
+-                    },
+-                    modifier = Modifier.weight(1f),
+-                )
+-            }
+-        }
+-    }
+-
+-    OverlayDialog(
+-        title = "按哪天课表",
+-        summary = null,
+-        show = showWeekdayDialog,
+-        liquidGlassBackdrop = null,
+-        onDismissRequest = { showWeekdayDialog = false },
+-    ) {
+-        var draftWeekday by remember(showWeekdayDialog) { mutableIntStateOf(followWeekday) }
+-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+-            Text(
+-                "假期那天用哪一天的课表取课。默认按当天星期几；" +
+-                    "若你的返校晚自习固定按周日排，就选周日。",
+-                style = MiuixTheme.textStyles.body1.copy(
+-                    fontSize = 14.sp,
+-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+-                ),
+-            )
+-            NumberPicker(
+-                draftWeekday,
+-                { draftWeekday = it },
+-                range = 0..7,
+-                visibleItemCount = 3,
+-                itemHeight = 44.dp,
+-                textStyle = pickerTextStyle(),
+-                label = { if (it == 0) "按当天" else WEEKDAYS[it - 1] },
+-                modifier = Modifier.fillMaxWidth(),
+-            )
+-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                TextButton("取消", { showWeekdayDialog = false }, modifier = Modifier.weight(1f))
+-                TextButton(
+-                    "保存",
+-                    {
+-                        applyWeekday(draftWeekday)
+-                        showWeekdayDialog = false
+-                    },
+-                    modifier = Modifier.weight(1f),
+-                )
+-            }
+-        }
+-    }
+-
+-
+-
+-}
+-- 
+2.55.0
+
