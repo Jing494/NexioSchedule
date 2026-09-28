@@ -1,0 +1,982 @@
+From 31b8f4712124a9a18dd18d294ced2f58adba97c1 Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Sun, 27 Sep 2026 14:04:18 +0800
+Subject: [PATCH 15/22] =?UTF-8?q?v33:=20=E6=B5=8B=E8=AF=95=E7=8B=AC?=
+ =?UTF-8?q?=E7=AB=8B=E6=88=90=E9=A1=B5=20+=20=E8=A6=86=E7=9B=96=E8=A1=A5?=
+ =?UTF-8?q?=E9=BD=90=EF=BC=88=E8=BF=94=E6=A0=A1=E5=B2=9B/=E5=AE=9E?=
+ =?UTF-8?q?=E6=97=B6=E5=8A=A8=E6=80=81=E7=AD=89=EF=BC=89+=20=E4=BD=93?=
+ =?UTF-8?q?=E6=A3=80=E5=8D=A1=E6=8A=98=E5=8F=A0=E5=B9=B6=E4=B8=8B=E7=A7=BB?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+用户要求：
+  1) 新加的测试"单独拆个设置项出来"；
+  2) "测试范围不全，少了返校那个岛（实时动态和超级岛的）"，并让我查还漏了什么；
+  3) 体检卡"改成粗略状态，点击一下展开"，位置放到「开启提醒」总开关下方；
+  4) 编译降资源（用户在手机上写作业）。
+
+一、测试独立成页
+- 新增 ReminderTestActivity + ReminderTestScreen（同款可折叠顶栏 / 玻璃返回键 / 卡片分组，
+  与「课程提醒」「节假日与调休」一致），Manifest 注册，设置 → 特色功能新增入口
+  「通知与超级岛测试」（带 holdDownState）。
+- 提醒设置页里那块测试卡**已移除**；原有板块与悬浮按钮一行没动。
+
+二、覆盖补齐（先盘真实通道，再逐条对场景表）
+盘点发现缺口 3 处，全部补上：
+- **返校岛 / 返校实时动态**（当日与次日各一条场景，传真实 targetDate，
+  顺带把 v31「今晚/明天返校」日子词纳入可点验范围）；
+- **TYPE_NEXT_DAY 次日提醒**：文案原来**写死在 AlarmReceiver 里**，测试页够不着 ——
+  已抽成 CourseReminderHelper.nextDayReminderText()（两个重载：一个自己查课表、
+  一个收调用方已取好的课表，避免一次闹钟把当天课表解析两遍），主路径与测试页共用一份，
+  chineseNumberHour 一并搬过去；
+- 返校清单 / 假期余额（TYPE_RETURN_DAILY_PREP/BALANCE）也在页内给入口。
+未单独做入口的一处已在页脚如实说明：TYPE_PRE_CLASS 课前普通通知与岛/实况共用
+sendPreClassNotification 的同一条时间线，不是另一条分支，由课程 4 个场景覆盖。
+
+三、体检卡改成"粗略状态 → 点击展开"
+- 默认只一行：提醒体检　全部通过/N 项待处理　展开；整行可点，右侧有明确的展开/收起字样；
+- 展开时重查一次（避免看到进页面那一刻的旧状态）；有问题且收起时给一句展开指引；
+- 位置从顶部下移到「开启提醒」总开关之后（先看开没开，再看系统放不放行）。
+
+四、编译降资源
+nice -n 19、--max-workers=1、--no-parallel，Gradle 堆 4096m→2560m、
+Kotlin 守护进程 →1536m；实测 BUILD SUCCESSFUL 11m34s（比 4G/双 worker 还略快）。
+
+验证：verify_testpage_v33.py 22 项全过（覆盖矩阵 / 独立成页 / 体检卡折叠与位置用下标比较 /
+次日文案只有一份实现）；编译、签名、sha256、badging、APK 内编译后 Manifest 均核验通过。
+
+(cherry picked from commit 9a1545664e43a3b0ca959404d3c64143ea076482)
+---
+ app/src/main/AndroidManifest.xml              |   7 +
+ .../haooz/chedule/reminder/AlarmReceiver.kt   |  30 +-
+ .../chedule/reminder/CourseReminderHelper.kt  |  49 ++++
+ .../chedule/reminder/ReminderTestScenario.kt  | 140 +++++++--
+ .../ui/activities/CourseReminderScreen.kt     | 100 +++----
+ .../ui/activities/ReminderTestActivity.kt     | 113 ++++++++
+ .../chedule/ui/screens/ReminderTestScreen.kt  | 270 ++++++++++++++++++
+ .../chedule/ui/screens/SettingsScreen.kt      |  11 +
+ 8 files changed, 603 insertions(+), 117 deletions(-)
+ create mode 100644 app/src/main/java/com/haooz/chedule/ui/activities/ReminderTestActivity.kt
+ create mode 100644 app/src/main/java/com/haooz/chedule/ui/screens/ReminderTestScreen.kt
+
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index 3ec6b08..ecce5ba 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -114,6 +114,13 @@
+             android:label="课程提醒"
+             android:theme="@style/Theme.课程表"
+             android:windowSoftInputMode="adjustResize" />
++        <activity
++            android:name=".ui.activities.ReminderTestActivity"
++            android:exported="false"
++            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|mnc|colorMode|density|fontScale|fontWeightAdjustment|keyboard|layoutDirection|locale|mcc|navigation|smallestScreenSize|touchscreen|uiMode"
++            android:label="通知与超级岛测试"
++            android:theme="@style/Theme.课程表"
++            android:windowSoftInputMode="adjustResize" />
+         <activity
+             android:name=".ui.activities.HolidaySettingsActivity"
+             android:exported="false"
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
+index 9ab603e..dd6af7c 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
+@@ -10,16 +10,6 @@ import com.haooz.chedule.data.CourseRepository
+ class AlarmReceiver : BroadcastReceiver() {
+ 
+     /** 把 1..23 的整数转成中文数字（如 8 -> "八"，23 -> "二十三"），用于"早八"式文案 */
+-    private fun chineseNumberHour(n: Int): String {
+-        if (n <= 0 || n > 23) return n.toString()
+-        val digit = listOf("", "一", "二", "三", "四", "五", "六", "七", "八", "九")
+-        return when {
+-            n < 10 -> digit[n]
+-            n < 20 -> "十" + digit[n - 10]
+-            else -> digit[n / 10] + "十" + digit[n % 10]
+-        }
+-    }
+-
+     override fun onReceive(context: Context, intent: Intent) {
+         val type = intent.getIntExtra(CourseReminderHelper.EXTRA_REMINDER_TYPE, 0)
+         // 原实现在每次闹钟触发时都新建一个 SimpleDateFormat 并格式化当前时间，
+@@ -140,23 +130,13 @@ class AlarmReceiver : BroadcastReceiver() {
+                     return
+                 }
+ 
++                // 明天课表只解析一次：下面的返校岛也要用同一份
+                 val tomorrowCourses = CourseReminderHelper.getTomorrowCourses(context)
+ 
+-                if (tomorrowCourses.isEmpty()) {
+-                    CourseReminderHelper.showReminderNotification(context, type, "明日无课", "明天没有课程安排")
+-                } else {
+-                    val title = "明天共${tomorrowCourses.size}节课"
+-                    val firstCourse = tomorrowCourses.first()
+-                    val firstStart = CourseReminderHelper.getCourseStartTime(firstCourse, repository)
+-                    val firstHour = firstStart?.split(":")?.firstOrNull()?.toIntOrNull() ?: 9
+-                    val details = when {
+-                        firstHour < 9 -> "明早有早${chineseNumberHour(firstHour)}，${firstCourse.name}"
+-                        firstHour < 12 -> "明早有课，${firstCourse.name} $firstStart"
+-                        firstHour < 18 -> "下午有课，${firstCourse.name} $firstStart"
+-                        else -> "晚上有课，${firstCourse.name} $firstStart"
+-                    }
+-                    CourseReminderHelper.showReminderNotification(context, type, title, details)
+-                }
++                // 文案与测试页共用一份（CourseReminderHelper.nextDayReminderText）
++                val (nextDayTitle, nextDayBody) =
++                    CourseReminderHelper.nextDayReminderText(tomorrowCourses, repository)
++                CourseReminderHelper.showReminderNotification(context, type, nextDayTitle, nextDayBody)
+ 
+                 // 明天是「返校日」（假期/周末最后一天、次日要上课）→ 顺带推一条超级岛。
+                 // 复用既有岛发送路径（含 XMSF 绕白名单），这里只是多一个调用方。
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+index bdc1363..9d95b32 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+@@ -1298,6 +1298,55 @@ object CourseReminderHelper {
+         }
+     }
+ 
++    /**
++     * 次日提醒的文案 —— **主路径（AlarmReceiver）与测试页共用这一份**。
++     *
++     * 原来这段文本写死在 AlarmReceiver 的 onReceive 里，结果是：
++     * 测试页没法单独验这条通知（"测试范围不全"里的一处），而且以后改文案得记得改一处不存在的地方。
++     * 抽出来后两边都调它，文案只有一份。
++     */
++    fun nextDayReminderText(context: Context, repository: CourseRepository): Pair<String, String> =
++        nextDayReminderText(getTomorrowCourses(context), repository)
++
++    /**
++     * 同上，但课表已由调用方取好 —— AlarmReceiver 里同一份"明天课表"还要给返校岛用，
++     * 传进来可以避免一次闹钟把当天课表解析两遍（那正是这个项目已经优化过的点）。
++     */
++    fun nextDayReminderText(
++        tomorrowCourses: List<Course>,
++        repository: CourseRepository,
++    ): Pair<String, String> {
++        if (tomorrowCourses.isEmpty()) return "明日无课" to "明天没有课程安排"
++        val firstCourse = tomorrowCourses.first()
++        val firstStart = getCourseStartTime(firstCourse, repository)
++        val firstHour = firstStart?.split(":")?.firstOrNull()?.toIntOrNull() ?: 9
++        val details = when {
++            firstHour < 9 -> "明早有早${chineseNumberHour(firstHour)}，${firstCourse.name}"
++            firstHour < 12 -> "明早有课，${firstCourse.name} $firstStart"
++            firstHour < 18 -> "下午有课，${firstCourse.name} $firstStart"
++            else -> "晚上有课，${firstCourse.name} $firstStart"
++        }
++        return "明天共${tomorrowCourses.size}节课" to details
++    }
++
++    /** 星期几/钟点用的中文数字（原来在 AlarmReceiver 里，随文案一起搬过来） */
++    private fun chineseNumberHour(n: Int): String {
++        if (n <= 0 || n > 23) return n.toString()
++        val digit = listOf("", "一", "二", "三", "四", "五", "六", "七", "八", "九")
++        return when {
++            n < 10 -> digit[n]
++            n < 20 -> "十" + digit[n - 10]
++            else -> digit[n / 10] + "十" + digit[n % 10]
++        }
++    }
++
++    /** 测试用：立刻发一条次日提醒。不写任何"已发"状态，不影响正式提醒 */
++    fun sendNextDayReminderNow(context: Context) {
++        val repository = CourseRepository(context)
++        val (title, body) = nextDayReminderText(context, repository)
++        showReminderNotification(context, TYPE_NEXT_DAY, title, body)
++    }
++
+     fun getTomorrowCourses(context: Context): List<Course> =
+         resolveDaySchedule(context, forTomorrow = true).courses
+ 
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt b/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
+index 8f4190c..0575006 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
+@@ -2,16 +2,39 @@ package com.haooz.chedule.reminder
+ 
+ import android.content.Context
+ import com.haooz.chedule.data.CourseRepository
++import com.haooz.chedule.data.ReturnDayReminder
++import java.time.LocalDate
+ 
+ /** 测试要直接落到哪个状态（用于单独验证某一条分支） */
+ enum class ReminderTestPhase { COUNTDOWN, STARTED, IN_CLASS }
+ 
++/** 场景属于哪条链路 —— 决定发送时调哪支函数 */
++enum class ReminderTestKind {
++    /** 课前倒计时 / 已上课 / 课中：按当前通道（岛或实时动态）发 */
++    COURSE,
++
++    /** 返校（当日）→ 日子词应为「今晚返校」 */
++    RETURN_TODAY,
++
++    /** 返校（次日）→ 日子词应为「明天返校」 */
++    RETURN_TOMORROW,
++
++    /** 返校准备清单（普通通知） */
++    PLAIN_PREP,
++
++    /** 假期余额（普通通知） */
++    PLAIN_BALANCE,
++
++    /** 次日课程提醒（普通通知） */
++    PLAIN_NEXT_DAY,
++}
++
+ /**
+- * 「超级岛 / 实时动态」测试场景。
++ * 「通知 / 超级岛 / 实时动态」测试场景表。
+  *
+  * 存在的理由：原来全项目只有一个测试按钮、只有一种时序（课前 70 秒 + 课中 2 分钟），
+- * 覆盖不到「到点自动切课中」「课中距下课倒计时」「长课不中途收岛」这些真实分支 ——
+- * 于是"上课倒计时正常、下课倒计时没了"这类问题只能靠碰运气发现。
++ * 覆盖不到「到点自动切课中」「课中距下课倒计时」「长课不中途收岛」「返校岛」这些真实分支 ——
++ * 于是"上课倒计时正常、下课倒计时没了"这类问题只能靠碰。
+  *
+  * 本文件只是**场景表 + 分发**，不复制任何发送逻辑：真正发送仍然走主路径那几支函数，
+  * 通道判定也与主路径完全一致（岛开着且设备支持 → 走岛，否则走原生实时动态），
+@@ -20,44 +43,70 @@ enum class ReminderTestPhase { COUNTDOWN, STARTED, IN_CLASS }
+ enum class ReminderTestScenario(
+     val label: String,
+     val detail: String,
+-    val startDelayMs: Long,
+-    val durationMs: Long,
+-    val phase: ReminderTestPhase,
++    val kind: ReminderTestKind,
++    /** 仅 COURSE 用：距"上课"还有多久 / 课时长度 */
++    val startDelayMs: Long = 0L,
++    val durationMs: Long = 0L,
++    val phase: ReminderTestPhase = ReminderTestPhase.COUNTDOWN,
+ ) {
+-    /** 关键场景：一次点击就能看到「课前倒计时 → 到点自动切课中」的完整切换 */
++    // ---------- 课程链路（走当前通道）----------
+     FULL_TIMELINE(
+         label = "课前倒计时 → 到点切课中",
+         detail = "70 秒倒计时，到点自动切课中卡（课时 3 分钟）",
++        kind = ReminderTestKind.COURSE,
+         startDelayMs = 70_000L,
+         durationMs = 180_000L,
+         phase = ReminderTestPhase.COUNTDOWN,
+     ),
+-
+-    /** 静态「已上课」：15 秒后收起，用来验证收起时序 */
+     STARTED(
+         label = "已上课（静态）",
+         detail = "强制发静态「已上课」，约 15 秒后自动收起",
+-        startDelayMs = 0L,
++        kind = ReminderTestKind.COURSE,
+         durationMs = 60_000L,
+         phase = ReminderTestPhase.STARTED,
+     ),
+-
+-    /** 课中卡：绕过「课中提醒」总开关，直接验 B 区（距下课倒计时 / 静态文案） */
+     IN_CLASS(
+         label = "课中 · 距下课倒计时",
+         detail = "直接进课中卡（课时 3 分钟），B 区按你的设置显示倒计时或静态文案",
+-        startDelayMs = 0L,
++        kind = ReminderTestKind.COURSE,
+         durationMs = 180_000L,
+         phase = ReminderTestPhase.IN_CLASS,
+     ),
+-
+-    /** 长课：晚自习两节连排那种时长，验证不会在中途被系统收岛 */
+     IN_CLASS_LONG(
+         label = "课中 · 长课（20 分钟）",
+         detail = "验证长时间不会中途收岛，长课时也不该在 60 分钟处自己消失",
+-        startDelayMs = 0L,
++        kind = ReminderTestKind.COURSE,
+         durationMs = 1_200_000L,
+         phase = ReminderTestPhase.IN_CLASS,
++    ),
++
++    // ---------- 返校链路 ----------
++    RETURN_TODAY(
++        label = "返校 · 当日（今晚返校）",
++        detail = "走当前通道发返校提醒；目标日是今天，日子词应为「今晚返校」",
++        kind = ReminderTestKind.RETURN_TODAY,
++    ),
++    RETURN_TOMORROW(
++        label = "返校 · 次日（明天返校）",
++        detail = "走当前通道发返校提醒；目标日是明天，日子词应为「明天返校」",
++        kind = ReminderTestKind.RETURN_TOMORROW,
++    ),
++    PLAIN_PREP(
++        label = "返校准备清单（普通通知）",
++        detail = "与「立即发一条测试」同一条实现，不写当天去重键",
++        kind = ReminderTestKind.PLAIN_PREP,
++    ),
++    PLAIN_BALANCE(
++        label = "假期余额（普通通知）",
++        detail = "文案跟随「返校节次豁免」开关；不在假期内会给演示文案",
++        kind = ReminderTestKind.PLAIN_BALANCE,
++    ),
++
++    // ---------- 其他普通通知 ----------
++    PLAIN_NEXT_DAY(
++        label = "次日课程提醒（普通通知）",
++        detail = "汇总明天节数 + 第一节；文案与正式提醒共用一份实现",
++        kind = ReminderTestKind.PLAIN_NEXT_DAY,
+     );
+ 
+     companion object {
+@@ -70,19 +119,62 @@ enum class ReminderTestScenario(
+             if (islandActive(context)) "小米超级岛" else "原生实时动态"
+ 
+         fun send(context: Context, scenario: ReminderTestScenario) {
++            when (scenario.kind) {
++                ReminderTestKind.COURSE -> if (islandActive(context)) {
++                    IslandNotificationHelper.sendTestIslandNotification(
++                        context = context,
++                        startDelayMs = scenario.startDelayMs,
++                        durationMs = scenario.durationMs,
++                        phase = scenario.phase,
++                    )
++                } else {
++                    CourseReminderHelper.sendTestLiveNotification(
++                        context = context,
++                        startDelayMs = scenario.startDelayMs,
++                        durationMs = scenario.durationMs,
++                        phase = scenario.phase,
++                    )
++                }
++
++                ReminderTestKind.RETURN_TODAY -> sendReturnDay(context, today = true)
++                ReminderTestKind.RETURN_TOMORROW -> sendReturnDay(context, today = false)
++                ReminderTestKind.PLAIN_PREP ->
++                    CourseReminderHelper.sendReturnDayReminderNow(context, prep = true)
++                ReminderTestKind.PLAIN_BALANCE ->
++                    CourseReminderHelper.sendReturnDayReminderNow(context, prep = false)
++                ReminderTestKind.PLAIN_NEXT_DAY ->
++                    CourseReminderHelper.sendNextDayReminderNow(context)
++            }
++        }
++
++        /**
++         * 返校提醒测试：固定用「第11节 18:30」这个晚自习样例 ——
++         * 只有晚间课才能稳定验证「今晚返校」那条日子词（16:00 口径）；
++         * 假期标签取真实 span，取不到就留空（两条分支都能验到）。
++         */
++        private fun sendReturnDay(context: Context, today: Boolean) {
++            val targetDate = if (today) LocalDate.now() else LocalDate.now().plusDays(1)
++            val span = ReturnDayReminder.currentHolidaySpan(context, targetDate)
++            val holidayLabel = span?.name?.takeIf { it.isNotBlank() }?.let { "${it}最后一天" }
+             if (islandActive(context)) {
+-                IslandNotificationHelper.sendTestIslandNotification(
++                IslandNotificationHelper.sendReturnDayIslandNotification(
+                     context = context,
+-                    startDelayMs = scenario.startDelayMs,
+-                    durationMs = scenario.durationMs,
+-                    phase = scenario.phase,
++                    courseName = "大学英语Ⅱ",
++                    section = "第11节",
++                    startTime = "18:30",
++                    targetDate = targetDate,
++                    holidayLabel = holidayLabel,
++                    progressPercent = span?.progressPercent,
+                 )
+             } else {
+-                CourseReminderHelper.sendTestLiveNotification(
++                CourseReminderHelper.showReturnDayLiveNotification(
+                     context = context,
+-                    startDelayMs = scenario.startDelayMs,
+-                    durationMs = scenario.durationMs,
+-                    phase = scenario.phase,
++                    courseName = "大学英语Ⅱ",
++                    section = "第11节",
++                    startTime = "18:30",
++                    targetDate = targetDate,
++                    holidayLabel = holidayLabel,
++                    progressPercent = span?.progressPercent,
+                 )
+             }
+         }
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
+index ae24bf5..ea4b9a4 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
+@@ -57,7 +57,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
+ import com.haooz.chedule.reminder.ClassDndHelper
+ import com.haooz.chedule.reminder.CourseReminderHelper
+ import com.haooz.chedule.reminder.IslandNotificationHelper
+-import com.haooz.chedule.reminder.ReminderTestScenario
+ import com.haooz.chedule.shizuku.ShizukuManager
+ import com.haooz.chedule.ui.basic.CollapsibleTopAppBarDefaults
+ import com.haooz.chedule.ui.basic.OverlayDropdownMenu
+@@ -320,12 +319,6 @@ fun CourseReminderScreen(
+                     ),
+                     verticalArrangement = Arrangement.spacedBy(12.dp)
+                 ) {
+-                    // 提醒体检：把"设了却收不到"的常见系统原因直接摆出来
+-                    item { ReminderHealthCard() }
+-
+-                    // 超级岛 / 实时动态 测试：单独一块，不动原有板块
+-                    item { ReminderTestCard() }
+-
+                     // 开启提醒
+                     item {
+                         Card(
+@@ -365,6 +358,9 @@ fun CourseReminderScreen(
+                         }
+                     }
+ 
++                    // 提醒体检：默认一行粗略状态（放在总开关下面，先看"开没开"，再看"系统放不放行"）
++                    item { ReminderHealthCard() }
++
+                     // 提醒详情
+                     item {
+                         val masterEnabled = preClassReminder || nextDayReminder
+@@ -1425,10 +1421,18 @@ private fun buildReminderHealth(context: android.content.Context): List<Reminder
+     return out
+ }
+ 
++/**
++ * 提醒体检：**默认只显示一行粗略状态**，点一下才展开成明细。
++ *
++ * 原来是四五项一直摊开，占掉小半屏；而绝大多数时候用户只需要知道"有没有问题"。
++ * 现在概览行本身可点（右侧给「展开 / 收起」字样，不是靠猜），展开时会重新检查一次，
++ * 免得展开看到的是进页面那一刻的旧状态。
++ */
+ @Composable
+ private fun ReminderHealthCard() {
+     val context = LocalContext.current
+     var tick by remember { mutableIntStateOf(0) }
++    var expanded by remember { mutableStateOf(false) }
+     val items = remember(tick) { buildReminderHealth(context) }
+     val badCount = items.count { !it.ok }
+ 
+@@ -1439,7 +1443,14 @@ private fun ReminderHealthCard() {
+     ) {
+         Column(modifier = Modifier.fillMaxWidth()) {
+             Row(
+-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
++                modifier = Modifier
++                    .fillMaxWidth()
++                    .clickable {
++                        // 展开时重查一次，保证看到的是当前状态
++                        if (!expanded) tick++
++                        expanded = !expanded
++                    }
++                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+             ) {
+                 Text(
+@@ -1457,7 +1468,15 @@ private fun ReminderHealthCard() {
+                         androidx.compose.ui.graphics.Color(0xFFE07A2B)
+                     },
+                 )
++                Text(
++                    text = if (expanded) "收起" else "展开",
++                    style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
++                    color = MiuixTheme.colorScheme.primary,
++                    modifier = Modifier.padding(start = 10.dp),
++                )
+             }
++            AnimatedVisibility(visible = expanded) {
++            Column(modifier = Modifier.fillMaxWidth()) {
+             items.forEach { item ->
+                 Row(
+                     modifier = Modifier
+@@ -1510,71 +1529,16 @@ private fun ReminderHealthCard() {
+                 { tick++ },
+                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+             )
+-        }
+-    }
+-}
+-
+-/**
+- * 「超级岛 / 实时动态」测试板块 —— **单独一块，原有板块一行没动**。
+- *
+- * 原来全项目只有一个悬浮按钮、只有一种时序（课前 70 秒 + 课中 2 分钟），
+- * 覆盖不到「到点自动切课中」「课中距下课倒计时」「长课不中途收岛」这些真实分支，
+- * 所以像"上课倒计时正常、下课倒计时没了"这种问题只能靠碰。
+- *
+- * 这里每个场景都调用**主路径那几支发送函数**，只换时序，不复制发送逻辑 ——
+- * 避免"测的那套"和"跑的那套"分叉（本项目已经踩过文案分叉的坑）。
+- */
+-@Composable
+-private fun ReminderTestCard() {
+-    val context = LocalContext.current
+-    var channel by remember { mutableStateOf(ReminderTestScenario.channelLabel(context)) }
+-
+-    Card(
+-        cornerRadius = 20.dp,
+-        modifier = Modifier.fillMaxWidth(),
+-        insideMargin = PaddingValues(0.dp),
+-    ) {
+-        Column(modifier = Modifier.fillMaxWidth()) {
+-            Row(
+-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+-            ) {
+-                Text(
+-                    text = "超级岛 / 实时动态 测试",
+-                    style = MiuixTheme.textStyles.body1.copy(
+-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+-                    ),
+-                    color = MiuixTheme.colorScheme.onSurface,
+-                )
+-                Spacer(modifier = Modifier.weight(1f))
++            }
++            }
++            if (!expanded && badCount > 0) {
+                 Text(
+-                    text = "当前通道：$channel",
++                    text = "点这一行展开，能看到是哪几项、并直接跳去设置",
+                     style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
+                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
++                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                 )
+             }
+-            Text(
+-                text = "每个场景都按当前通道发（岛开着走岛，关掉走原生实时动态），" +
+-                    "并留足时间让你看着它走完。点一下即可，不写去重键、不影响真实提醒。",
+-                style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
+-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+-            )
+-            ReminderTestScenario.entries.forEach { scenario ->
+-                ArrowPreference(
+-                    title = scenario.label,
+-                    summary = scenario.detail,
+-                    onClick = {
+-                        ReminderTestScenario.send(context, scenario)
+-                        Toast.makeText(context, "已发送：${scenario.label}", Toast.LENGTH_SHORT).show()
+-                    },
+-                )
+-            }
+-            TextButton(
+-                "重新读取通道",
+-                { channel = ReminderTestScenario.channelLabel(context) },
+-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+-            )
+         }
+     }
+ }
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/ReminderTestActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/ReminderTestActivity.kt
+new file mode 100644
+index 0000000..3b08383
+--- /dev/null
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/ReminderTestActivity.kt
+@@ -0,0 +1,113 @@
++/** 通知 / 超级岛 / 实时动态 测试页面 */
++package com.haooz.chedule.ui.activities
++
++import android.os.Bundle
++import android.widget.Toast
++import androidx.activity.SystemBarStyle
++import androidx.activity.enableEdgeToEdge
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.navigationBarsPadding
++import androidx.compose.foundation.layout.padding
++import androidx.compose.runtime.collectAsState
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.remember
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.platform.LocalConfiguration
++import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.unit.DpOffset
++import androidx.compose.ui.unit.dp
++import com.haooz.chedule.reminder.CourseReminderHelper
++import com.haooz.chedule.reminder.IslandNotificationHelper
++import com.haooz.chedule.ui.basic.CollapsibleTopAppBar
++import com.haooz.chedule.ui.basic.LiquidGlassTextButton
++import com.haooz.chedule.ui.basic.LiquidTopBarButton
++import com.haooz.chedule.ui.basic.ProgressiveBlurTopBar
++import com.haooz.chedule.ui.basic.rememberSharedScrollBehavior
++import com.haooz.chedule.ui.utils.applyThemeAwareSystemBars
++import com.haooz.chedule.viewmodel.SettingsViewModel
++import top.yukonga.miuix.kmp.basic.Scaffold
++import top.yukonga.miuix.kmp.blur.layerBackdrop
++import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
++import top.yukonga.miuix.kmp.icon.MiuixIcons
++import top.yukonga.miuix.kmp.icon.extended.ChevronBackward
++import top.yukonga.miuix.kmp.theme.MiuixTheme
++import com.kyant.backdrop.backdrops.layerBackdrop as liquidGlassLayerBackdrop
++import androidx.activity.ComponentActivity
++import androidx.activity.compose.setContent
++import androidx.lifecycle.viewmodel.compose.viewModel
++import com.haooz.chedule.ui.theme.CourseScheduleTheme
++
++class ReminderTestActivity : ComponentActivity() {
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        enableEdgeToEdge(
++            statusBarStyle = SystemBarStyle.light(
++                android.graphics.Color.TRANSPARENT,
++                android.graphics.Color.TRANSPARENT
++            ),
++            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
++        )
++        applyThemeAwareSystemBars()
++        setContent {
++            CourseScheduleTheme {
++                val backgroundColor = MiuixTheme.colorScheme.surface
++                val backdrop = rememberLayerBackdrop {
++                    drawRect(backgroundColor)
++                    drawContent()
++                }
++                val liquidGlassBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
++                val scrollBehavior = rememberSharedScrollBehavior()
++
++                Scaffold(
++                    topBar = {
++                        ProgressiveBlurTopBar(
++                            backdrop = liquidGlassBackdrop,
++                        ) {
++                            CollapsibleTopAppBar(
++                                title = "通知与超级岛测试",
++                                largeTitle = "通知与超级岛测试",
++                                modifier = Modifier,
++                                scrollBehavior = scrollBehavior,
++                                contentPadding = {},
++                                startAction = { backdropAlpha, shadowAlpha ->
++                                    LiquidTopBarButton(
++                                        onClick = { finish() },
++                                        backdrop = liquidGlassBackdrop,
++                                        icon = MiuixIcons.ChevronBackward,
++                                        contentDescription = "返回",
++                                        performHapticFeedback = false,
++                                        iconSize = 25.dp,
++                                        iconOffset = DpOffset(x = (-2).dp, y = 0.dp),
++                                        backdropAlpha = backdropAlpha,
++                                        shadowAlpha = shadowAlpha,
++                                    )
++                                },
++                            )
++                        }
++                    }
++                ) { _ ->
++                    Box(
++                        modifier = Modifier
++                            .fillMaxSize()
++                            .layerBackdrop(backdrop)
++                    ) {
++                        // 采样层只包内容；玻璃按钮必须放在层外，否则 drawBackdrop 会采到自己导致循环采样崩溃
++                        Box(
++                            modifier = Modifier.fillMaxSize().then(
++                                Modifier.liquidGlassLayerBackdrop(liquidGlassBackdrop)
++                            )
++                        ) {
++                            ReminderTestScreen(
++                                scrollBehavior = scrollBehavior,
++                                liquidGlassBackdrop = liquidGlassBackdrop,
++                            )
++                        }
++                    }
++                }
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/ReminderTestScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/ReminderTestScreen.kt
+new file mode 100644
+index 0000000..e78ee32
+--- /dev/null
++++ b/app/src/main/java/com/haooz/chedule/ui/screens/ReminderTestScreen.kt
+@@ -0,0 +1,270 @@
++/** 通知 / 超级岛 / 实时动态 测试页面 - Screen */
++package com.haooz.chedule.ui.activities
++
++import android.Manifest
++import android.annotation.SuppressLint
++import android.content.Intent
++import android.content.pm.PackageManager
++import android.os.PowerManager
++import android.provider.Settings
++import android.widget.Toast
++import androidx.activity.result.contract.ActivityResultContracts
++import androidx.compose.animation.AnimatedVisibility
++import androidx.compose.animation.core.tween
++import androidx.compose.animation.expandVertically
++import androidx.compose.animation.fadeIn
++import androidx.compose.animation.fadeOut
++import androidx.compose.animation.shrinkVertically
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.PaddingValues
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.offset
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.foundation.lazy.rememberLazyListState
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.LaunchedEffect
++import androidx.compose.runtime.collectAsState
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableIntStateOf
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.hapticfeedback.HapticFeedbackType
++import androidx.compose.ui.input.nestedscroll.nestedScroll
++import androidx.compose.ui.platform.LocalConfiguration
++import androidx.compose.ui.platform.LocalHapticFeedback
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.style.TextAlign
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.unit.sp
++import androidx.core.content.edit
++import androidx.core.net.toUri
++import androidx.lifecycle.viewmodel.compose.viewModel
++import com.haooz.chedule.reminder.ClassDndHelper
++import com.haooz.chedule.reminder.CourseReminderHelper
++import com.haooz.chedule.reminder.IslandNotificationHelper
++import com.haooz.chedule.reminder.ReminderTestKind
++import com.haooz.chedule.reminder.ReminderTestScenario
++import com.haooz.chedule.shizuku.ShizukuManager
++import com.haooz.chedule.ui.basic.CollapsibleTopAppBarDefaults
++import com.haooz.chedule.ui.basic.OverlayDropdownMenu
++import com.haooz.chedule.ui.basic.SharedScrollBehavior
++import com.haooz.chedule.ui.basic.collapsibleTopInset
++import com.haooz.chedule.ui.utils.overScrollVertical
++import com.haooz.chedule.viewmodel.SettingsViewModel
++import top.yukonga.miuix.kmp.basic.ButtonDefaults
++import top.yukonga.miuix.kmp.basic.Card
++import top.yukonga.miuix.kmp.basic.DropdownDefaults
++import top.yukonga.miuix.kmp.basic.DropdownEntry
++import top.yukonga.miuix.kmp.basic.DropdownItem
++import top.yukonga.miuix.kmp.basic.NumberPicker
++import top.yukonga.miuix.kmp.basic.Scaffold
++import top.yukonga.miuix.kmp.basic.TextButton
++import top.yukonga.miuix.kmp.blur.layerBackdrop
++import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
++import top.yukonga.miuix.kmp.overlay.OverlayDialog
++import top.yukonga.miuix.kmp.preference.ArrowPreference
++import top.yukonga.miuix.kmp.preference.SwitchPreference
++import top.yukonga.miuix.kmp.theme.MiuixTheme
++import top.yukonga.miuix.kmp.utils.scrollEndHaptic
++import androidx.compose.ui.graphics.Color as ComposeColor
++
++/**
++ * 「通知 / 超级岛 / 实时动态」测试页。
++ *
++ * 单独拆成一个页面（原来塞在提醒设置页里，越加越长）：
++ * 场景表与分发都在 [com.haooz.chedule.reminder.ReminderTestScenario] 里，
++ * 本页只负责列表与展示 —— 发送一律走主路径那几支函数，不在这里拼文案。
++ *
++ * 通道（超级岛 / 原生实时动态）由主路径同一套判定决定，页面上直接显示出来，
++ * 免得"点了没反应却不知道发去哪了"。
++ */
++@Composable
++fun ReminderTestScreen(
++    scrollBehavior: SharedScrollBehavior? = null,
++    liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = null,
++) {
++    val context = androidx.compose.ui.platform.LocalContext.current
++    val hapticFeedback = LocalHapticFeedback.current
++    // 通道是设置项的派生值：进页面读一次，并给一个「重新读取」入口
++    var channel by remember { mutableStateOf(ReminderTestScenario.channelLabel(context)) }
++
++    Box(modifier = Modifier.fillMaxSize()) {
++        Scaffold(
++            topBar = {}
++        ) { paddingValues ->
++            Box(modifier = Modifier.fillMaxSize()) {
++                val listState = androidx.compose.foundation.lazy.rememberLazyListState()
++                androidx.compose.foundation.lazy.LazyColumn(
++                    state = listState,
++                    modifier = Modifier
++                        .fillMaxSize()
++                        .overScrollVertical()
++                        .scrollEndHaptic(hapticFeedbackType = HapticFeedbackType.TextHandleMove)
++                        .collapsibleTopInset(scrollBehavior)
++                        .then(
++                            scrollBehavior?.let { Modifier.nestedScroll(it.nestedScrollConnection) } ?: Modifier
++                        ),
++                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
++                        start = 16.dp,
++                        top = paddingValues.calculateTopPadding() +
++                            CollapsibleTopAppBarDefaults.CollapsedHeight + 24.dp,
++                        end = 16.dp,
++                        bottom = 120.dp,
++                    ),
++                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
++                ) {
++                    item {
++                        ReminderTestChannelCard(
++                            channel = channel,
++                            onRefresh = { channel = ReminderTestScenario.channelLabel(context) },
++                        )
++                    }
++
++                    item { ReminderTestSectionTitle("课程链路（走当前通道）") }
++                    item { ReminderTestScenarioCard(courseScenarios(), channel) }
++
++                    item { ReminderTestSectionTitle("返校链路") }
++                    item { ReminderTestScenarioCard(returnScenarios(), channel) }
++
++                    item { ReminderTestSectionTitle("其他通知") }
++                    item { ReminderTestScenarioCard(plainScenarios(), channel) }
++
++                    item { ReminderTestFootnote() }
++                }
++            }
++        }
++    }
++}
++
++/** 课程链路：课前倒计时 / 已上课 / 课中 / 长课 */
++private fun courseScenarios() = ReminderTestScenario.entries.filter {
++    it.kind == ReminderTestKind.COURSE
++}
++
++/** 返校链路：返校当日 / 次日 + 清单 / 余额（后两条是普通通知） */
++private fun returnScenarios() = ReminderTestScenario.entries.filter {
++    it.kind == ReminderTestKind.RETURN_TODAY ||
++        it.kind == ReminderTestKind.RETURN_TOMORROW ||
++        it.kind == ReminderTestKind.PLAIN_PREP ||
++        it.kind == ReminderTestKind.PLAIN_BALANCE
++}
++
++/** 其他普通通知：次日课程提醒 */
++private fun plainScenarios() = ReminderTestScenario.entries.filter {
++    it.kind == ReminderTestKind.PLAIN_NEXT_DAY
++}
++
++@Composable
++private fun ReminderTestChannelCard(channel: String, onRefresh: () -> Unit) {
++    Card(
++        cornerRadius = 20.dp,
++        modifier = Modifier.fillMaxWidth(),
++        insideMargin = PaddingValues(0.dp),
++    ) {
++        Column(modifier = Modifier.fillMaxWidth()) {
++            Row(
++                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
++                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
++            ) {
++                Text(
++                    text = "当前通道",
++                    style = MiuixTheme.textStyles.body1.copy(
++                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
++                    ),
++                    color = MiuixTheme.colorScheme.onSurface,
++                )
++                Spacer(modifier = Modifier.weight(1f))
++                Text(
++                    text = channel,
++                    style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
++                    color = MiuixTheme.colorScheme.primary,
++                )
++            }
++            Text(
++                text = "课程链路与返校提醒都按这个通道发：开了超级岛走岛，关掉走原生实时动态。" +
++                    "清单 / 余额 / 次日提醒是普通通知，不走岛。",
++                style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
++                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
++                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
++            )
++            TextButton(
++                "重新读取通道",
++                onRefresh,
++                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
++            )
++        }
++    }
++}
++
++@Composable
++private fun ReminderTestSectionTitle(text: String) {
++    Text(
++        text = text,
++        style = MiuixTheme.textStyles.body1.copy(
++            fontSize = 13.sp,
++            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
++        ),
++        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
++        modifier = Modifier.padding(start = 4.dp, top = 4.dp),
++    )
++}
++
++@Composable
++private fun ReminderTestScenarioCard(
++    scenarios: List<ReminderTestScenario>,
++    channel: String,
++) {
++    val context = androidx.compose.ui.platform.LocalContext.current
++    Card(
++        cornerRadius = 20.dp,
++        modifier = Modifier.fillMaxWidth(),
++        insideMargin = PaddingValues(0.dp),
++    ) {
++        Column(modifier = Modifier.fillMaxWidth()) {
++            scenarios.forEach { scenario ->
++                ArrowPreference(
++                    title = scenario.label,
++                    summary = scenario.detail,
++                    onClick = {
++                        ReminderTestScenario.send(context, scenario)
++                        val isIsland = scenario.kind == ReminderTestKind.COURSE ||
++                            scenario.kind == ReminderTestKind.RETURN_TODAY ||
++                            scenario.kind == ReminderTestKind.RETURN_TOMORROW
++                        val where = if (isIsland) channel else "普通通知"
++                        Toast.makeText(context, "已发送：${scenario.label}（$where）", Toast.LENGTH_SHORT)
++                            .show()
++                    },
++                )
++            }
++        }
++    }
++}
++
++@Composable
++private fun ReminderTestFootnote() {
++    Text(
++        text = "说明：\n" +
++            "• 课程场景的「到点自动切换」靠刷新链对账，最多滞后一个刷新周期，属正常；\n" +
++            "• 课中卡到下课点会自动收岛，那是时序走到了，不是掉线；\n" +
++            "• 「课前提醒」的普通通知没有单独入口：它和岛 / 实时动态共用\n" +
++            "  sendPreClassNotification 的同一条时间线，由上面的课程场景覆盖。",
++        style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
++        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
++        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
++    )
++}
+diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt
+index f63d22d..c0735b0 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt
+@@ -49,6 +49,7 @@ import com.haooz.chedule.data.TeachingWeekReorganization
+ import com.haooz.chedule.data.TimeConfig
+ import com.haooz.chedule.ui.activities.AboutActivity
+ import com.haooz.chedule.ui.activities.CourseReminderActivity
++import com.haooz.chedule.ui.activities.ReminderTestActivity
+ import com.haooz.chedule.ui.activities.CourseTimeSettingsActivity
+ import com.haooz.chedule.ui.activities.HolidaySettingsActivity
+ import com.haooz.chedule.ui.activities.PreferenceSettingsActivity
+@@ -397,6 +398,16 @@ fun SettingsScreen(
+                                         reminderSettingsLauncher.launch(intent)
+                                     }
+                                 )
++                                ArrowPreference(
++                                    title = "通知与超级岛测试",
++                                    summary = "课前/课中/返校岛与实时动态，逐个试",
++                                    holdDownState = "ReminderTestActivity" in activeSecondaryActivities,
++                                    onClick = {
++                                        context.startActivity(
++                                            Intent(context, ReminderTestActivity::class.java)
++                                        )
++                                    }
++                                )
+                                 ArrowPreference(
+                                     title = "节假日与调休",
+                                     holdDownState = "HolidaySettingsActivity" in activeSecondaryActivities,
+-- 
+2.55.0
+

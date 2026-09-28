@@ -1,0 +1,35 @@
+From 811c1f91ed4b64bcd0a5c2181de5367274fbd14a Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Sun, 27 Sep 2026 21:52:26 +0800
+Subject: [PATCH 17/22] =?UTF-8?q?v35:=20=E4=BF=AE=20v34=20=E7=9A=84?=
+ =?UTF-8?q?=E7=BC=96=E8=AF=91=E9=94=99=E8=AF=AF=20=E2=80=94=E2=80=94=20Com?=
+ =?UTF-8?q?posable=20=E5=86=85=E7=9A=84=E5=B1=80=E9=83=A8=E5=87=BD?=
+ =?UTF-8?q?=E6=95=B0=E4=B8=8D=E8=83=BD=E5=8A=A0=20private?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+CI 首次编译报错：e: UpdateDialog.kt:153:5 Modifier 'private' is not applicable to 'local function'。
+这正是「v34 未本地编译、交给 CI 验证」的预期风险，CI 按设计红叉拦住了，没有把坏包发出去。
+
+(cherry picked from commit d4ceb3df00fda02fba1f43ca930b5ec681eab2a5)
+---
+ .../main/java/com/haooz/chedule/ui/components/UpdateDialog.kt   | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt b/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
+index 344ca16..9c0542d 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
+@@ -150,7 +150,7 @@ internal fun UpdateDialog(liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = nu
+      * 对应的自动构建流水线见仓库 master 的 .github/workflows/sync-upstream-build-release.yml
+      * （全程在 GitHub Actions 构建、用 fork keystore 签名）。
+      */
+-    private fun openForkReleases() {
++    fun openForkReleases() {   // 局部函数不能加 private（CI 报 Modifier 'private' is not applicable to 'local function'）
+         val url = "https://github.com/Jing494/NexioSchedule/releases/latest"
+         val ok = runCatching {
+             context.startActivity(
+-- 
+2.55.0
+

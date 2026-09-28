@@ -1,0 +1,135 @@
+From 54b93e690c1322739f0e0a97fc28c0303585103f Mon Sep 17 00:00:00 2001
+From: dsh-local <dsh@local>
+Date: Sat, 26 Sep 2026 21:58:58 +0800
+Subject: [PATCH 02/22] =?UTF-8?q?=E4=BD=99=E9=A2=9D/=E6=B8=85=E5=8D=95?=
+ =?UTF-8?q?=E6=94=B9=E4=B8=BA=E7=B2=BE=E7=A1=AE=E9=97=B9=E9=92=9F=EF=BC=88?=
+ =?UTF-8?q?=E8=87=AA=E7=BB=AD=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- 新增 TYPE_RETURN_DAILY_BALANCE / TYPE_RETURN_DAILY_PREP 与两个精确闹钟（RC 8101/8102）
+- 到点即发，不再依赖刷新链的下一跳（空闲时最坏晚约 30 分钟）
+- 自续：精确闹钟触发后走同一套判定发送，并顺手把明天的闹钟排上
+- 设置关闭时取消对应闹钟；刷新链那套保留作兜底（闹钟丢失/Doze 延迟仍能补发）
+
+(cherry picked from commit 90b22cedad1a243399fb8c129e48fd7fc8059413)
+---
+ .../haooz/chedule/reminder/AlarmReceiver.kt   |  7 ++
+ .../chedule/reminder/CourseReminderHelper.kt  | 75 +++++++++++++++++++
+ 2 files changed, 82 insertions(+)
+
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
+index e4ca747..90f626d 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
+@@ -115,6 +115,13 @@ class AlarmReceiver : BroadcastReceiver() {
+                 CourseReminderHelper.onAlarmProcessed(context)
+             }
+ 
++            CourseReminderHelper.TYPE_RETURN_DAILY_BALANCE,
++            CourseReminderHelper.TYPE_RETURN_DAILY_PREP -> {
++                // 精确闹钟到点：直接走同一套判定（内部有"当天只发一次"去重），并顺手排下一天
++                CourseReminderHelper.checkDailyReturnDayNotifications(context)
++                CourseReminderHelper.onAlarmProcessed(context)
++            }
++
+             CourseReminderHelper.TYPE_NEXT_DAY -> {
+                 // 学期未开始（未到开学日期所在周的周一）：不发送次日提醒
+                 if (!CourseReminderHelper.isSemesterStarted(repository)) {
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+index a38d3e4..f71ed1d 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+@@ -92,6 +92,11 @@ object CourseReminderHelper {
+     const val RETURN_DAY_LIVE_ID = 2100
+ 
+     /** 假期余额 / 返校准备清单：普通通知 ID 与当日去重键 */
++    /** 余额/清单的精确闹钟类型与请求码（自续：到点发送后顺手排下一天） */
++    const val TYPE_RETURN_DAILY_BALANCE = 30
++    const val TYPE_RETURN_DAILY_PREP = 31
++    private const val RC_RETURN_BALANCE_ALARM = 8101
++    private const val RC_RETURN_PREP_ALARM = 8102
+     private const val NOTIFY_ID_RETURN_BALANCE = 300
+     private const val NOTIFY_ID_RETURN_PREP = 301
+     private const val KEY_RETURN_BALANCE_DATE = "balance_date"
+@@ -1316,6 +1321,76 @@ object CourseReminderHelper {
+         }
+ 
+         maybeUpdateReturnDayLiveNotification(context, repository)
++
++        // 精确闹钟（自续）：到点即发，不再依赖刷新链的下一跳（空闲时最坏晚约 30 分钟）。
++        // 刷新链那套保留作兜底 —— 闹钟被系统清掉/Doze 延迟时仍能补发。
++        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
++        if (repository.getReturnDayBalanceEnabled()) {
++            scheduleReturnDayExactAlarm(
++                context, alarmManager, RC_RETURN_BALANCE_ALARM, TYPE_RETURN_DAILY_BALANCE, balanceTarget,
++            )
++        } else {
++            cancelReturnDayExactAlarm(context, alarmManager, RC_RETURN_BALANCE_ALARM, TYPE_RETURN_DAILY_BALANCE)
++        }
++        if (repository.getReturnDayPrepEnabled()) {
++            scheduleReturnDayExactAlarm(
++                context,
++                alarmManager,
++                RC_RETURN_PREP_ALARM,
++                TYPE_RETURN_DAILY_PREP,
++                java.time.LocalTime.of(
++                    repository.getReturnDayPrepHour(),
++                    repository.getReturnDayPrepMinute(),
++                ),
++            )
++        } else {
++            cancelReturnDayExactAlarm(context, alarmManager, RC_RETURN_PREP_ALARM, TYPE_RETURN_DAILY_PREP)
++        }
++    }
++
++    /** 把余额/清单的精确闹钟排到「今天该时刻」；已过则排到明天（自续链的锚点）。 */
++    private fun scheduleReturnDayExactAlarm(
++        context: Context,
++        alarmManager: AlarmManager,
++        requestCode: Int,
++        type: Int,
++        target: java.time.LocalTime,
++    ) {
++        val intent = Intent(context, AlarmReceiver::class.java).apply {
++            putExtra(EXTRA_REMINDER_TYPE, type)
++        }
++        val pendingIntent = PendingIntent.getBroadcast(
++            context,
++            requestCode,
++            intent,
++            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
++        )
++        val at = Calendar.getInstance().apply {
++            set(Calendar.HOUR_OF_DAY, target.hour)
++            set(Calendar.MINUTE, target.minute)
++            set(Calendar.SECOND, 0)
++            set(Calendar.MILLISECOND, 0)
++            if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DATE, 1)
++        }
++        setCourseBoundaryAlarm(alarmManager, at.timeInMillis, pendingIntent)
++    }
++
++    private fun cancelReturnDayExactAlarm(
++        context: Context,
++        alarmManager: AlarmManager,
++        requestCode: Int,
++        type: Int,
++    ) {
++        val intent = Intent(context, AlarmReceiver::class.java).apply {
++            putExtra(EXTRA_REMINDER_TYPE, type)
++        }
++        val pendingIntent = PendingIntent.getBroadcast(
++            context,
++            requestCode,
++            intent,
++            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
++        )
++        alarmManager.cancel(pendingIntent)
+     }
+ 
+     /**
+-- 
+2.55.0
+

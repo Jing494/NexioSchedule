@@ -1,0 +1,116 @@
+From 5c815b86ba0f7e4980f1047f244b70b951eda538 Mon Sep 17 00:00:00 2001
+From: dsh-local <dsh@local>
+Date: Sun, 27 Sep 2026 08:31:41 +0800
+Subject: [PATCH 07/22] =?UTF-8?q?v25=EF=BC=9A=E6=8B=96=E6=8B=BD=E7=AC=AC?=
+ =?UTF-8?q?=E4=BA=8C=E9=98=B6=E6=AE=B5=20=E2=80=94=E2=80=94=20=E8=90=BD?=
+ =?UTF-8?q?=E7=82=B9=E6=A0=BC=E5=AD=90=E5=AF=B9=E4=BA=86=EF=BC=8C=E5=8D=A1?=
+ =?UTF-8?q?=E7=89=87=E4=BB=8D=E5=90=B8=E9=99=84=E5=88=B0=E5=81=8F=E9=AB=98?=
+ =?UTF-8?q?=201.5=20=E6=A0=BC?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+用户实测（装 v24 后）：阴影不再错位，但"课程图标"上移一格。
+
+根因：v24 只统一了"落点是哪一格"，没有统一"那一格画在哪个 Y"。
+sectionTopPx() 同样是**均匀模型**（没有特殊块偏移），而它是这三处的唯一来源：
+  · computeTargetCenter —— 松手后卡片吸附到的位置
+  · 长按拖拽起点 anchorCenter
+  · courseVisualHeightPx —— 浮层/卡片高度
+于是同一份几何又分成两套口径：落点表（v24 已改为实际 sectionTop）与位置表（仍是均匀）。
+阴影由 DayColumn 用 grid.sectionTop 画，所以它先对了；浮层走 sectionTopPx，于是偏高 1.5 格。
+
+修：sectionTopPx 也优先用 geom.sectionTopDp（渲染实际用的表），均匀模型降级为兜底。
+这样"落点格子 / 阴影 / 吸附位置 / 拖拽起点 / 卡片高度"全部同源。
+
+顺带同类两处：
+- 拖拽过程中算首节中心用的 cardHeightPx = sectionCount*sectionH（均匀），跨分界带的课会算错
+  → 改用 courseVisualHeightPx
+- 交换飞行动画的高度同上 → 改用 courseVisualHeightPx
+
+离线复算（dist-v25/verify_droptarget.py）新增"吸附位置"一节：
+  第 1~6 节 old==new；第 7~12 节 old 固定偏 -1.50 格（向上），new 全部正确。
+
+(cherry picked from commit e82760065d3b91e7770cdb0c65880e86067b4272)
+---
+ .../chedule/ui/activities/MainActivity.kt     | 44 ++++++++++++++++---
+ 1 file changed, 38 insertions(+), 6 deletions(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
+index a117561..9455cf9 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
+@@ -1853,9 +1853,21 @@ fun CourseScheduleApp() {
+     fun dividerPxFor(geom: ScheduleGridGeometry): Float =
+         if (geom.showBreakDividers) with(density) { 24.dp.toPx() } else 0f
+ 
++    /**
++     * 节次顶部 → root px。
++     *
++     * **优先用渲染实际用的 sectionTop**（`geom.sectionTopDp`）：computeSpecialGridLayout 会让
++     * 特殊块（自习/自定义时间块）在其时间起点占位，把下方节次整体下移；
++     * 下面那段"均匀高度 + 两个分界带"是**没有这层偏移**的旧模型。
++     *
++     * 这里曾经只用旧模型，而落点反查（computeDropTarget）在 v24 已改成用实际 sectionTop ——
++     * 于是出现"落点格子对了、卡片却吸附到偏高 1.5 格的位置"（用户实测：阴影对了，课程图标上移一格）。
++     * 统一到同一张表，三处调用（吸附位置 / 拖拽起点 / 卡片高度）一起修好。
++     */
+     fun sectionTopPx(geom: ScheduleGridGeometry, section: Int, dividerPx: Float): Float {
+         val sectionH = geom.sectionHeightPx
+         if (sectionH <= 0f) return 0f
++        geom.sectionTopDp[section]?.let { return with(density) { it.dp.toPx() } }
+         val morning = geom.morningSections
+         val afternoon = geom.afternoonSections
+         return when {
+@@ -3372,11 +3384,21 @@ fun CourseScheduleApp() {
+                                                 // 落点仅跨格时写 state，避免逐帧重组课表
+                                                 val course = draggedCardCourse
+                                                 if (course != null) {
++                                                    val dragGeom = gridGeometry
+                                                     val sectionH =
+-                                                        gridGeometry?.sectionHeightPx ?: 0f
+-                                                    val sectionCount =
+-                                                        course.endSection - course.startSection + 1
+-                                                    val cardHeightPx = sectionCount * sectionH
++                                                        dragGeom?.sectionHeightPx ?: 0f
++                                                    // 高度必须与浮层/锚点同源（含分界缝与特殊块），
++                                                    // 否则跨分界带的课在拖拽中会算错首节中心 → 落点偏
++                                                    val cardHeightPx = if (dragGeom != null) {
++                                                        courseVisualHeightPx(
++                                                            dragGeom,
++                                                            course.startSection,
++                                                            course.endSection,
++                                                            dividerPxFor(dragGeom)
++                                                        )
++                                                    } else {
++                                                        (course.endSection - course.startSection + 1) * sectionH
++                                                    }
+                                                     val centerX = draggedCardPosition.x + offsetX
+                                                     val cardTopY =
+                                                         draggedCardPosition.y + offsetY - cardHeightPx / 2f
+@@ -4312,10 +4334,20 @@ fun CourseScheduleApp() {
+                         val centerX = swapFlightOriginCenter.x + swapFlightOffsetX.value
+                         val centerY = swapFlightOriginCenter.y + swapFlightOffsetY.value
+                         val widthPx = swapFlightWidth
+-                        val sectionCount = swapCourse.endSection - swapCourse.startSection + 1
+                         val sectionH = gridGeometry?.sectionHeightPx
+                             ?: with(density) { displayAppearance.cardHeight.dp.toPx() }
+-                        val heightPx = sectionCount * sectionH
++                        // 与网格里卡片的外接框同源（含分界缝），避免跨分界带的课飞行动画高度偏矮
++                        val swapGeom = gridGeometry
++                        val heightPx = if (swapGeom != null) {
++                            courseVisualHeightPx(
++                                swapGeom,
++                                swapCourse.startSection,
++                                swapCourse.endSection,
++                                dividerPxFor(swapGeom)
++                            )
++                        } else {
++                            (swapCourse.endSection - swapCourse.startSection + 1) * sectionH
++                        }
+                         val offsetX = with(density) { (centerX - widthPx / 2f).toDp() }
+                         val offsetY = with(density) { (centerY - heightPx / 2f).toDp() }
+                         val width = with(density) { widthPx.toDp() }
+-- 
+2.55.0
+

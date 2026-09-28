@@ -1,0 +1,535 @@
+From a8f1ebc0391ec93f2155ec564ababf9d90208545 Mon Sep 17 00:00:00 2001
+From: dsh-local <dsh@local>
+Date: Sun, 27 Sep 2026 07:34:06 +0800
+Subject: [PATCH 04/22] =?UTF-8?q?v22=EF=BC=9A=E4=BF=AE=E6=A4=AD=E5=9C=86?=
+ =?UTF-8?q?=E4=BC=AA=E5=BD=B1=EF=BC=88=E5=9B=9E=E6=BB=9A=20EdgeLight=20?=
+ =?UTF-8?q?=E5=80=BC=E6=AF=94=E8=BE=83=EF=BC=89+=20=E6=96=87=E6=A1=88=20+?=
+ =?UTF-8?q?=20=E6=8C=89=E5=B0=8F=E7=B1=B3=E5=B2=9B/Android=20=E5=AE=9E?=
+ =?UTF-8?q?=E6=97=B6=E6=9B=B4=E6=96=B0=E8=A7=84=E8=8C=83=E4=BF=AE=E6=AD=A3?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+【P0 椭圆伪影 —— 我上一轮引入的 bug】
+- EdgeLightElement 改按值比较后，动态 shape（rememberDynamicCornerRadiusShape）在动画期间
+  被判定为'相等' → update() 不再调用 → invalidateOutlineCache() 不再执行 → outline 冻结在
+  fraction≈0 那次的 25dp/0.24≈104dp 圆角上。104dp 圆角落在 200×149dp 面板上就是用户看到的
+  '椭圆形的线'。深色模式描边更亮所以更明显。→ 整文件回滚到 3ba856b（与上游一致）
+- 同类隐患复查：全工程只有 EdgeLightModifier 覆写了 equals；BgEffect/Overscroll 未覆写，安全
+
+【文案】
+- 返校倒计时："距返校<课名>还有 N 小时" → "距<课名>（18:30）还有 5 小时"；不足 1 小时改说分钟
+- 假期余额：改为假期期间每天都显示「今天是<假期名>第 N 天 · 还剩 M 天 / 最后一天」
+
+【按规范修正（小米超级岛模板库 PDF + Android live-update 文档）】
+- 返校岛：摘掉 hintInfo（原来落到'已上课'态，会被写成「已上课/现在」），B 区标题换成节次；
+  组件组合因此正好等于模板6（文本组件2+识别图形组件1+进度组件2），而不是清单里不存在的四组件组合
+- A/B 区空值兜底到 title（规范要求 A 区'不能为空'，原来课程名为空会静默不出岛）
+- 提升 API（setRequestPromotedOngoing / setShortCriticalText）失败不再静默吞掉，留 warn 痕迹
+- XMSF 绕白名单：disable 前落盘'待恢复'标记，恢复成功才清；启动路径自愈
+  （原来进程在这 100ms 窗口被杀 → 小米推送服务网络一直是关的）
+- 修正 3 处误导性的模板号注释（把模板9说成模板6）
+
+【其他】
+- ensureNotificationChannels 改为 10 分钟心跳复核（原一次性布尔会让'通道被用户删掉'后不再重建）
+
+(cherry picked from commit bb6e7738570c100d11b1e23cea51345fe333d9f7)
+---
+ .../haooz/chedule/data/ReturnDayReminder.kt   | 56 ++++++++++----
+ .../chedule/reminder/CourseReminderHelper.kt  | 40 ++++++++--
+ .../reminder/IslandNotificationHelper.kt      | 73 ++++++++++++++-----
+ .../haooz/chedule/shizuku/ShizukuManager.kt   | 49 +++++++++++++
+ .../ui/effects/edgelight/EdgeLightModifier.kt | 22 +-----
+ 5 files changed, 184 insertions(+), 56 deletions(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
+index 6df9488..b1028c2 100644
+--- a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
++++ b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
+@@ -93,10 +93,18 @@ object ReturnDayReminder {
+         val lastDate: LocalDate,
+         val daysLeft: Int,
+     ) {
++        /** 这段假期一共几天。 */
++        val totalDays: Int
++            get() = ChronoUnit.DAYS.between(firstDate, lastDate).toInt() + 1
++
++        /** 今天是这段假期的第几天（1 起）。首日 = 1，末日 = [totalDays]。 */
++        val dayIndex: Int
++            get() = (totalDays - daysLeft).coerceIn(1, totalDays.coerceAtLeast(1))
++
+         /** 假期进度（0~100），用于实时动态的进度条。单日假期给 0。 */
+         val progressPercent: Int
+             get() {
+-                val total = ChronoUnit.DAYS.between(firstDate, lastDate).toInt() + 1
++                val total = totalDays
+                 if (total <= 1) return 0
+                 val passed = (total - daysLeft).coerceIn(0, total)
+                 return (passed * 100 / total).coerceIn(0, 100)
+@@ -142,8 +150,9 @@ object ReturnDayReminder {
+     /**
+      * 今日页 / 小部件用的一句话状态。不适用时返回 null（调用方保持原样）。
+      *
+-     * - 返校日 → "今天/明天是中秋最后一天，返校啦"
+-     * - 假期中（仅当天）→ "中秋还剩 2 天"
++     * - 返校日（今天）→ "今天是中秋最后一天 · 距晚自习（18:30）还有 5 小时"
++     * - 返校日（次日）→ "明天是中秋最后一天 · 晚自习 18:30 开始"
++     * - 假期中（仅当天）→ "今天是中秋第 2 天 · 还剩 1 天"
+      */
+     fun statusText(
+         context: Context,
+@@ -161,30 +170,51 @@ object ReturnDayReminder {
+             // 注意：中文紧跟在 $label 后面会被当成标识符（$label是 不是 $label + 是），必须加花括号
+             val where = if (span != null) "${label}是${span.name}最后一天" else "${label}是周末最后一天"
+             val what = returnCourseName?.takeIf { it.isNotBlank() }
++            val hasTime = what != null && !returnStartTime.isNullOrBlank()
+             // 只有"今天"算倒计时才有意义（次日提醒等场景算出来是负数或几十小时）
+-            val hours = if (isToday) hoursUntil(returnStartTime) else null
++            val remaining = if (isToday) remainingText(returnStartTime) else null
+             return when {
+-                hours != null && hours > 0 -> "$where，距返校${what ?: ""}还有 $hours 小时"
+-                what != null && !returnStartTime.isNullOrBlank() ->
+-                    "$where，${what} $returnStartTime 开始"
++                // 原句「距返校${课名}还有 N 小时」在没有课名时会变成「距返校还有」，
++                // 有课名时又缺停顿；改成「距<课名>（18:30）还有 …」/「距返校还有 …」，用 · 分段。
++                // 另外不足 1 小时原来向上取整成「1 小时」，起不到倒计时作用 —— 现在改说分钟。
++                remaining != null && hasTime -> "$where · 距${what}（$returnStartTime）还有 $remaining"
++                remaining != null -> "$where · 距返校还有 $remaining"
++                hasTime -> "$where · $what $returnStartTime 开始"
+                 else -> "$where，返校啦"
+             }
+         }
+-        // 假期余额：与总开关**解耦**（余额是假期信息，不是豁免功能的一部分）。
++        // 假期余额 / 假期进度：与总开关**解耦**（余额是假期信息，不是豁免功能的一部分）。
+         // 但只在「当天」显示 —— 在次日小部件上按明天算余额会说成"还剩 N 天"，
+         // 用户读到的是今天的信息，属于串味；非当天时返回 null 让调用方保持原样。
++        //
++        // 形态改成「今天是<假期名>第 N 天」，假期期间**每天**都显示，
++        // 而不是只在最后一天说「今天是 X 最后一天」；剩余天数作为次要信息跟在后面。
+         if (span != null && isToday) {
++            val head = "今天是${span.name}第 ${span.dayIndex} 天"
+             return if (span.daysLeft > 0) {
+-                "${span.name}还剩 ${span.daysLeft} 天"
++                "$head · 还剩 ${span.daysLeft} 天"
+             } else {
+-                "今天是${span.name}最后一天"
++                "$head · 最后一天"
+             }
+         }
+         return null
+     }
+ 
+-    /** 距某个 "HH:mm" 还有多少小时（向上取整）；已过或格式非法返回 null。 */
+-    private fun hoursUntil(startTime: String?): Int? {
++    /**
++     * 距某个 "HH:mm" 还有多久，返回可直接拼进句子的短文案。
++     * 不足 1 小时说分钟（倒计时的意义就在这里），否则给「N 小时 M 分钟」；
++     * 已过或格式非法返回 null。
++     */
++    private fun remainingText(startTime: String?): String? {
++        val minutes = minutesUntil(startTime) ?: return null
++        if (minutes < 60) return "$minutes 分钟"
++        val h = minutes / 60
++        val m = minutes % 60
++        return if (m == 0L) "$h 小时" else "$h 小时 $m 分钟"
++    }
++
++    /** 距某个 "HH:mm" 还有多少分钟；已过或格式非法返回 null。 */
++    private fun minutesUntil(startTime: String?): Long? {
+         val parts = startTime?.trim().orEmpty().split(":")
+         if (parts.size != 2) return null
+         val hour = parts[0].toIntOrNull() ?: return null
+@@ -194,6 +224,6 @@ object ReturnDayReminder {
+         }.getOrNull() ?: return null
+         val minutes = java.time.Duration.between(java.time.LocalTime.now(), target).toMinutes()
+         if (minutes <= 0) return null
+-        return ((minutes + 59) / 60).toInt()
++        return minutes
+     }
+ }
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+index 860d708..417d573 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+@@ -60,6 +60,21 @@ object CourseReminderHelper {
+         if (debugEnabled(context)) android.util.Log.d(TAG, message)
+     }
+ 
++    /**
++     * 提升（promoted ongoing）相关调用失败时**不能静默**。
++     *
++     * 这几个 API 一旦抛异常（例如系统不支持/权限被撤），通知照样发出去，
++     * 但会**退化成普通通知**——用户看到的是"没有实时动态"，而日志里一个字都没有，
++     * 无法归因。所以失败一律留 warn 痕迹。这些调用每次发通知最多两三次，不在热路径上。
++     */
++    private inline fun promotedCatching(tag: String, block: () -> Unit) {
++        try {
++            block()
++        } catch (e: Exception) {
++            android.util.Log.w(TAG, "promoted-api failed: $tag (${e.javaClass.simpleName}: ${e.message})")
++        }
++    }
++
+     const val EXTRA_REMINDER_TYPE = "reminder_type"
+     const val EXTRA_COURSE_NAME = "course_name"
+     const val EXTRA_COURSE_SECTION = "course_section"
+@@ -400,6 +415,9 @@ object CourseReminderHelper {
+             // 立即占位：检查与更新必须原子，否则两条并发线程会同时通过判断、各全量重排一次
+             lastServiceStartAt = now
+         }
++        // 启动路径自愈：上次给超级岛"绕白名单"时把小米推送服务断网，若进程在恢复前被杀，
++        // 网络会一直是关的。这里补一次恢复（没标记时是一次 SharedPreferences 读，代价可忽略）。
++        runCatching { com.haooz.chedule.shizuku.ShizukuManager.healPendingXmsfRestore(context) }
+         doStartReminderService(context, repository)
+     }
+ 
+@@ -1603,8 +1621,8 @@ object CourseReminderHelper {
+                         .setProgress(progressPercent.coerceIn(0, 100))
+                 )
+             }
+-            runCatching { styleBuilder.setRequestPromotedOngoing(true) }
+-            runCatching { styleBuilder.setShortCriticalText("明天返校") }
++            promotedCatching("returnDay.setRequestPromotedOngoing") { styleBuilder.setRequestPromotedOngoing(true) }
++            promotedCatching("returnDay.setShortCriticalText") { styleBuilder.setShortCriticalText("明天返校") }
+             manager.notify(
+                 RETURN_DAY_LIVE_ID,
+                 styleBuilder.build().apply {
+@@ -1739,8 +1757,8 @@ object CourseReminderHelper {
+                         .setProgress(liveProgress)
+                 )
+             }
+-            runCatching { styleBuilder.setRequestPromotedOngoing(true) }
+-            runCatching { styleBuilder.setShortCriticalText(shortCriticalText) }
++            promotedCatching("inClass.setRequestPromotedOngoing") { styleBuilder.setRequestPromotedOngoing(true) }
++            promotedCatching("inClass.setShortCriticalText") { styleBuilder.setShortCriticalText(shortCriticalText) }
+             styleBuilder.build().apply { flags = flags or Notification.FLAG_ONLY_ALERT_ONCE }
+         } else {
+             NotificationCompat.Builder(context, CHANNEL_LIVE_ID)
+@@ -1850,12 +1868,20 @@ object CourseReminderHelper {
+      * 原实现每次发通知都 `createNotificationChannel` ×2 —— 那就是 2 次 binder 往返 +
+      * 2 个 NotificationChannel 分配。课中提醒是**每分钟**发一次的，
+      * 等于每分钟白付两次跨进程调用去设置同一个通道。
++     *
++     * 但**不能只用一个布尔量永久跳过**：用户可以在系统设置里把通道删掉，
++     * 而 `createNotificationChannel` 正好是"被删了会重建"的那条路径；
++     * 永久跳过会让之后的通知静默丢弃。所以做成 10 分钟心跳复核：
++     * 每分钟那条热路径照样零开销，通道被删也能在 10 分钟内自愈。
+      */
++    private const val CHANNEL_ENSURE_INTERVAL_MS = 10 * 60 * 1000L
++
+     @Volatile
+-    private var notificationChannelsReady = false
++    private var notificationChannelsEnsuredAt = 0L
+ 
+     private fun ensureNotificationChannels(context: Context) {
+-        if (notificationChannelsReady) return
++        val now = android.os.SystemClock.elapsedRealtime()
++        if (now - notificationChannelsEnsuredAt < CHANNEL_ENSURE_INTERVAL_MS) return
+         val manager = context.getSystemService(NotificationManager::class.java)
+         val alertChannel = NotificationChannel(
+             CHANNEL_REMINDER_ID,
+@@ -1883,7 +1909,7 @@ object CourseReminderHelper {
+         }
+         manager.createNotificationChannel(alertChannel)
+         manager.createNotificationChannel(liveChannel)
+-        notificationChannelsReady = true
++        notificationChannelsEnsuredAt = android.os.SystemClock.elapsedRealtime()
+     }
+ 
+     fun showReminderNotification(
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
+index c00d56e..38ac3bc 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
+@@ -28,7 +28,9 @@ object IslandNotificationHelper {
+     private const val CHANNEL_ID = "course_reminder_island"
+     private const val CHANNEL_NAME = "课程提醒超级岛"
+     private const val KEY_ISLAND_EXPAND_GLOW_ENABLED = "island_expand_glow_enabled"
+-    // 课中提醒：到点后「已上课」替换为模板6进度卡片
++    // 课中提醒：到点后「已上课」替换为课中卡片。
++    // 注意：课中走的是 buildInClassIslandParamsJson（展开态=模板9：文本组件2+识别图形组件1+按钮组件2），
++    // 全项目**没有**课中进度卡片，别再按"模板6进度"去理解这条路径。
+     const val KEY_IN_CLASS_REMINDER = "island_in_class_enabled"
+     // 官方必选：运营场景标识
+     private const val BUSINESS_TAG = "course_reminder"
+@@ -41,7 +43,7 @@ object IslandNotificationHelper {
+     // 「已上课」独立 ID：同 ID 更新被岛框架视为静默替换，Chronometer 会卡 00:00
+     const val ISLAND_STARTED_NOTIFICATION_ID = 1004
+     const val ISLAND_STARTED_TEST_NOTIFICATION_ID = 5001
+-    // 课中提醒模板6 独立 ID：与「已上课」两条路径完全分开，不在同一条通知里 if/else
++    // 课中提醒独立 ID（展开态为模板9）：与「已上课」两条路径完全分开，不在同一条通知里 if/else
+     const val ISLAND_IN_CLASS_NOTIFICATION_ID = 1005
+     const val ISLAND_IN_CLASS_TEST_NOTIFICATION_ID = 5002
+ 
+@@ -206,7 +208,12 @@ object IslandNotificationHelper {
+         }
+     }
+ 
+-    // Mutex 串行化 disable→notify→enable；finally 保证 XMSF 网络一定恢复
++    // Mutex 串行化 disable→notify→enable；finally 保证 XMSF 网络一定恢复。
++    //
++    // 但 finally **只在进程还活着时**才执行：如果这 100ms 窗口内进程被系统杀掉
++    // （HyperOS 后台清理、崩溃），小米推送服务的网络就会一直处于被封状态。
++    // 所以 disable 之前先落一个"待恢复"标记，恢复成功才清；启动路径上做自愈
++    // （见 ShizukuManager.healPendingXmsfRestore，由 startReminderService 调用）。
+     private suspend fun withShizukuBypass(
+         context: Context,
+         notificationId: Int,
+@@ -219,14 +226,18 @@ object IslandNotificationHelper {
+         }
+         shizukuBypassMutex.withLock {
+             val disabled = try {
++                ShizukuManager.markXmsfRestorePending(context)
+                 ShizukuManager.setXmsfNetworkingEnabled(context, false)
+             } catch (e: Exception) {
+                 Log.e(TAG, "Failed to disable XMSF networking", e)
++                ShizukuManager.clearXmsfRestorePending(context)
+                 sendNotificationDirect(context, notificationId, notification)
+                 return@withLock
+             }
+             if (!disabled) {
+                 Log.w(TAG, "Failed to disable XMSF networking, sending notification anyway")
++                // 没真的断网就没有"待恢复"这回事
++                ShizukuManager.clearXmsfRestorePending(context)
+                 sendNotificationDirect(context, notificationId, notification)
+                 return@withLock
+             }
+@@ -237,8 +248,10 @@ object IslandNotificationHelper {
+             } finally {
+                 try {
+                     ShizukuManager.setXmsfNetworkingEnabled(context, true)
++                    ShizukuManager.clearXmsfRestorePending(context)
+                     Log.d(TAG, "XMSF networking restored")
+                 } catch (e: Exception) {
++                    // 保留"待恢复"标记，交给启动路径自愈
+                     Log.e(TAG, "CRITICAL: Failed to restore XMSF networking!", e)
+                 }
+             }
+@@ -374,7 +387,7 @@ object IslandNotificationHelper {
+ 
+     // courseStartMillis 是课程开始时间的唯一真源，倒计时/文案/已上课态都由它派生
+     // courseEndMillis 用于课中提醒：给出剩余时间与进度；null 或已过下课点则回退静态「已上课」
+-    // 仅用于：课前倒计时 / 静态「已上课」。课中模板6 走 buildInClassIslandParamsJson
++    // 仅用于：课前倒计时 / 静态「已上课」。课中走 buildInClassIslandParamsJson（模板9）
+     private fun buildIslandParamsJson(
+         context: Context,
+         title: String,
+@@ -400,18 +413,24 @@ object IslandNotificationHelper {
+         val counting = remainMs != null && remainMs > 0
+         val minutesUntil = if (counting) ((remainMs + 59_999L) / 60_000L).toInt() else 0
+ 
++        // A 区（图文组件1）规范要求"图标或正文大字二选一，**不能为空**"，
++        // 而本文件的 imageTextInfoLeft 只带 textInfo、不带 picInfo；
++        // B 区 textInfo.title 同样必传。原实现这里直接 `?: ""`，
++        // 数据侧课程名为空时就会得到空标题 —— 系统那边表现为"静默不出岛"，且没有任何痕迹。
++        // 统一回退到 title（baseInfo.title 本来就回退 title），保证两区都非空。
++        val fallbackText = title.ifBlank { "课程提醒" }
+         val islandLeftText = when (leftMode) {
+             0 -> courseName ?: ""
+             1 -> classroom ?: ""
+             2 -> if (counting) "${minutesUntil}分钟" else "已上课"
+             else -> courseName ?: ""
+-        }
++        }.ifBlank { fallbackText }
+         val islandRightText = when (rightMode) {
+             0 -> courseName ?: ""
+             1 -> classroom ?: ""
+             2 -> if (counting) "${minutesUntil}分钟" else "已上课"
+             else -> classroom ?: ""
+-        }
++        }.ifBlank { fallbackText }
+         val aodTitle = if (aodMode == 1) classroom ?: courseName ?: title else courseName ?: title
+ 
+         val paramV2 = JSONObject().apply {
+@@ -803,7 +822,9 @@ object IslandNotificationHelper {
+     /**
+      * 「明天返校」超级岛（返校日前一晚）。
+      *
+-     * 复用课前倒计时同一套模板与发送路径（模板2：文本组件2 + 识别图形组件1），
++     * 复用课前倒计时的组件与发送路径。注意课前/已上课那套其实是
++     * **模板9**（文本组件2 + 识别图形组件1 + 按钮组件2），不是模板2；
++     * 本函数会在下面把按钮组件（hintInfo）摘掉，凑成模板6。
+      * 只换成静态文案、不带倒计时。**不新开通道，也不触碰 XMSF 绕白名单那段逻辑。**
+      */
+     fun sendReturnDayIslandNotification(
+@@ -814,7 +835,10 @@ object IslandNotificationHelper {
+         notificationId: Int = ISLAND_RETURN_DAY_NOTIFICATION_ID,
+         /** 形如 "中秋最后一天"；有则在标题里点明是哪段假期 */
+         holidayLabel: String? = null,
+-        /** 非空时注入进度组件，凑成模板6（文本组件2 + 识别图形组件1 + 进度组件2） */
++        /**
++         * 非空时注入进度组件2。注入前会先摘掉 hintInfo（按钮组件），
++         * 组件组合因此正好等于模板库的**模板6**（文本组件2 + 识别图形组件1 + 进度组件2）。
++         */
+         progressPercent: Int? = null,
+     ) {
+         val title = if (holidayLabel.isNullOrBlank()) "明天返校" else "明天返校 · $holidayLabel"
+@@ -836,13 +860,26 @@ object IslandNotificationHelper {
+             classroom = "返校",
+             courseStartMillis = null,
+         )
+-        // 进度组件2（纯净版）：只传 progress/颜色，不传任何 picXXX 字段即为模板库的「进度组件2」
+-        val params = if (progressPercent == null) {
+-            paramsRaw
+-        } else {
+-            runCatching {
+-                val root = JSONObject(paramsRaw)
+-                root.optJSONObject("param_v2")?.put(
++        // 「明天返校」是**静态提醒**，但 buildIslandParamsJson 是按"课前/已上课"两态设计的，
++        // 传 courseStartMillis=null 会落到"已上课"态，于是：
++        //   · hintInfo 的 title/content 被写成「已上课 / 现在」（模板库里它是描述"当前状况"的组件）
++        //   · B 区 textInfo.title 也被写成「已上课」
++        // 这两处都不是"明天返校"该有的文案；而且 hintInfo 是"圆头图文按钮"组件，对静态提醒没有意义。
++        // 处理：去掉 hintInfo，并把 B 区标题换成节次 —— 组件组合正好变成模板库里的
++        // **模板6（文本组件2 + 识别图形组件1 + 进度组件2）**，
++        // 而不是原来那个"文本2 + 图形1 + 按钮2 + 进度"的四组件、模板清单里不存在的组合。
++        val staticRightText = section.ifBlank { "返校" }
++        val params = runCatching {
++            val root = JSONObject(paramsRaw)
++            val paramV2 = root.optJSONObject("param_v2") ?: return@runCatching paramsRaw
++            paramV2.remove("hintInfo")
++            paramV2.optJSONObject("param_island")
++                ?.optJSONObject("bigIslandArea")
++                ?.optJSONObject("textInfo")
++                ?.put("title", staticRightText)
++            if (progressPercent != null) {
++                // 进度组件2（纯净版）：只传 progress/颜色、不传任何 picXXX 字段，即为模板库的「进度组件2」
++                paramV2.put(
+                     "progressInfo",
+                     JSONObject().apply {
+                         put("progress", progressPercent.coerceIn(0, 100))
+@@ -850,9 +887,9 @@ object IslandNotificationHelper {
+                         put("colorProgressEnd", "#FF2196F3")
+                     },
+                 )
+-                root.toString()
+-            }.getOrDefault(paramsRaw)
+-        }
++            }
++            root.toString()
++        }.getOrDefault(paramsRaw)
+         sendIslandNotification(
+             context = context,
+             notificationId = notificationId,
+diff --git a/app/src/main/java/com/haooz/chedule/shizuku/ShizukuManager.kt b/app/src/main/java/com/haooz/chedule/shizuku/ShizukuManager.kt
+index 3aef8ec..7a4b6d7 100644
+--- a/app/src/main/java/com/haooz/chedule/shizuku/ShizukuManager.kt
++++ b/app/src/main/java/com/haooz/chedule/shizuku/ShizukuManager.kt
+@@ -97,6 +97,55 @@ object ShizukuManager {
+         }
+     }
+ 
++    // ===== XMSF 绕白名单的"待恢复"标记：防止进程死在 disable/restore 之间 =====
++    //
++    // withShizukuBypass 的序列是：关掉 com.xiaomi.xmsf 的网络 → notify → 100ms → 重新打开。
++    // 如果进程在这 100ms 窗口里被系统杀掉（HyperOS 后台清理、崩溃），finally 不会执行，
++    // **小米推送服务的网络会一直处于被封状态**，直到下一次发岛才顺带恢复。
++    // 所以 disable 之前先把"待恢复"落盘，恢复成功后清除；启动路径上做一次自愈。
++    private const val XMSF_PREFS = "xmsf_bypass_state"
++    private const val KEY_XMSF_PENDING_RESTORE = "pending_restore"
++
++    /** 必须在**真正 disable 之前**调用。 */
++    fun markXmsfRestorePending(context: Context) {
++        try {
++            context.getSharedPreferences(XMSF_PREFS, Context.MODE_PRIVATE)
++                .edit().putBoolean(KEY_XMSF_PENDING_RESTORE, true).apply()
++        } catch (e: Exception) {
++            Log.w(TAG, "markXmsfRestorePending failed", e)
++        }
++    }
++
++    fun clearXmsfRestorePending(context: Context) {
++        try {
++            context.getSharedPreferences(XMSF_PREFS, Context.MODE_PRIVATE)
++                .edit().remove(KEY_XMSF_PENDING_RESTORE).apply()
++        } catch (e: Exception) {
++            Log.w(TAG, "clearXmsfRestorePending failed", e)
++        }
++    }
++
++    /**
++     * 自愈：上次"关掉 XMSF 网络"之后没来得及恢复（进程被杀/崩溃），
++     * 这里在启动路径上补一次恢复。恢复成功才清标记，失败保留等下次再试。
++     */
++    fun healPendingXmsfRestore(context: Context) {
++        val prefs = try {
++            context.getSharedPreferences(XMSF_PREFS, Context.MODE_PRIVATE)
++        } catch (e: Exception) {
++            return
++        }
++        if (!prefs.getBoolean(KEY_XMSF_PENDING_RESTORE, false)) return
++        Log.w(TAG, "pending XMSF restore found, healing")
++        val ok = try {
++            setXmsfNetworkingEnabled(context, true)
++        } catch (e: Exception) {
++            Log.e(TAG, "healPendingXmsfRestore failed", e)
++            false
++        }
++        if (ok) clearXmsfRestorePending(context)
++    }
++
+     fun setXmsfNetworkingEnabled(context: Context, enabled: Boolean): Boolean {
+         if (!isShizukuRunning() || !checkSelfPermission()) {
+             Log.w(TAG, "Shizuku not available or no permission")
+diff --git a/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt b/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
+index 5384b46..d9b533a 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
+@@ -24,16 +24,7 @@ import kotlin.math.ceil
+ 
+ internal class EdgeLightElement(
+     val shape: androidx.compose.ui.graphics.Shape,
+-    val edgeLight: () -> EdgeLight?,
+-    /**
+-     * 「值重载」（[Modifier.edgeLight] 传 EdgeLight 的那个）把原始值也带上：
+-     * 那个重载每次调用都会新建一个 `{ edgeLight }` lambda，而 lambda 只能按引用比较，
+-     * 于是每次重组 `equals` 都判不等 → `update()` → `invalidateOutlineCache()`，
+-     * 轮廓（ContinuousRoundedRectangle 走的是 Path 构建）就每次重组重算一遍。
+-     * 带上原值后两个值重载之间按**值**比较，重组不再无故失效。
+-     * 动态 lambda 重载不传这个字段，仍按引用比较，语义不变。
+-     */
+-    private val edgeLightValue: EdgeLight? = null,
++    val edgeLight: () -> EdgeLight?
+ ) : ModifierNodeElement<EdgeLightNode>() {
+ 
+     override fun create(): EdgeLightNode {
+@@ -50,24 +41,20 @@ internal class EdgeLightElement(
+     override fun InspectorInfo.inspectableProperties() {
+         name = "edgeLight"
+         properties["shape"] = shape
+-        properties["edgeLight"] = edgeLightValue ?: edgeLight
++        properties["edgeLight"] = edgeLight
+     }
+ 
+     override fun equals(other: Any?): Boolean {
+         if (this === other) return true
+         if (other !is EdgeLightElement) return false
+         if (shape != other.shape) return false
+-        // 两边都是值重载 → 按值比；否则退回按引用比（动态 lambda 的原语义）
+-        if (edgeLightValue != null && other.edgeLightValue != null) {
+-            return edgeLightValue == other.edgeLightValue
+-        }
+         if (edgeLight != other.edgeLight) return false
+         return true
+     }
+ 
+     override fun hashCode(): Int {
+         var result = shape.hashCode()
+-        result = 31 * result + (edgeLightValue?.hashCode() ?: edgeLight.hashCode())
++        result = 31 * result + edgeLight.hashCode()
+         return result
+     }
+ }
+@@ -276,8 +263,7 @@ fun Modifier.edgeLight(
+     return this.then(
+         EdgeLightElement(
+             shape = shape,
+-            edgeLight = { edgeLight },
+-            edgeLightValue = edgeLight,
++            edgeLight = { edgeLight }
+         )
+     )
+ }
+-- 
+2.55.0
+
