@@ -2036,6 +2036,7 @@ private fun pickerTextStyle() = MiuixTheme.textStyles.body1.copy(
 
 // ===================== 返校提醒（周末 / 节假日最后一天） =====================
 
+@Composable
 private fun timePickerDialog(
         title: String,
         show: Boolean,
