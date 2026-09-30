@@ -253,6 +253,16 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 2. **上游改了 `showStartedLiveNotification` 的签名**（去掉 `classroom`），
    而我的测试路径还在传 → 编译不过。测试路径跟着改成与真实路径一致。
 
+### 第三类问题：补丁守卫的**假警报**（CI 连续三轮红）
+现象：守卫报 **27 个补丁全部"内容不一致"**，而本地 `check_patches.py` 对比却是"一致"。
+根因：`git format-patch` 的**缩写哈希长度是自动伸缩的**（随仓库对象数变化）——
+本机 8 位（`index df24e5b7..5cf4dc77`）、GitHub runner 7 位（`index df24e5b..5cf4dc7`），
+而守卫只归一化了 `-- <git版本>` 尾巴和 `[PATCH NN/total]` 计数。
+前几轮能过，只是因为那会儿两边恰好都是 7 位 —— 属于运气。
+修法：`check_patches.py` 的 `normalize()` 增加 `index <hash>..<hash>` 归一化；
+并让它在报"不一致"时**打印首个不同的行**（原来只报文件名，排查只能靠猜）。
+反向对照：真实内容改动仍会被判不一致 ✓。
+
 ### 审计发现并修掉的缺口（v42）
 `exportAllPreferences()` 只导出 `course_schedule_prefs`，而全仓有 **9 个 SharedPreferences**：
 `app_preferences`（触感反馈 / 应用材质等级 / 预测返回 / 隐藏背景）、`app_theme_prefs`（主题）、
