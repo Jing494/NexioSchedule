@@ -2364,10 +2364,11 @@ object CourseReminderHelper {
         // 测试课也要走「上课自动开启、下课自动关闭」，否则勿扰链路在测试里跑不到
         ClassDndHelper.syncTestClassDndAlarms(context)
         if (phase == ReminderTestPhase.STARTED) {
+            // 上游的 showStartedLiveNotification 已不带 classroom（真实路径也不传，正文改为
+            // 由函数内部拼；测试路径保持一致，否则两边的观感就不一样了）
             showStartedLiveNotification(
                 context = context,
                 courseName = courseName,
-                classroom = classroom,
                 startTime = startTime,
                 testMode = true
             )
