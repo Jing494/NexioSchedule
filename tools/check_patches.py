@@ -15,6 +15,10 @@ def normalize(text: str) -> str:
     text = re.sub(r"\n-- \n[^\n]*\n?$", "\n", text)
     # 主题计数归一化
     text = re.sub(r"^Subject: \[PATCH \d+/\d+\]", "Subject: [PATCH]", text, flags=re.M)
+    # ★ index 行的缩写哈希长度是**自动伸缩**的（仓库对象越多越长）：
+    #   本机 8 位、GitHub runner 7 位 → 不归一化就会报"全部补丁都不一致"的假警报。
+    #   真实事故：升基准到 1.6.0.2 时 CI 守卫连续红了三轮，根因就是这个。
+    text = re.sub(r"^index [0-9a-f]{7,40}\.\.[0-9a-f]{7,40}", "index <hash>..<hash>", text, flags=re.M)
     return text
 
 def read_dir(d):
