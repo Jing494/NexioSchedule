@@ -1,7 +1,7 @@
-From 4fe5754634995d9026d43704079579b58ec458a1 Mon Sep 17 00:00:00 2001
+From 9f68de4827b9b8fb8f9b1bc64a87f20043b78c6a Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 10:31:15 +0800
-Subject: [PATCH 09/25] =?UTF-8?q?v27=EF=BC=9A=E5=81=87=E6=9C=9F=E4=BD=99?=
+Subject: [PATCH 09/27] =?UTF-8?q?v27=EF=BC=9A=E5=81=87=E6=9C=9F=E4=BD=99?=
  =?UTF-8?q?=E9=A2=9D=E7=8B=AC=E7=AB=8B=E6=88=90=E5=8D=A1=20+=20=E8=B7=9F?=
  =?UTF-8?q?=E9=9A=8F=E8=B1=81=E5=85=8D=E5=BC=80=E5=85=B3=20+=20=E5=8F=AA?=
  =?UTF-8?q?=E5=9C=A8=E6=9C=80=E5=90=8EN=E5=A4=A9=20+=20=E6=B5=8B=E8=AF=95?=
@@ -55,7 +55,7 @@ Content-Transfer-Encoding: 8bit
  4 files changed, 601 insertions(+), 197 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
-index 5cf4dc7..b02d689 100644
+index 5cf4dc77..b02d689a 100644
 --- a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
 +++ b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
 @@ -261,6 +261,8 @@ class CourseRepository private constructor(context: Context) {
@@ -86,7 +86,7 @@ index 5cf4dc7..b02d689 100644
      fun getReturnDayPrepEnabled(): Boolean {
          return prefs.getBoolean(KEY_RETURN_DAY_PREP_ENABLED, false)
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index cb22198..f375e25 100644
+index cb22198c..f375e257 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -1417,15 +1417,16 @@ object CourseReminderHelper {
@@ -219,7 +219,7 @@ index cb22198..f375e25 100644
       * 把余额/清单的精确闹钟排到「今天该时刻」；已过则排到明天（自续链的锚点）。
       *
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
-index f67b024..12815a5 100644
+index f67b024d..12815a5d 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 @@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Arrangement
@@ -416,7 +416,7 @@ index f67b024..12815a5 100644
 +    }
 +}
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-index 1644907..4566d34 100644
+index 16449075..4566d34b 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 @@ -559,6 +559,20 @@ fun HolidaySettingsScreen(

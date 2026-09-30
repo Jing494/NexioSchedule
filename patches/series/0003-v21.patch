@@ -1,7 +1,7 @@
-From 491c48c3d7e477f131d14c98a31343593e186f4a Mon Sep 17 00:00:00 2001
+From 2da4890ee52f9ea9b54fe9ee972043eaef7ec131 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sat, 26 Sep 2026 23:40:58 +0800
-Subject: [PATCH 03/25] =?UTF-8?q?=E5=AE=A1=E8=AE=A1=E4=BF=AE=E5=A4=8D=20+?=
+Subject: [PATCH 03/27] =?UTF-8?q?=E5=AE=A1=E8=AE=A1=E4=BF=AE=E5=A4=8D=20+?=
  =?UTF-8?q?=20=E6=80=A7=E8=83=BD=E4=BC=98=E5=8C=96=EF=BC=88v21=EF=BC=89?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -56,7 +56,7 @@ Content-Transfer-Encoding: 8bit
  15 files changed, 403 insertions(+), 148 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt b/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt
-index 3d0df17..09dfa58 100644
+index 3d0df174..09dfa586 100644
 --- a/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt
 +++ b/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt
 @@ -473,6 +473,17 @@ object HolidayManager {
@@ -78,7 +78,7 @@ index 3d0df17..09dfa58 100644
          val hit = entriesForDate(loadAllByYear(context), date)
              .firstOrNull { it.type == TYPE_HOLIDAY }
 diff --git a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
-index 9c07ff3..6df9488 100644
+index 9c07ff37..6df94887 100644
 --- a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
 +++ b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
 @@ -35,9 +35,22 @@ object ReturnDayReminder {
@@ -189,7 +189,7 @@ index 9c07ff3..6df9488 100644
                  "${span.name}还剩 ${span.daysLeft} 天"
              } else {
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
-index 90f626d..397c142 100644
+index 90f626db..397c1423 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 @@ -22,7 +22,17 @@ class AlarmReceiver : BroadcastReceiver() {
@@ -224,7 +224,7 @@ index 90f626d..397c142 100644
                          .currentHolidaySpan(context, tomorrow)
                      val firstReturnCourse = tomorrowCourses.firstOrNull()
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 8b63c15..d58da2a 100644
+index 8b63c159..d58da2a3 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -99,9 +99,18 @@ object CourseReminderHelper {
@@ -592,7 +592,7 @@ index 8b63c15..d58da2a 100644
              val endMillis = parseTimeToTodayMillis(getCourseEndTime(course, repository))
              sendPreClassNotification(
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
-index 40df3b3..c00d56e 100644
+index 40df3b30..c00d56ec 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 @@ -254,8 +254,20 @@ object IslandNotificationHelper {
@@ -637,7 +637,7 @@ index 40df3b3..c00d56e 100644
          // courseStartMillis = null → 静态岛（不画倒计时），左右槽位回落到课程名/教室
          val paramsRaw = buildIslandParamsJson(
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
-index e0354ca..f67b024 100644
+index e0354ca5..f67b024d 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 @@ -591,12 +591,16 @@ fun CourseReminderScreen(
@@ -661,7 +661,7 @@ index e0354ca..f67b024 100644
                                          rlog("island_switch", "on=$it supported=$isIslandSupported")
                                          settingsViewModel.setIslandNotification(it)
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-index 8faa13d..1644907 100644
+index 8faa13d6..16449075 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 @@ -2041,8 +2041,12 @@ private fun sectionRangeTimeText(
@@ -741,7 +741,7 @@ index 8faa13d..1644907 100644
              repository.setReturnDayPrepMinute(m)
              CourseReminderHelper.onHolidayDataChanged(context)
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-index 4072b91..f31919f 100644
+index 4072b914..f31919f4 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 @@ -1738,7 +1738,11 @@ fun CourseScheduleApp() {
@@ -842,7 +842,7 @@ index 4072b91..f31919f 100644
                      if (mainLayerNeeded) {
                          Modifier.graphicsLayer {
 diff --git a/app/src/main/java/com/haooz/chedule/ui/basic/CollapsibleTopAppBar.kt b/app/src/main/java/com/haooz/chedule/ui/basic/CollapsibleTopAppBar.kt
-index dab7d85..e5dc1fd 100644
+index dab7d851..e5dc1fdd 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/basic/CollapsibleTopAppBar.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/basic/CollapsibleTopAppBar.kt
 @@ -410,7 +410,11 @@ fun CollapsibleTopAppBar(
@@ -859,7 +859,7 @@ index dab7d85..e5dc1fd 100644
              if (showShadow != null) return@derivedStateOf showShadow
              val contentOffset = scrollBehavior?.state?.contentOffset ?: 0f
 diff --git a/app/src/main/java/com/haooz/chedule/ui/basic/ShortcutMenu.kt b/app/src/main/java/com/haooz/chedule/ui/basic/ShortcutMenu.kt
-index e7f522d..7b1a472 100644
+index e7f522d9..7b1a4720 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/basic/ShortcutMenu.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/basic/ShortcutMenu.kt
 @@ -165,23 +165,33 @@ fun ShortcutMenu(
@@ -906,7 +906,7 @@ index e7f522d..7b1a472 100644
                  .edgeLight(shape = ContinuousRoundedRectangle(18.dp), edgeLight = rememberDefaultEdgeLight())
                  .clickable(
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
-index 59ca258..2d2eb34 100644
+index 59ca258a..2d2eb34b 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 @@ -400,16 +400,23 @@ private fun CourseCardsLayer(
@@ -955,7 +955,7 @@ index 59ca258..2d2eb34 100644
              }
              val segOffset = (grid.sectionTop[segStartSection] ?: 0f).toInt()
 diff --git a/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt b/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
-index d9b533a..5384b46 100644
+index d9b533a3..5384b46a 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
 @@ -24,7 +24,16 @@ import kotlin.math.ceil
@@ -1014,7 +1014,7 @@ index d9b533a..5384b46 100644
      )
  }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt
-index f6e40b2..fed0605 100644
+index f6e40b25..fed0605f 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt
 @@ -985,22 +985,9 @@ fun CustomizeScheduleScreen(
@@ -1070,7 +1070,7 @@ index f6e40b2..fed0605 100644
                                  .edgeLight(
                                      shape = ContinuousCapsule(),
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-index adce933..4a7f62e 100644
+index adce9331..4a7f62e6 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 @@ -147,6 +147,7 @@ fun BlurCard(
@@ -1108,7 +1108,7 @@ index adce933..4a7f62e 100644
                  val holidayCountdownSnapshot = remember(
                      isPageToday,
 diff --git a/app/src/main/java/com/haooz/chedule/widget/WidgetUpdateCache.kt b/app/src/main/java/com/haooz/chedule/widget/WidgetUpdateCache.kt
-index 83de3f2..ce90121 100644
+index 83de3f27..ce901211 100644
 --- a/app/src/main/java/com/haooz/chedule/widget/WidgetUpdateCache.kt
 +++ b/app/src/main/java/com/haooz/chedule/widget/WidgetUpdateCache.kt
 @@ -37,8 +37,33 @@ object WidgetUpdateCache {

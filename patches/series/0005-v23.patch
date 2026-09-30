@@ -1,7 +1,7 @@
-From e41840b9a668ffb5f082b3fdd5dc4b8a6a0c6eb6 Mon Sep 17 00:00:00 2001
+From e6a907c064ca97d4ef7b0c844eca3e537a77e701 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 08:00:24 +0800
-Subject: [PATCH 05/25] =?UTF-8?q?v23=EF=BC=9A=E4=BF=AE=E8=B6=85=E7=BA=A7?=
+Subject: [PATCH 05/27] =?UTF-8?q?v23=EF=BC=9A=E4=BF=AE=E8=B6=85=E7=BA=A7?=
  =?UTF-8?q?=E5=B2=9B=E3=80=8C=E4=B8=8B=E8=AF=BE=E5=90=8E=E5=9B=9E=E8=90=BD?=
  =?UTF-8?q?=E6=88=90=E6=99=AE=E9=80=9A=E9=80=9A=E7=9F=A5=E3=80=8D=E2=80=94?=
  =?UTF-8?q?=E2=80=94=E5=8F=96=E6=B6=88=E6=B2=A1=E8=B5=B0=E7=BB=95=E7=99=BD?=
@@ -53,7 +53,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 206 insertions(+), 68 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 6f542fc..2db05af 100644
+index 6f542fca..2db05af6 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -446,8 +446,15 @@ object CourseReminderHelper {
@@ -75,7 +75,7 @@ index 6f542fc..2db05af 100644
      }
  
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
-index 38ac3bc..3bed194 100644
+index 38ac3bc6..3bed194a 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 @@ -18,8 +18,6 @@ import kotlinx.coroutines.Dispatchers

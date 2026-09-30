@@ -179,6 +179,24 @@ CHECKS = [
         [],
     ),
     (
+        "备份必须覆盖除主设置外的其它用户设置文件（触感/材质/主题/课中提醒/更新源）",
+        # 真实缺口：全仓 9 个 SharedPreferences，备份原先只覆盖 course_schedule_prefs 一个，
+        # 于是这些文件里的用户设置换设备/重装后静默回到默认值。
+        f"{J}/data/CourseRepository.kt",
+        [
+            r"private val BACKUP_EXTRA_PREFS = listOf\(",
+            r'"app_preferences"', r'"app_theme_prefs"', r'"course_reminder_prefs"',
+            r'"update_settings"', r'"edu_import_prefs"',
+        ],
+        [r'"(countdown_state|weather_prefs|stats_prefs|webdav_config)"\s*,?\s*//'],  # 这几类不该进备份
+    ),
+    (
+        "跨文件还原必须走白名单（备份文件不能决定写哪个 SharedPreferences）",
+        f"{J}/data/CourseRepository.kt",
+        [r"if \(fileName !in BACKUP_EXTRA_PREFS \|\| originalKey\.isEmpty\(\)\) return"],
+        [],
+    ),
+    (
         "rebase 易踩：isColorOs() 的收尾右花括号（漏了会让后面所有成员嵌套错层）",
         # 真实事故：升基准解冲突时，上游那段 isColorOs() 的收尾 `}` 属于"公共区"，
         # 被排到了我方 222 行之后 → 该函数永不闭合、后续成员全被套进它内部，

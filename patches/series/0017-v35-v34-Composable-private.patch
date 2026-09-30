@@ -1,7 +1,7 @@
-From b8d3402ea71d482fe97b7eea26978cca8631c162 Mon Sep 17 00:00:00 2001
+From a9519eeb7eaf3346bf6c6fd0e1e6dae264c2ac31 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 21:52:26 +0800
-Subject: [PATCH 17/25] =?UTF-8?q?v35:=20=E4=BF=AE=20v34=20=E7=9A=84?=
+Subject: [PATCH 17/27] =?UTF-8?q?v35:=20=E4=BF=AE=20v34=20=E7=9A=84?=
  =?UTF-8?q?=E7=BC=96=E8=AF=91=E9=94=99=E8=AF=AF=20=E2=80=94=E2=80=94=20Com?=
  =?UTF-8?q?posable=20=E5=86=85=E7=9A=84=E5=B1=80=E9=83=A8=E5=87=BD?=
  =?UTF-8?q?=E6=95=B0=E4=B8=8D=E8=83=BD=E5=8A=A0=20private?=
@@ -18,7 +18,7 @@ CI 首次编译报错：e: UpdateDialog.kt:153:5 Modifier 'private' is not appli
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt b/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
-index 344ca16..9c0542d 100644
+index 344ca161..9c0542d0 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
 @@ -150,7 +150,7 @@ internal fun UpdateDialog(liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = nu

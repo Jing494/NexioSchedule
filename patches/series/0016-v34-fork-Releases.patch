@@ -1,7 +1,7 @@
-From 99102a729c485871a8f5699824035e0f0a23346b Mon Sep 17 00:00:00 2001
+From 430f72a2f52336a646e0de9d111c7b0281d7349c Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 17:19:28 +0800
-Subject: [PATCH 16/25] =?UTF-8?q?v34:=20=E5=BA=94=E7=94=A8=E5=86=85?=
+Subject: [PATCH 16/27] =?UTF-8?q?v34:=20=E5=BA=94=E7=94=A8=E5=86=85?=
  =?UTF-8?q?=E3=80=8C=E5=8E=BB=E4=B8=8B=E8=BD=BD=E3=80=8D=E6=94=B9=E4=B8=BA?=
  =?UTF-8?q?=E8=B7=B3=E6=9C=AC=20fork=20=E7=9A=84=20Releases=EF=BC=88?=
  =?UTF-8?q?=E4=B8=8D=E5=86=8D=E5=86=85=E5=B5=8C=E4=B8=8B=E8=BD=BD=E4=B8=8A?=
@@ -27,7 +27,7 @@ https://github.com/Jing494/NexioSchedule/releases/latest
  1 file changed, 30 insertions(+)
 
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt b/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
-index 4ebc523..344ca16 100644
+index 4ebc523b..344ca161 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
 @@ -139,7 +139,37 @@ internal fun UpdateDialog(liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = nu

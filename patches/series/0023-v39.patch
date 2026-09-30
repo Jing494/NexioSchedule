@@ -1,7 +1,7 @@
-From 1d810bd99d9d97e5be746480984e750ef5409a2f Mon Sep 17 00:00:00 2001
+From 0a170681b2eddcca39ea0a57faafc29d3ee5a28c Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Mon, 28 Sep 2026 21:31:46 +0800
-Subject: [PATCH 23/25] =?UTF-8?q?v39=EF=BC=9A=E4=BF=AE=E5=8D=87=E5=9F=BA?=
+Subject: [PATCH 23/27] =?UTF-8?q?v39=EF=BC=9A=E4=BF=AE=E5=8D=87=E5=9F=BA?=
  =?UTF-8?q?=E5=87=86=E5=90=8E=E7=9A=84=E3=80=8C=E5=90=8E=E9=81=97=E7=97=87?=
  =?UTF-8?q?=E3=80=8D=E2=80=94=E2=80=94=20=E6=96=87=E6=A1=88=E6=94=B9?=
  =?UTF-8?q?=E5=90=8D=20+=20=E6=8F=90=E9=86=92=E5=8F=A3=E5=BE=84=E6=94=B9?=
@@ -43,7 +43,7 @@ Content-Transfer-Encoding: 8bit
  7 files changed, 47 insertions(+), 417 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
-index b02d689..e79bc40 100644
+index b02d689a..e79bc40c 100644
 --- a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
 +++ b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
 @@ -253,10 +253,6 @@ class CourseRepository private constructor(context: Context) {
@@ -136,7 +136,7 @@ index b02d689..e79bc40 100644
      fun getWidgetPaddingMode(): Int {
          return safeGetInt(KEY_WIDGET_PADDING_MODE, 1)
 diff --git a/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt b/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt
-index 09dfa58..8861161 100644
+index 09dfa586..8861161d 100644
 --- a/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt
 +++ b/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt
 @@ -474,7 +474,7 @@ object HolidayManager {
@@ -149,7 +149,7 @@ index 09dfa58..8861161 100644
       * `remember(...)` 键不变 → 今日页状态卡与课表页豁免标记会一直显示旧状态。
       */
 diff --git a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
-index a4f4091..65fba7c 100644
+index a4f40910..65fba7ce 100644
 --- a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
 +++ b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
 @@ -5,18 +5,18 @@ import java.time.LocalDate
@@ -263,7 +263,7 @@ index a4f4091..65fba7c 100644
              // 注意：中文紧跟在 $label 后面会被当成标识符（$label是 不是 $label + 是），必须加花括号
              val where = if (span != null) "${label}是${span.name}最后一天" else "${label}是周末最后一天"
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
-index dd6af7c..205df63 100644
+index dd6af7c0..205df639 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 @@ -140,7 +140,7 @@ class AlarmReceiver : BroadcastReceiver() {
@@ -276,7 +276,7 @@ index dd6af7c..205df63 100644
                  val tomorrow = java.time.LocalDate.now().plusDays(1)
                  if (com.haooz.chedule.data.ReturnDayReminder.isReturnDay(context, repository, tomorrow)) {
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 4903059..6cd995a 100644
+index 49030593..6cd995af 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -1244,7 +1244,7 @@ object CourseReminderHelper {
@@ -354,7 +354,7 @@ index 4903059..6cd995a 100644
       * （真机实测：标题「明天返校 · 中秋节最后一天」，正文「道法｜第11节 18:30」）。
       * 而清单通知那边（prepNotificationTitle）一直说的是「今晚返校」 ——
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt b/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
-index 0575006..9a0e623 100644
+index 05750060..9a0e623f 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
 @@ -98,7 +98,7 @@ enum class ReminderTestScenario(
@@ -367,7 +367,7 @@ index 0575006..9a0e623 100644
      ),
  
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-index da1ef55..102e132 100644
+index da1ef55d..102e1321 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 @@ -613,7 +613,7 @@ fun HolidaySettingsScreen(

@@ -1,7 +1,7 @@
-From ae7fafbdc950e893a46609dacc107f1cbfb10b7d Mon Sep 17 00:00:00 2001
+From 8bd6b550ea57a1fb361889df7244fc35ab98a5b7 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sat, 26 Sep 2026 21:58:58 +0800
-Subject: [PATCH 02/25] =?UTF-8?q?=E4=BD=99=E9=A2=9D/=E6=B8=85=E5=8D=95?=
+Subject: [PATCH 02/27] =?UTF-8?q?=E4=BD=99=E9=A2=9D/=E6=B8=85=E5=8D=95?=
  =?UTF-8?q?=E6=94=B9=E4=B8=BA=E7=B2=BE=E7=A1=AE=E9=97=B9=E9=92=9F=EF=BC=88?=
  =?UTF-8?q?=E8=87=AA=E7=BB=AD=EF=BC=89?=
 MIME-Version: 1.0
@@ -20,7 +20,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 82 insertions(+)
 
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
-index e4ca747..90f626d 100644
+index e4ca7478..90f626db 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 @@ -115,6 +115,13 @@ class AlarmReceiver : BroadcastReceiver() {
@@ -38,7 +38,7 @@ index e4ca747..90f626d 100644
                  // 学期未开始（未到开学日期所在周的周一）：不发送次日提醒
                  if (!CourseReminderHelper.isSemesterStarted(repository)) {
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index a0cfda1..8b63c15 100644
+index a0cfda1b..8b63c159 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -92,6 +92,11 @@ object CourseReminderHelper {

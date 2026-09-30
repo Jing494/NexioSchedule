@@ -1,7 +1,7 @@
-From 6b29264ee503d85df21a3c00c007d44ac09fa675 Mon Sep 17 00:00:00 2001
+From e55bbea1a3c9ba0756fccffacb0ee5c706a46c7e Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sat, 26 Sep 2026 19:12:29 +0800
-Subject: [PATCH 01/25] =?UTF-8?q?=E6=9C=AC=E5=9C=B0=E4=BF=AE=E5=A4=8D:?=
+Subject: [PATCH 01/27] =?UTF-8?q?=E6=9C=AC=E5=9C=B0=E4=BF=AE=E5=A4=8D:?=
  =?UTF-8?q?=E8=BF=94=E6=A0=A1=E8=8A=82=E6=AC=A1=E8=B1=81=E5=85=8D=20+=20?=
  =?UTF-8?q?=E5=BA=95=E6=A0=8F=E9=81=BF=E8=AE=A9=E5=AF=BC=E8=88=AA=E6=A0=8F?=
  =?UTF-8?q?=20+=20=E6=A8=AA=E5=B1=8F=E5=AF=BC=E8=88=AA=E5=88=A4=E5=AE=9A?=
@@ -61,7 +61,7 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
 
 diff --git a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
-index df24e5b..5cf4dc7 100644
+index df24e5b7..5cf4dc77 100644
 --- a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
 +++ b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
 @@ -253,6 +253,19 @@ class CourseRepository private constructor(context: Context) {
@@ -224,7 +224,7 @@ index df24e5b..5cf4dc7 100644
          return safeGetInt(KEY_WIDGET_PADDING_MODE, 1)
 diff --git a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
 new file mode 100644
-index 0000000..9c07ff3
+index 00000000..9c07ff37
 --- /dev/null
 +++ b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
 @@ -0,0 +1,167 @@
@@ -396,7 +396,7 @@ index 0000000..9c07ff3
 +    }
 +}
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
-index 4c4ec1e..e4ca747 100644
+index 4c4ec1e8..e4ca7478 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 @@ -140,6 +140,41 @@ class AlarmReceiver : BroadcastReceiver() {
@@ -442,7 +442,7 @@ index 4c4ec1e..e4ca747 100644
                  CourseReminderHelper.scheduleNextDayOnly(context)
                  CourseReminderHelper.onAlarmProcessed(context)
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 6cd91e5..a0cfda1 100644
+index 6cd91e52..a0cfda1b 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -19,6 +19,7 @@ import com.haooz.chedule.data.HolidayCourseExclusion
@@ -825,7 +825,7 @@ index 6cd91e5..a0cfda1 100644
              .setContentTitle(title)
              .setContentText(message.replace("\n", " "))
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
-index 1f080f6..40df3b3 100644
+index 1f080f64..40df3b30 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 @@ -44,6 +44,9 @@ object IslandNotificationHelper {
@@ -920,7 +920,7 @@ index 1f080f6..40df3b3 100644
      fun sendPreClassIslandNotification(
          context: Context,
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/WidgetRefreshReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/WidgetRefreshReceiver.kt
-index 9eacbf2..dfc5c3f 100644
+index 9eacbf25..dfc5c3f1 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/WidgetRefreshReceiver.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/WidgetRefreshReceiver.kt
 @@ -27,6 +27,8 @@ class WidgetRefreshReceiver : BroadcastReceiver() {
@@ -933,7 +933,7 @@ index 9eacbf2..dfc5c3f 100644
                  // 链式调度下一次刷新放在 finally：即使上面任一步抛异常，
                  // 也要保证跨日重设与兜底补发不中断
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
-index c032285..e0354ca 100644
+index c0322852..e0354ca5 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 @@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableIntStateOf
@@ -994,7 +994,7 @@ index c032285..e0354ca 100644
                                      visible = islandNotification,
                                      enter = expandVertically(animationSpec = tween(250)) + fadeIn(animationSpec = tween(200)),
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-index 8201f64..8faa13d 100644
+index 8201f647..8faa13d6 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 @@ -7,6 +7,7 @@ import androidx.compose.foundation.background
@@ -1467,7 +1467,7 @@ index 8201f64..8faa13d 100644
 +    )
 +}
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-index a7090ef..4072b91 100644
+index a7090efa..4072b914 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 @@ -1178,8 +1178,12 @@ fun CourseScheduleApp() {
@@ -1513,7 +1513,7 @@ index a7090ef..4072b91 100644
                      }
                      // 平板设置：标题与分界线画在顶栏模糊之上，跟设置页切页平移。
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
-index 9583a95..59ca258 100644
+index 9583a95c..59ca258a 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 @@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
@@ -1560,7 +1560,7 @@ index 9583a95..59ca258 100644
          // 自定义时间课按时间轴插值定位/定高，不按节次分段
          if (course.hasValidCustomTime()) {
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/LiquidBottomTabs.kt b/app/src/main/java/com/haooz/chedule/ui/components/LiquidBottomTabs.kt
-index fd1d64f..7386a0c 100644
+index fd1d64f9..7386a0c5 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/LiquidBottomTabs.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/LiquidBottomTabs.kt
 @@ -449,6 +449,8 @@ fun LiquidNavigationRail(
@@ -1580,7 +1580,7 @@ index fd1d64f..7386a0c 100644
      )
  }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/TabletNavSideBar.kt b/app/src/main/java/com/haooz/chedule/ui/components/TabletNavSideBar.kt
-index 2b46341..917b43e 100644
+index 2b46341d..917b43ea 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/TabletNavSideBar.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/TabletNavSideBar.kt
 @@ -429,6 +429,12 @@ fun TabletNavSideBar(
@@ -1610,7 +1610,7 @@ index 2b46341..917b43e 100644
                                  highlight = null,
                                  onDrawSurface = { drawRect(containerColor) },
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
-index 38c49c0..6fbe405 100644
+index 38c49c08..6fbe4057 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
 @@ -241,7 +241,10 @@ fun MainScheduleScreen(
@@ -1634,7 +1634,7 @@ index 38c49c0..6fbe405 100644
                                  pendingSection = pendingSection,
                                  onPendingChange = onPendingChange,
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-index 32c332d..adce933 100644
+index 32c332d2..adce9331 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 @@ -3,6 +3,7 @@ package com.haooz.chedule.ui.screens
@@ -1773,7 +1773,7 @@ index 32c332d..adce933 100644
                      }
                  }
 diff --git a/app/src/main/java/com/haooz/chedule/widget/CourseWidgetProviderPad.kt b/app/src/main/java/com/haooz/chedule/widget/CourseWidgetProviderPad.kt
-index af8df96..b39cdfc 100644
+index af8df96f..b39cdfce 100644
 --- a/app/src/main/java/com/haooz/chedule/widget/CourseWidgetProviderPad.kt
 +++ b/app/src/main/java/com/haooz/chedule/widget/CourseWidgetProviderPad.kt
 @@ -127,7 +127,14 @@ class CourseWidgetProviderPad : AppWidgetProvider() {
@@ -1793,7 +1793,7 @@ index af8df96..b39cdfc 100644
                  todayCourses.isEmpty() -> "今日无课"
                  else -> "今日课程已上完"
 diff --git a/app/src/main/java/com/haooz/chedule/widget/CourseWidgetProviderStandard.kt b/app/src/main/java/com/haooz/chedule/widget/CourseWidgetProviderStandard.kt
-index 4171471..2f606bd 100644
+index 41714712..2f606bdd 100644
 --- a/app/src/main/java/com/haooz/chedule/widget/CourseWidgetProviderStandard.kt
 +++ b/app/src/main/java/com/haooz/chedule/widget/CourseWidgetProviderStandard.kt
 @@ -136,7 +136,14 @@ class CourseWidgetProviderStandard : AppWidgetProvider() {
@@ -1813,7 +1813,7 @@ index 4171471..2f606bd 100644
                  todayCourses.isEmpty() -> "今日无课"
                  else -> "今日课程已上完"
 diff --git a/app/src/main/java/com/haooz/chedule/widget/TodayCourseWidgetProviderPad.kt b/app/src/main/java/com/haooz/chedule/widget/TodayCourseWidgetProviderPad.kt
-index d81b327..5accf07 100644
+index d81b327e..5accf070 100644
 --- a/app/src/main/java/com/haooz/chedule/widget/TodayCourseWidgetProviderPad.kt
 +++ b/app/src/main/java/com/haooz/chedule/widget/TodayCourseWidgetProviderPad.kt
 @@ -135,7 +135,12 @@ class TodayCourseWidgetProviderPad : AppWidgetProvider() {
@@ -1831,7 +1831,7 @@ index d81b327..5accf07 100644
                  todayCourses.isEmpty() -> "今日无课"
                  else -> "今日课程已上完"
 diff --git a/app/src/main/java/com/haooz/chedule/widget/TodayCourseWidgetProviderStandard.kt b/app/src/main/java/com/haooz/chedule/widget/TodayCourseWidgetProviderStandard.kt
-index 30521d5..bb94a59 100644
+index 30521d54..bb94a59e 100644
 --- a/app/src/main/java/com/haooz/chedule/widget/TodayCourseWidgetProviderStandard.kt
 +++ b/app/src/main/java/com/haooz/chedule/widget/TodayCourseWidgetProviderStandard.kt
 @@ -150,7 +150,12 @@ class TodayCourseWidgetProviderStandard : AppWidgetProvider() {

@@ -1,7 +1,7 @@
-From 0efcd1f0af508fce7f780d20dd72499faa7cc995 Mon Sep 17 00:00:00 2001
+From 964f48400882c7167efb0a33893cef8684097717 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 23:27:14 +0800
-Subject: [PATCH 21/25] =?UTF-8?q?v38:=20=E6=B8=85=E7=90=86=E5=8D=87?=
+Subject: [PATCH 21/27] =?UTF-8?q?v38:=20=E6=B8=85=E7=90=86=E5=8D=87?=
  =?UTF-8?q?=E5=9F=BA=E5=87=86=E5=90=8E=E7=9A=84=E9=87=8D=E5=A4=8D=E5=85=A5?=
  =?UTF-8?q?=E5=8F=A3=20=E2=80=94=E2=80=94=20=E8=B1=81=E5=85=8D=E8=AE=BE?=
  =?UTF-8?q?=E7=BD=AE=E7=BB=9F=E4=B8=80=E7=94=A8=E4=B8=8A=E6=B8=B8=E9=82=A3?=
@@ -27,7 +27,7 @@ saveEndCourseExclusion + 刷新）。同一个功能两个入口必然分叉，�
  2 files changed, 18 insertions(+), 18 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
-index b1028c2..a4f4091 100644
+index b1028c21..a4f40910 100644
 --- a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
 +++ b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
 @@ -49,7 +49,13 @@ object ReturnDayReminder {
@@ -46,7 +46,7 @@ index b1028c2..a4f4091 100644
      /**
       * 返校日当天不被假期清空的节次。
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-index acff258..fd17109 100644
+index acff2588..fd17109c 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 @@ -560,23 +560,6 @@ fun HolidaySettingsScreen(

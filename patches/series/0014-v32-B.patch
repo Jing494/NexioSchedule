@@ -1,7 +1,7 @@
-From c2097d796e8d24600f6d179d72d5e1eaa87dedd3 Mon Sep 17 00:00:00 2001
+From 7dfb5341b238ff5f1911bec3d8d2a6ca44fbd1c6 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 13:39:57 +0800
-Subject: [PATCH 14/25] =?UTF-8?q?v32:=20=E4=BF=AE=E8=AF=BE=E4=B8=AD?=
+Subject: [PATCH 14/27] =?UTF-8?q?v32:=20=E4=BF=AE=E8=AF=BE=E4=B8=AD?=
  =?UTF-8?q?=E5=80=92=E8=AE=A1=E6=97=B6"=E9=A3=9E=E4=BA=86"=E7=9A=84?=
  =?UTF-8?q?=E6=A0=B9=E5=9B=A0=EF=BC=88B=20=E5=8C=BA=E5=BC=80=E5=85=B3?=
  =?UTF-8?q?=E4=B8=8D=E8=81=94=E5=8A=A8=EF=BC=89+=20=E6=96=B0=E5=A2=9E?=
@@ -52,7 +52,7 @@ assembleRelease 通过；签名与 sha256 通过；dex 内新符号全部 FOUND�
  create mode 100644 app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
 
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 238f381..d836ca4 100644
+index 238f3812..d836ca46 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -2263,15 +2263,41 @@ object CourseReminderHelper {
@@ -163,7 +163,7 @@ index 238f381..d836ca4 100644
  
      // 每分钟由 WidgetRefreshReceiver 驱动；同 notifyId 重复 notify 无痕更新
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
-index aba68b4..5f1bc4d 100644
+index aba68b44..5f1bc4de 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 @@ -396,6 +396,26 @@ object IslandNotificationHelper {
@@ -273,7 +273,7 @@ index aba68b4..5f1bc4d 100644
          }
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt b/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
 new file mode 100644
-index 0000000..8f4190c
+index 00000000..8f4190cb
 --- /dev/null
 +++ b/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
 @@ -0,0 +1,90 @@
@@ -368,7 +368,7 @@ index 0000000..8f4190c
 +    }
 +}
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
-index 26ce90c..8eccedd 100644
+index 26ce90ca..8eccedd2 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 @@ -57,6 +57,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel

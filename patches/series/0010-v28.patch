@@ -1,7 +1,7 @@
-From 00a4a0b15b0719a91329f68d6fcacde76de988b9 Mon Sep 17 00:00:00 2001
+From 69d62ab0718986cb45e2e11e242d98b25c07bf3e Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 10:53:17 +0800
-Subject: [PATCH 10/25] =?UTF-8?q?v28:=20=E6=B5=81=E7=95=85=E5=BA=A6=20?=
+Subject: [PATCH 10/27] =?UTF-8?q?v28:=20=E6=B5=81=E7=95=85=E5=BA=A6=20?=
  =?UTF-8?q?=E2=80=94=E2=80=94=20=E9=A2=84=E5=90=88=E6=88=90=E5=87=8F?=
  =?UTF-8?q?=E5=8D=8A=20/=20=E6=95=B4=E9=A1=B5=E9=87=8D=E6=89=A7=E8=A1=8C?=
  =?UTF-8?q?=E6=B6=88=E9=99=A4=20/=20=E8=BD=AE=E8=AF=A2=E9=99=8D=E5=88=B0?=
@@ -86,7 +86,7 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 app/src/main/java/com/haooz/chedule/ui/utils/MinuteTick.kt
 
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index f375e25..9ea8f0a 100644
+index f375e257..9ea8f0a7 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -215,6 +215,8 @@ object CourseReminderHelper {
@@ -153,7 +153,7 @@ index f375e25..9ea8f0a 100644
      }
  
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
-index 12815a5..26ce90c 100644
+index 12815a5d..26ce90ca 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 @@ -1370,7 +1370,34 @@ private fun buildReminderHealth(context: android.content.Context): List<Reminder
@@ -193,7 +193,7 @@ index 12815a5..26ce90c 100644
          com.haooz.chedule.reminder.CourseReminderHelper.CHANNEL_REMINDER_ID,
          com.haooz.chedule.reminder.CourseReminderHelper.CHANNEL_HOLIDAY_ID,
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-index d01eb4a..c84d637 100644
+index d01eb4a6..c84d637c 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 @@ -68,6 +68,7 @@ import androidx.compose.runtime.produceState
@@ -276,7 +276,7 @@ index d01eb4a..c84d637 100644
                              val mainPagerPageContent: @Composable (Int) -> Unit = { page ->
                                  if (!isShiftMode) {
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
-index 5621416..7380477 100644
+index 56214167..73804770 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
 @@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
@@ -311,7 +311,7 @@ index 5621416..7380477 100644
                      }
                  }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
-index 2d2eb34..df036c5 100644
+index 2d2eb34b..df036c5d 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 @@ -46,6 +46,7 @@ import com.haooz.chedule.data.Course
@@ -343,7 +343,7 @@ index 2d2eb34..df036c5 100644
                      }
                  }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt b/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
-index d9b533a..e2dbb30 100644
+index d9b533a3..e2dbb30f 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
 @@ -112,6 +112,12 @@ internal class EdgeLightNode(
@@ -360,7 +360,7 @@ index d9b533a..e2dbb30 100644
          if (edgeLightLayer != null) {
              val size = size
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
-index 4baf84c..3b4b477 100644
+index 4baf84c6..3b4b477b 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
 @@ -109,6 +109,7 @@ import com.kyant.backdrop.effects.lens
@@ -409,7 +409,7 @@ index 4baf84c..3b4b477 100644
                      // 提升到 Row 之外：特殊横带按同一套列宽切分内部星期子块
                      val pageDayRange = remember(weekendDaysByWeek, week) {
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayAssistant.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayAssistant.kt
-index 5d72ef0..462d7e7 100644
+index 5d72ef0f..462d7e78 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayAssistant.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayAssistant.kt
 @@ -46,6 +46,7 @@ import androidx.core.content.edit
@@ -445,7 +445,7 @@ index 5d72ef0..462d7e7 100644
      }
  
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-index 4a7f62e..1889bb1 100644
+index 4a7f62e6..1889bb1d 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 @@ -29,6 +29,7 @@ import androidx.compose.runtime.mutableIntStateOf
@@ -578,7 +578,7 @@ index 4a7f62e..1889bb1 100644
              }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt b/app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
 new file mode 100644
-index 0000000..271319f
+index 00000000..271319fd
 --- /dev/null
 +++ b/app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
 @@ -0,0 +1,33 @@
@@ -617,7 +617,7 @@ index 0000000..271319f
 +fun glassBlurEnabled(): Boolean = GlassPerf.enabled.value
 diff --git a/app/src/main/java/com/haooz/chedule/ui/utils/MinuteTick.kt b/app/src/main/java/com/haooz/chedule/ui/utils/MinuteTick.kt
 new file mode 100644
-index 0000000..94ac4b2
+index 00000000..94ac4b27
 --- /dev/null
 +++ b/app/src/main/java/com/haooz/chedule/ui/utils/MinuteTick.kt
 @@ -0,0 +1,19 @@

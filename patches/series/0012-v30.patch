@@ -1,7 +1,7 @@
-From 04938d523ca08fe53465c0e7674762f3df320e1d Mon Sep 17 00:00:00 2001
+From 7bf7a5d0bcfea382cc8cca02a9c3f40704ef07d3 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 11:44:20 +0800
-Subject: [PATCH 12/25] =?UTF-8?q?v30:=20=E4=BF=AE=E6=AF=9B=E7=8E=BB?=
+Subject: [PATCH 12/27] =?UTF-8?q?v30:=20=E4=BF=AE=E6=AF=9B=E7=8E=BB?=
  =?UTF-8?q?=E7=92=83=E8=BF=87=E6=B8=A1=E7=9A=84=E3=80=8C=E6=89=AB=E8=BF=87?=
  =?UTF-8?q?=E3=80=8D=E6=84=9F=20=E2=80=94=E2=80=94=20=E6=8A=98=E5=B0=84?=
  =?UTF-8?q?=E5=AE=BD=E5=BA=A6=E6=81=92=E5=AE=9A=E3=80=81=E5=8F=AA=E6=B7=A1?=
@@ -41,7 +41,7 @@ APK 总大小三版同为 6130530 是 zip 对齐的巧合）。
  3 files changed, 22 insertions(+), 4 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
-index 9d0b346..140415a 100644
+index 9d0b346a..140415a4 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
 @@ -219,7 +219,13 @@ fun CourseCard(
@@ -60,7 +60,7 @@ index 9d0b346..140415a 100644
                          }
                      }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
-index 2e9a7f6..ec0a116 100644
+index 2e9a7f6e..ec0a1162 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 @@ -756,7 +756,13 @@ fun SpecialBandOverlay(
@@ -79,7 +79,7 @@ index 2e9a7f6..ec0a116 100644
                          }
                      }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-index b87fc19..e0102a6 100644
+index b87fc192..e0102a60 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 @@ -145,8 +145,11 @@ fun BlurCard(

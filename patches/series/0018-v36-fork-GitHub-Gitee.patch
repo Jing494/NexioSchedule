@@ -1,7 +1,7 @@
-From 50540c9f916606a224582c4699254697df3a3686 Mon Sep 17 00:00:00 2001
+From 81bbdad765c5bba51934b6f994829379e88ab06a Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 22:00:41 +0800
-Subject: [PATCH 18/25] =?UTF-8?q?v36:=20=E6=9B=B4=E6=96=B0=E6=BA=90?=
+Subject: [PATCH 18/27] =?UTF-8?q?v36:=20=E6=9B=B4=E6=96=B0=E6=BA=90?=
  =?UTF-8?q?=E4=B8=8E=E4=B8=8B=E8=BD=BD=E9=93=BE=E6=8E=A5=E6=9B=BF=E6=8D=A2?=
  =?UTF-8?q?=E4=B8=BA=E6=9C=AC=20fork=20=E8=87=AA=E5=B7=B1=E7=9A=84?=
  =?UTF-8?q?=E4=B8=A4=E4=B8=AA=E4=BB=93=E5=BA=93=EF=BC=88GitHub=20+=20Gitee?=
@@ -27,7 +27,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 21 insertions(+), 17 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt b/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
-index 9c0542d..3f94661 100644
+index 9c0542d0..3f94661b 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/UpdateDialog.kt
 @@ -140,18 +140,18 @@ internal fun UpdateDialog(liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = nu
@@ -76,7 +76,7 @@ index 9c0542d..3f94661 100644
          }
          isDownloading = true
 diff --git a/app/src/main/java/com/haooz/chedule/ui/utils/UpdateChecker.kt b/app/src/main/java/com/haooz/chedule/ui/utils/UpdateChecker.kt
-index 756b79c..ce803b3 100644
+index 756b79cf..ce803b38 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/utils/UpdateChecker.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/utils/UpdateChecker.kt
 @@ -74,10 +74,13 @@ internal object UpdateChecker {

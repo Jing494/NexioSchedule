@@ -1,7 +1,7 @@
-From 01d3dbd3b0e66865e38925b28d41af42700c0212 Mon Sep 17 00:00:00 2001
+From e1a4ddbff0282a5153b31b557e5e5ca5acd43027 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 23:24:50 +0800
-Subject: [PATCH 20/25] =?UTF-8?q?v38=EF=BC=9A=E5=8D=87=E5=9F=BA=E5=87=86?=
+Subject: [PATCH 20/27] =?UTF-8?q?v38=EF=BC=9A=E5=8D=87=E5=9F=BA=E5=87=86?=
  =?UTF-8?q?=E5=90=8E=E7=9A=84=E7=BC=96=E8=AF=91=E4=BF=AE=E5=A4=8D=20+=20?=
  =?UTF-8?q?=E7=BB=9F=E4=B8=80=E5=81=87=E6=9C=9F=E8=B1=81=E5=85=8D=E5=88=A4?=
  =?UTF-8?q?=E5=AE=9A?=
@@ -28,7 +28,7 @@ rebase 到上游 f2c4ab6 后，CI dry-run 报 11 个编译错误，逐个修好�
  4 files changed, 40 insertions(+), 13 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-index 4566d34..acff258 100644
+index 4566d34b..acff2588 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 @@ -29,7 +29,6 @@ import androidx.compose.foundation.lazy.LazyColumn
@@ -50,7 +50,7 @@ index 4566d34..acff258 100644
                      description = "• 假期期间每天一条，含假期最后一天（不占超级岛/实时动态的位置）\n" +
                          "• 独立开关：不再挂在「返校节次豁免」下面 —— 关掉豁免不会连带关掉余额提醒",
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
-index ec0a116..ddbe6f9 100644
+index ec0a1162..ddbe6f98 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 @@ -90,7 +90,6 @@ fun DayColumn(
@@ -92,7 +92,7 @@ index ec0a116..ddbe6f9 100644
          // 自定义时间课按时间轴插值定位/定高，不按节次分段
          if (course.hasValidCustomTime()) {
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt
-index fed0605..f6e40b2 100644
+index fed0605f..f6e40b25 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt
 @@ -985,9 +985,22 @@ fun CustomizeScheduleScreen(
@@ -148,7 +148,7 @@ index fed0605..f6e40b2 100644
                                  .edgeLight(
                                      shape = ContinuousCapsule(),
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
-index 3b4b477..f5bae4e 100644
+index 3b4b477b..f5bae4e8 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
 @@ -998,7 +998,6 @@ fun MainScheduleScreen(

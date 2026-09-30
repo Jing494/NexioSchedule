@@ -1,7 +1,7 @@
-From 1c2826722ae628e1d65e07293c6d22b70d36bd45 Mon Sep 17 00:00:00 2001
+From f00288a35153770fa9a5ca520fb4e0a890162674 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 08:31:41 +0800
-Subject: [PATCH 07/25] =?UTF-8?q?v25=EF=BC=9A=E6=8B=96=E6=8B=BD=E7=AC=AC?=
+Subject: [PATCH 07/27] =?UTF-8?q?v25=EF=BC=9A=E6=8B=96=E6=8B=BD=E7=AC=AC?=
  =?UTF-8?q?=E4=BA=8C=E9=98=B6=E6=AE=B5=20=E2=80=94=E2=80=94=20=E8=90=BD?=
  =?UTF-8?q?=E7=82=B9=E6=A0=BC=E5=AD=90=E5=AF=B9=E4=BA=86=EF=BC=8C=E5=8D=A1?=
  =?UTF-8?q?=E7=89=87=E4=BB=8D=E5=90=B8=E9=99=84=E5=88=B0=E5=81=8F=E9=AB=98?=
@@ -37,7 +37,7 @@ sectionTopPx() 同样是**均匀模型**（没有特殊块偏移），而它是�
  1 file changed, 38 insertions(+), 6 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-index dcafcd7..d01eb4a 100644
+index dcafcd72..d01eb4a6 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 @@ -1860,9 +1860,21 @@ fun CourseScheduleApp() {

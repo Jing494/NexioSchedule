@@ -1,7 +1,7 @@
-From 4af9095631df7a2774ec23ab86d2b3c8aae0b51c Mon Sep 17 00:00:00 2001
+From 5223375e0e02f89b0ee9af3d36a561d58f59ea2b Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 13:11:13 +0800
-Subject: [PATCH 13/25] =?UTF-8?q?v31:=20=E4=BF=AE=E3=80=8C=E8=BF=94?=
+Subject: [PATCH 13/27] =?UTF-8?q?v31:=20=E4=BF=AE=E3=80=8C=E8=BF=94?=
  =?UTF-8?q?=E6=A0=A1=E3=80=8D=E6=8F=90=E9=86=92=E7=9A=84=E6=97=A5=E5=AD=90?=
  =?UTF-8?q?=E8=AF=8D=20=E2=80=94=E2=80=94=20=E6=A0=87=E9=A2=98=E5=86=99?=
  =?UTF-8?q?=E6=AD=BB"=E6=98=8E=E5=A4=A9=E8=BF=94=E6=A0=A1"=EF=BC=8C?=
@@ -52,7 +52,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 53 insertions(+), 10 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
-index f8d3d13..9ab603e 100644
+index f8d3d13f..9ab603eb 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 @@ -179,6 +179,8 @@ class AlarmReceiver : BroadcastReceiver() {
@@ -74,7 +74,7 @@ index f8d3d13..9ab603e 100644
                              progressPercent = span?.progressPercent,
                          )
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 9ea8f0a..238f381 100644
+index 9ea8f0a7..238f3812 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -1695,12 +1695,42 @@ object CourseReminderHelper {
@@ -165,7 +165,7 @@ index 9ea8f0a..238f381 100644
              .setTimeoutAfter(timeoutMs)
          if (progressPercent != null) {
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
-index 3bed194..aba68b4 100644
+index 3bed194a..aba68b44 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
 @@ -940,7 +940,8 @@ object IslandNotificationHelper {

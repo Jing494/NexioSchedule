@@ -1,7 +1,7 @@
-From c405f9481bc86eb20b2e3c1035b318833206a2c5 Mon Sep 17 00:00:00 2001
+From 8504debf2a922d3264e2c1c3435a46b2719fc869 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 08:21:53 +0800
-Subject: [PATCH 06/25] =?UTF-8?q?v24=EF=BC=9A=E4=BF=AE=E8=AF=BE=E8=A1=A8?=
+Subject: [PATCH 06/27] =?UTF-8?q?v24=EF=BC=9A=E4=BF=AE=E8=AF=BE=E8=A1=A8?=
  =?UTF-8?q?=E6=8B=96=E6=8B=BD=E8=90=BD=E7=82=B9=E9=94=99=E4=BD=8D=EF=BC=88?=
  =?UTF-8?q?+=20=E4=B8=89=E9=A1=B9=E4=BD=8E=E9=A3=8E=E9=99=A9=E5=AE=A1?=
  =?UTF-8?q?=E8=AE=A1=E9=A1=B9=EF=BC=89?=
@@ -42,7 +42,7 @@ computeDropTarget 改成用 sectionTop 反查（与 DayColumn 空白格点击的
  4 files changed, 64 insertions(+), 15 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
-index 397c142..f8d3d13 100644
+index 397c1423..f8d3d13f 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 @@ -47,14 +47,22 @@ class AlarmReceiver : BroadcastReceiver() {
@@ -90,7 +90,7 @@ index 397c142..f8d3d13 100644
                      // 课表可能已变更：全量重注册，清掉过期闹钟
                      Log.d("AlarmReceiver", "Stale alarm: $courseName($startTime) no longer in today's schedule")
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 2db05af..228a25c 100644
+index 2db05af6..228a25c6 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -1788,7 +1788,11 @@ object CourseReminderHelper {
@@ -106,7 +106,7 @@ index 2db05af..228a25c 100644
                  .setOngoing(true)
                  .setOnlyAlertOnce(true)
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-index f31919f..dcafcd7 100644
+index f31919f4..dcafcd72 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 @@ -2225,6 +2225,38 @@ fun CourseScheduleApp() {
@@ -149,7 +149,7 @@ index f31919f..dcafcd7 100644
          var cursor = 0f
          for (s in 1..geom.morningSections) {
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
-index 6fbe405..4baf84c 100644
+index 6fbe4057..4baf84c6 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
 @@ -147,7 +147,17 @@ data class ScheduleGridGeometry(

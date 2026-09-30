@@ -1,7 +1,7 @@
-From 658baecdccdf65b662300c445056e4f81a160fa3 Mon Sep 17 00:00:00 2001
+From 650646b0de332e729116ab9b1bad65144a777e4b Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 14:04:18 +0800
-Subject: [PATCH 15/25] =?UTF-8?q?v33:=20=E6=B5=8B=E8=AF=95=E7=8B=AC?=
+Subject: [PATCH 15/27] =?UTF-8?q?v33:=20=E6=B5=8B=E8=AF=95=E7=8B=AC?=
  =?UTF-8?q?=E7=AB=8B=E6=88=90=E9=A1=B5=20+=20=E8=A6=86=E7=9B=96=E8=A1=A5?=
  =?UTF-8?q?=E9=BD=90=EF=BC=88=E8=BF=94=E6=A0=A1=E5=B2=9B/=E5=AE=9E?=
  =?UTF-8?q?=E6=97=B6=E5=8A=A8=E6=80=81=E7=AD=89=EF=BC=89+=20=E4=BD=93?=
@@ -61,7 +61,7 @@ Kotlin 守护进程 →1536m；实测 BUILD SUCCESSFUL 11m34s（比 4G/双 worke
  create mode 100644 app/src/main/java/com/haooz/chedule/ui/screens/ReminderTestScreen.kt
 
 diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
-index 3ec6b08..ecce5ba 100644
+index 3ec6b08f..ecce5baf 100644
 --- a/app/src/main/AndroidManifest.xml
 +++ b/app/src/main/AndroidManifest.xml
 @@ -114,6 +114,13 @@
@@ -79,7 +79,7 @@ index 3ec6b08..ecce5ba 100644
              android:name=".ui.activities.HolidaySettingsActivity"
              android:exported="false"
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
-index 9ab603e..dd6af7c 100644
+index 9ab603eb..dd6af7c0 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
 @@ -10,16 +10,6 @@ import com.haooz.chedule.data.CourseRepository
@@ -129,7 +129,7 @@ index 9ab603e..dd6af7c 100644
                  // 明天是「返校日」（假期/周末最后一天、次日要上课）→ 顺带推一条超级岛。
                  // 复用既有岛发送路径（含 XMSF 绕白名单），这里只是多一个调用方。
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index d836ca4..4903059 100644
+index d836ca46..49030593 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -1328,6 +1328,55 @@ object CourseReminderHelper {
@@ -189,7 +189,7 @@ index d836ca4..4903059 100644
          resolveDaySchedule(context, forTomorrow = true).courses
  
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt b/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
-index 8f4190c..0575006 100644
+index 8f4190cb..05750060 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
 @@ -2,16 +2,39 @@ package com.haooz.chedule.reminder
@@ -391,7 +391,7 @@ index 8f4190c..0575006 100644
              }
          }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
-index 8eccedd..3886681 100644
+index 8eccedd2..38866814 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 @@ -57,7 +57,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
@@ -555,7 +555,7 @@ index 8eccedd..3886681 100644
  }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/ReminderTestActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/ReminderTestActivity.kt
 new file mode 100644
-index 0000000..3b08383
+index 00000000..3b083837
 --- /dev/null
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/ReminderTestActivity.kt
 @@ -0,0 +1,113 @@
@@ -674,7 +674,7 @@ index 0000000..3b08383
 +}
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/ReminderTestScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/ReminderTestScreen.kt
 new file mode 100644
-index 0000000..e78ee32
+index 00000000..e78ee324
 --- /dev/null
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/ReminderTestScreen.kt
 @@ -0,0 +1,270 @@
@@ -949,7 +949,7 @@ index 0000000..e78ee32
 +    )
 +}
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt
-index f63d22d..c0735b0 100644
+index f63d22d3..c0735b00 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt
 @@ -49,6 +49,7 @@ import com.haooz.chedule.data.TeachingWeekReorganization

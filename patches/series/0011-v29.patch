@@ -1,7 +1,7 @@
-From 54510c2e3bae84a450c36e6c224139987cf991ae Mon Sep 17 00:00:00 2001
+From ff73d608a51fabafbbc7fd1912a6847d07b5bbad Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 11:27:44 +0800
-Subject: [PATCH 11/25] =?UTF-8?q?v29:=20=E6=AF=9B=E7=8E=BB=E7=92=83?=
+Subject: [PATCH 11/27] =?UTF-8?q?v29:=20=E6=AF=9B=E7=8E=BB=E7=92=83?=
  =?UTF-8?q?=E9=99=8D=E7=BA=A7=E4=BB=8E=E5=B8=83=E5=B0=94=E7=A1=AC=E5=88=87?=
  =?UTF-8?q?=E6=94=B9=E4=B8=BA=E7=B3=BB=E6=95=B0=E6=B7=A1=E5=85=A5=E6=B7=A1?=
  =?UTF-8?q?=E5=87=BA=EF=BC=88=E4=BF=AE=E3=80=8C=E7=AA=81=E5=85=80=E3=80=8D?=
@@ -47,7 +47,7 @@ dex 独立佐证 glassPerfFactor FOUND、glassBlurEnabled MISSING。
  6 files changed, 89 insertions(+), 53 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-index c84d637..7b2ecf7 100644
+index c84d637c..7b2ecf71 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 @@ -2561,14 +2561,15 @@ fun CourseScheduleApp() {
@@ -88,7 +88,7 @@ index c84d637..7b2ecf7 100644
                  }
          }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
-index 7380477..9d0b346 100644
+index 73804770..9d0b346a 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
 @@ -48,7 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
@@ -121,7 +121,7 @@ index 7380477..9d0b346 100644
                          }
                      }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
-index df036c5..2e9a7f6 100644
+index df036c5d..2e9a7f6e 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 @@ -46,7 +46,7 @@ import com.haooz.chedule.data.Course
@@ -154,7 +154,7 @@ index df036c5..2e9a7f6 100644
                          }
                      }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt b/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
-index e2dbb30..5829d18 100644
+index e2dbb30f..5829d189 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/effects/edgelight/EdgeLightModifier.kt
 @@ -112,11 +112,14 @@ internal class EdgeLightNode(
@@ -187,7 +187,7 @@ index e2dbb30..5829d18 100644
              translate(-1f, -1f) {
                  drawLayer(edgeLightLayer)
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-index 1889bb1..b87fc19 100644
+index 1889bb1d..b87fc192 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 @@ -67,7 +67,7 @@ import com.haooz.chedule.ui.basic.collapsibleTopInset
@@ -252,7 +252,7 @@ index 1889bb1..b87fc19 100644
                      }
                  }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt b/app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
-index 271319f..6b96f18 100644
+index 271319fd..6b96f182 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
 @@ -1,33 +1,40 @@
