@@ -226,6 +226,30 @@ class CourseRepository private constructor(context: Context) {
         const val MAX_TOTAL_WEEKS = 30
 
         private const val PREFS_NAME = "course_schedule_prefs"
+
+        /**
+         * 备份里"其它偏好文件"的键前缀：`prefs@<文件名>@<原键>`。
+         * 那些文件同样是用户设置，但与 [PREFS_NAME] 是不同的 SharedPreferences，
+         * 直接混进同一个 Map 会撞名（例如两边都有 current_week 这种键），所以加命名空间。
+         */
+        private const val BACKUP_PREFS_TAG = "prefs@"
+
+        /**
+         * 除 [PREFS_NAME] 外**也要进备份**的用户设置文件。
+         *
+         * 刻意不含这几个：
+         * - `countdown_state`：当前通知/倒计时的瞬时状态
+         * - `weather_prefs`：天气缓存
+         * - `stats_prefs`：上报计数
+         * - `webdav_config`：含 WebDAV 凭据，绝不写进备份文件
+         */
+        private val BACKUP_EXTRA_PREFS = listOf(
+            "app_preferences",       // 触感反馈 / 应用材质等级 / 预测返回 / 隐藏背景
+            "app_theme_prefs",       // 主题模式（浅色 / 深色 / 跟随系统）
+            "course_reminder_prefs", // 课中提醒 / 岛 B 区模式 / 展开光效
+            "update_settings",       // 更新通道 / 下载源
+            "edu_import_prefs",      // 教育导入仓库地址
+        )
         private const val KEY_COURSES = "courses"
         private const val KEY_CURRENT_WEEK = "current_week"
         private const val KEY_TOTAL_WEEKS = "total_weeks"
@@ -2594,7 +2618,9 @@ class CourseRepository private constructor(context: Context) {
      *   （其新增的 isCombinationBackupKey / isAppFeatureBackupKey 就是干这个的）。
      *   本 fork 选择**带上全部用户设置** —— 换设备或重装后，课前提醒 / 超级岛开关 / 勿扰 /
      *   假期余额 / 返校准备清单 / 小部件档位 / 搭配外观 / 教学周重组规则 不会静默回到默认值。
-     *   要改回上游语义：删掉下面的 excludedKeys，改用上游那两个 helper 即可。
+     *   要改回上游语义：删掉下面的 excludedKeys、改用上游那两个 helper，
+     *   并在恢复侧加回它的那条跳过守卫（`if (isCombinationBackupKey(key) || isAppFeatureBackupKey(key)
+     *   || key == KEY_REMINDER_PREFS) continue`）—— 上游是"导出不写 + 恢复不覆盖"两侧成对的。
      *
      * ★ 另外这里必须是**黑名单**，不能退回白名单。
      *   原实现只导"带 schedule_/time_config_ 前缀的键 + 8 个全局键"，
@@ -2622,6 +2648,26 @@ class CourseRepository private constructor(context: Context) {
                 }
             }
         }
+        // 其它用户设置文件一并导出（加命名空间，键撞名也不会互相覆盖）。
+        // 这些文件里的设置以前完全不进备份 —— 换设备/重装后触感、材质等级、主题、
+        // 课中提醒、岛 B 区模式、更新通道等都会悄悄回到默认值。
+        for (fileName in BACKUP_EXTRA_PREFS) {
+            val extra = appContext.getSharedPreferences(fileName, Context.MODE_PRIVATE)
+            for ((key, value) in extra.all) {
+                val tagged = "$BACKUP_PREFS_TAG$fileName@$key"
+                when (value) {
+                    is String -> result[tagged] = value
+                    is Int -> result[tagged] = value
+                    is Boolean -> result[tagged] = value
+                    is Float -> result[tagged] = value
+                    is Long -> result[tagged] = value
+                    is Set<*> -> {
+                        @Suppress("UNCHECKED_CAST")
+                        result[tagged] = (value as Set<String>).toList()
+                    }
+                }
+            }
+        }
         if (KEY_SCHEDULE_NAMES !in result) {
             result[KEY_SCHEDULE_NAMES] = gson.toJson(getScheduleNames())
         }
@@ -2643,6 +2689,46 @@ class CourseRepository private constructor(context: Context) {
                 holidayBackup,
                 shouldPreserveRestoredFolderMembership(normalizedData),
             )
+        }
+    }
+
+    /**
+     * 还原 `prefs@<文件>@<键>` 形式的键。
+     *
+     * 只写到 [BACKUP_EXTRA_PREFS] 白名单里的文件 —— 备份文件可能来自别处/被改过，
+     * 不能让它决定我们要写哪个 SharedPreferences。数值按目标键原有的类型落库
+     * （SharedPreferences 的 getInt/getLong 对类型敏感，写错会 ClassCastException）。
+     */
+    private fun restoreExtraPreference(taggedKey: String, value: Any) {
+        val rest = taggedKey.removePrefix(BACKUP_PREFS_TAG)
+        val sep = rest.indexOf('@')
+        if (sep <= 0) return
+        val fileName = rest.substring(0, sep)
+        val originalKey = rest.substring(sep + 1)
+        if (fileName !in BACKUP_EXTRA_PREFS || originalKey.isEmpty()) return
+        val target = appContext.getSharedPreferences(fileName, Context.MODE_PRIVATE)
+        val current = target.all[originalKey]
+        target.edit {
+            when (value) {
+                is Boolean -> putBoolean(originalKey, value)
+                is String -> putString(originalKey, value)
+                is Number -> {
+                    val d = value.toDouble()
+                    when {
+                        current is Long -> putLong(originalKey, d.toLong())
+                        current is Float -> putFloat(originalKey, d.toFloat())
+                        d == d.toLong().toDouble() -> putInt(originalKey, d.toInt())
+                        else -> putFloat(originalKey, d.toFloat())
+                    }
+                }
+                is List<*> -> {
+                    if (current is Set<*>) {
+                        putStringSet(originalKey, value.filterIsInstance<String>().toSet())
+                    } else {
+                        putString(originalKey, gson.toJson(value))
+                    }
+                }
+            }
         }
     }
 
@@ -2674,8 +2760,10 @@ class CourseRepository private constructor(context: Context) {
                 if (key == HolidayManager.BACKUP_KEY ||
                     key == HolidayManager.BACKUP_EXCLUSION_KEY
                 ) continue
-                // 搭配、提醒等应用功能设置不进备份，恢复时也不覆盖设备上的对应配置
-                if (isCombinationBackupKey(key) || isAppFeatureBackupKey(key) || key == KEY_REMINDER_PREFS) continue
+                if (key.startsWith(BACKUP_PREFS_TAG)) {
+                    restoreExtraPreference(key, value)
+                    continue
+                }
                 when (value) {
                     is String -> putString(key, value)
                     is Boolean -> putBoolean(key, value)

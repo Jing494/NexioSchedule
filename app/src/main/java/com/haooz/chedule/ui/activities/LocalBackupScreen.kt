@@ -64,6 +64,7 @@ import com.haooz.chedule.ui.basic.OverlayDropdownMenu
 import com.haooz.chedule.ui.basic.SharedScrollBehavior
 import com.haooz.chedule.ui.basic.collapsibleTopInset
 import com.haooz.chedule.ui.utils.courseToShareMap
+import com.haooz.chedule.ui.utils.AppMaterialSettings
 import com.haooz.chedule.ui.utils.isAppDarkTheme
 import com.haooz.chedule.ui.utils.overScrollVertical
 import com.haooz.chedule.viewmodel.CourseViewModel
@@ -485,6 +486,8 @@ fun LocalBackupScreen(
                         is BackupPayload.Full -> {
                             repository.importAllPreferences(payload.data)
                             CourseReminderHelper.onHolidayDataChanged(context)
+                            // 恢复后把「应用材质等级」这类全局内存态重新载入，否则界面还是旧档位
+                            AppMaterialSettings.load(context)
                         }
                     }
                     // 等加载完成再提示成功，否则会先弹 Toast 再刷出数据

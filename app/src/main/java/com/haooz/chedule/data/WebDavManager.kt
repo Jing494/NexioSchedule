@@ -208,6 +208,8 @@ class WebDavManager(private val context: Context) {
 
                         repository.importAllPreferences(data)
                         com.haooz.chedule.reminder.CourseReminderHelper.onHolidayDataChanged(context)
+                        // 恢复后把「应用材质等级」这类全局内存态重新载入，否则界面还是旧档位
+                        com.haooz.chedule.ui.utils.AppMaterialSettings.load(context)
                         lastSyncTime = System.currentTimeMillis()
                         Log.d(TAG, "Restore succeeded from ${latest.backupTime}")
                         RestoreResult.Success(latest.backupTime)
