@@ -17,22 +17,48 @@ def normalize(text: str) -> str:
     text = re.sub(r"^Subject: \[PATCH \d+/\d+\]", "Subject: [PATCH]", text, flags=re.M)
     return text
 
-def digest_dir(d):
+def read_dir(d):
     out = {}
     for name in sorted(os.listdir(d)):
         if not name.endswith(".patch"):
             continue
         with open(os.path.join(d, name), encoding="utf-8", errors="replace") as f:
-            out[name] = hashlib.sha256(normalize(f.read()).encode()).hexdigest()
+            out[name] = normalize(f.read())
     return out
 
-a, b = digest_dir(sys.argv[1]), digest_dir(sys.argv[2])
+
+def digest_dir(texts):
+    return {k: hashlib.sha256(v.encode()).hexdigest() for k, v in texts.items()}
+
+
+def first_diff(a, b):
+    """返回首个不同的行号与两侧内容（用于把"内容不一致"变成可诊断的信息）"""
+    al, bl = a.splitlines(), b.splitlines()
+    for i in range(min(len(al), len(bl))):
+        if al[i] != bl[i]:
+            return i + 1, al[i], bl[i]
+    if len(al) != len(bl):
+        i = min(len(al), len(bl))
+        return i + 1, (al[i] if i < len(al) else "<EOF>"), (bl[i] if i < len(bl) else "<EOF>")
+    return None
+
+texts_a, texts_b = read_dir(sys.argv[1]), read_dir(sys.argv[2])
+a, b = digest_dir(texts_a), digest_dir(texts_b)
 only_a = sorted(set(a) - set(b)); only_b = sorted(set(b) - set(a))
 diff = sorted(n for n in set(a) & set(b) if a[n] != b[n])
 print(f"  仓库补丁 {len(a)} 个 / 重新生成 {len(b)} 个")
 if only_a: print("  仅在仓库里:", only_a)
 if only_b: print("  仅在新生成:", only_b)
-if diff:   print("  内容不一致:", diff)
+if diff:
+    print("  内容不一致:", diff)
+    # 只对前 3 个给出首个不同的行，方便直接定位（以前只报"不一致"，排查要靠猜）
+    for name in diff[:3]:
+        d = first_diff(texts_a[name], texts_b[name])
+        if d:
+            ln, la, lb = d
+            print(f"    [{name}] 首个不同在第 {ln} 行：")
+            print(f"      仓库 : {la[:120]}")
+            print(f"      重新生成: {lb[:120]}")
 if only_a or only_b or diff:
     print("  ❌ 不一致：补丁可能是手改的，或源码分支没同步推上去")
     sys.exit(1)
