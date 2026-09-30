@@ -10,11 +10,11 @@
 
 | 项 | 值 |
 |---|---|
-| **上游基线**（本定制栈的起点） | `f2c4ab6` — `v1.6.0.1`（2026-09-27 升；旧基线 `1f46721` = `v1.5.6beta13`） |
-| **本地分支** | `local/audit-v22`（rebase 后；`tmp-pub2` 是等内容的发布栈，只少了 docs 提交） |
-| **栈深度** | 本地 28 笔 / 发布栈 21 个补丁 |
-| 包名 / versionCode | `com.haooz.chedule` / 上游 `156`；发版码 = `156×100 + gh序号` |
-| versionName | **跟随上游**（`1.6.0.1-0924`），CI 发版时覆写为 `1.6.0.1.N-ghN`（序号全局计数，跨基准也单调） |
+| **上游基线**（本定制栈的起点） | `291e8b9` — `v1.6.0.2-0928`（2026-09-28 升；历史基线 `f2c4ab6`=`v1.6.0.1`、`1f46721`=`v1.5.6beta13`） |
+| **本地分支** | `local/audit-v22`（rebase 后；`tmp-pub3` 是等内容的发布栈，只少了 docs 提交） |
+| **栈深度** | 本地 35 笔 / 发布栈 27 个补丁 |
+| 包名 / versionCode | `com.haooz.chedule` / 上游 `158`；发版码 = `上游码×100 + gh序号` |
+| versionName | **跟随上游**（`1.6.0.2-0928`），CI 发版时覆写为 `1.6.0.2.N-ghN`（序号全局计数，跨基准也单调） |
 
 远端（都只是**只读参考**，本地定制一律**不推上游**）：
 
@@ -227,3 +227,41 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
    gh6 就是在 Gitee 附件上传中途被取消，留下一条"有 release 没有 APK"的记录
    （App 侧会跳过它；workflow 已加 `cancelled() || failure()` 的收尾清理步骤）。
    发版期间**不要连发两次 dispatch**。
+
+
+---
+
+## 九、升基准记录（f2c4ab6 → 291e8b9 = 1.6.0.2-0928，2026-09-28）
+
+上游 10 笔提交、37 文件、+747/−287 —— 量比上一次小得多，**冲突只有 4 处**。
+这次的特点是：**上游自己在做性能优化，而且和我 v21/v28 撞车**。
+
+| 我做过、上游也做了 | 我的做法 | 处置 |
+|---|---|---|
+| "effects/onDrawSurface 必须 remember 稳定，否则 `DrawBackdropElement.equals` 判不等→重建 RenderEffect→壁纸玻璃无意义重绘" | v21/v28 给 TodayScreen 的玻璃卡/分组标题各加一层 remember 包装 | **取上游**（同源优化，且他们还把 `blurPx` 多 remember 了一层） |
+| "半径为 0 不挂 blur 图层" | v21 在 MainActivity 里用 `graphicsLayer { renderEffect = … }` 自己判 | **取上游**（他们的 `mainContentBlurModifier` 用同样两个半径来源与 `>0.01f` 阈值） |
+| `beyondViewportPageCount = 1`（预合成减半） | v28 改的 | 上游也采纳了 → **只保留我的说明注释** |
+| 毛玻璃系数淡入淡出（`glassPerfFactor`，折射宽度恒定只淡强度） | v29/v30 | **我的独有，保留**（上游没有系数，只有固定强度） |
+| 轮询降到分钟节拍（`MinuteTick`） | v28 | **我的独有，保留** |
+
+### 本轮 dry-run 抓到的两个真问题（都已修）
+1. **`isColorOs()` 的收尾 `}` 被挤走**：上游那段函数的收尾括号在冲突里属于"公共区"，
+   被我方 222 行推到了后面 → 该函数永不闭合、后续 29 个成员全被套进它内部，
+   编译期报一大片 `Unresolved reference`。已 amend 进引入它的那笔提交，
+   门禁加第 27 条定点守卫（"`}.getOrDefault(false)` 后面必须紧跟 `}`"）。
+   **教训：合并"两边各插一段"的冲突时，公共区的收尾括号属于哪一边要单独确认。**
+2. **上游改了 `showStartedLiveNotification` 的签名**（去掉 `classroom`），
+   而我的测试路径还在传 → 编译不过。测试路径跟着改成与真实路径一致。
+
+### 审计发现并修掉的缺口（v42）
+`exportAllPreferences()` 只导出 `course_schedule_prefs`，而全仓有 **9 个 SharedPreferences**：
+`app_preferences`（触感反馈 / 应用材质等级 / 预测返回 / 隐藏背景）、`app_theme_prefs`（主题）、
+`course_reminder_prefs`（课中提醒 / 岛 B 区模式 / 展开光效）、`update_settings`（更新通道 / 下载源）、
+`edu_import_prefs`（教育导入仓库）里的用户设置**都不进备份**。
+现在用命名空间前缀 `prefs@<文件>@<键>` 一并导出/还原（白名单分派 + 按目标类型落库），
+明确排除 `countdown_state`（瞬时）、`weather_prefs`（缓存）、`stats_prefs`（计数）、
+`webdav_config`（含凭据）。门禁加第 28/29 条不变量。
+
+> **本轮的固定流程**（以后照做）：rebase → 静态体检（门禁 + 结构）→ CI **dry_run** 验编译 →
+> 绿了再正式发版 → 归档 dist → **审计**（文案入口名 / 开关联动口径 / 读取已删配置 / 死代码 /
+> 备份覆盖面 / get-set 配对）→ 审计发现**直接修** → 再审计，直到干净。
