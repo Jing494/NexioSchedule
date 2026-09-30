@@ -1,4 +1,4 @@
-From 14bd69fef9128276acef8078c03877266b17d370 Mon Sep 17 00:00:00 2001
+From d8d5a5e272d8c544c41571d0687ba16630883a29 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 23:04:12 +0800
 Subject: [PATCH 19/25] =?UTF-8?q?v37=EF=BC=9A=E4=BF=AE=E3=80=8C=E4=B8=A4?=
@@ -27,14 +27,14 @@ Content-Transfer-Encoding: 8bit
 - UpdateSettingsScreen：LaunchedEffect 的 key 加上 effectiveDownloadSource；
   「检查更新」在缓存下载地址为空时改为强制重查，而不是直接开对话框。
 
-(cherry picked from commit 35603b79f88072d20870eba9c3bc0266e595699e)
+(cherry picked from commit 8d1f517aa3494c6bee482832279434e82f6f4920)
 ---
  .../ui/activities/UpdateSettingsScreen.kt     | 12 ++++--
  .../haooz/chedule/ui/utils/UpdateChecker.kt   | 38 ++++++++++++-------
  2 files changed, 33 insertions(+), 17 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/UpdateSettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/UpdateSettingsScreen.kt
-index 168c6fa..d5e5f19 100644
+index 2423dcf..1942520 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/UpdateSettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/UpdateSettingsScreen.kt
 @@ -193,8 +193,11 @@ fun UpdateSettingsScreen(
@@ -51,7 +51,7 @@ index 168c6fa..d5e5f19 100644
          hasUpdate = false
          latestRelease = null
          prefs.edit {
-@@ -314,7 +317,10 @@ fun UpdateSettingsScreen(
+@@ -315,7 +318,10 @@ fun UpdateSettingsScreen(
                                  },
                                  onClick = {
                                      hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)

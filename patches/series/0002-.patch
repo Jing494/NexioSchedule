@@ -1,4 +1,4 @@
-From 54b93e690c1322739f0e0a97fc28c0303585103f Mon Sep 17 00:00:00 2001
+From fa777160b6b72949a944284ea9a2de4e87764c79 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sat, 26 Sep 2026 21:58:58 +0800
 Subject: [PATCH 02/25] =?UTF-8?q?=E4=BD=99=E9=A2=9D/=E6=B8=85=E5=8D=95?=
@@ -13,7 +13,7 @@ Content-Transfer-Encoding: 8bit
 - 自续：精确闹钟触发后走同一套判定发送，并顺手把明天的闹钟排上
 - 设置关闭时取消对应闹钟；刷新链那套保留作兜底（闹钟丢失/Doze 延迟仍能补发）
 
-(cherry picked from commit 90b22cedad1a243399fb8c129e48fd7fc8059413)
+(cherry picked from commit 6c7228fb6462644c1c7ae9e6d40b1d2c3866e3e7)
 ---
  .../haooz/chedule/reminder/AlarmReceiver.kt   |  7 ++
  .../chedule/reminder/CourseReminderHelper.kt  | 75 +++++++++++++++++++
@@ -38,7 +38,7 @@ index e4ca747..90f626d 100644
                  // 学期未开始（未到开学日期所在周的周一）：不发送次日提醒
                  if (!CourseReminderHelper.isSemesterStarted(repository)) {
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index a38d3e4..f71ed1d 100644
+index 4587dfa..c428769 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -92,6 +92,11 @@ object CourseReminderHelper {
@@ -53,7 +53,7 @@ index a38d3e4..f71ed1d 100644
      private const val NOTIFY_ID_RETURN_BALANCE = 300
      private const val NOTIFY_ID_RETURN_PREP = 301
      private const val KEY_RETURN_BALANCE_DATE = "balance_date"
-@@ -1316,6 +1321,76 @@ object CourseReminderHelper {
+@@ -1361,6 +1366,76 @@ object CourseReminderHelper {
          }
  
          maybeUpdateReturnDayLiveNotification(context, repository)

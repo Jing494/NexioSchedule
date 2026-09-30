@@ -1,4 +1,4 @@
-From 1d1a02c643fb8f88a59933ec5ec64f7a7719d977 Mon Sep 17 00:00:00 2001
+From 33e9d8d1a6f31919b6e80844ea191887141f7ac9 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sat, 26 Sep 2026 23:40:58 +0800
 Subject: [PATCH 03/25] =?UTF-8?q?=E5=AE=A1=E8=AE=A1=E4=BF=AE=E5=A4=8D=20+?=
@@ -36,7 +36,7 @@ Content-Transfer-Encoding: 8bit
 - EdgeLightElement 值重载按值比较（原来每次重组都失效 outline 缓存）
 - AlarmReceiver 去掉每次闹钟都跑的 SimpleDateFormat 调试日志；6 处裸 Log.d 改走门控 logD
 
-(cherry picked from commit ee67bc5a3ced946d1235ed6474f411faa75835e9)
+(cherry picked from commit cac31fee01c211f7a276b80575a4192bee0ee2b9)
 ---
  .../com/haooz/chedule/data/HolidayManager.kt  |  11 ++
  .../haooz/chedule/data/ReturnDayReminder.kt   |  58 ++++--
@@ -45,15 +45,15 @@ Content-Transfer-Encoding: 8bit
  .../reminder/IslandNotificationHelper.kt      |  19 +-
  .../ui/activities/CourseReminderScreen.kt     |  10 +-
  .../ui/activities/HolidaySettingsScreen.kt    |  31 +--
- .../chedule/ui/activities/MainActivity.kt     |  78 +++++---
+ .../chedule/ui/activities/MainActivity.kt     |  61 +++---
  .../chedule/ui/basic/CollapsibleTopAppBar.kt  |   6 +-
  .../haooz/chedule/ui/basic/ShortcutMenu.kt    |  28 ++-
  .../haooz/chedule/ui/components/DayColumn.kt  |  31 +--
  .../ui/effects/edgelight/EdgeLightModifier.kt |  22 ++-
  .../ui/screens/CustomizeScheduleScreen.kt     |  38 +---
- .../haooz/chedule/ui/screens/TodayScreen.kt   |  90 ++++++---
+ .../haooz/chedule/ui/screens/TodayScreen.kt   |  19 +-
  .../haooz/chedule/widget/WidgetUpdateCache.kt |  25 +++
- 15 files changed, 471 insertions(+), 168 deletions(-)
+ 15 files changed, 403 insertions(+), 148 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt b/app/src/main/java/com/haooz/chedule/data/HolidayManager.kt
 index 3d0df17..09dfa58 100644
@@ -224,7 +224,7 @@ index 90f626d..397c142 100644
                          .currentHolidaySpan(context, tomorrow)
                      val firstReturnCourse = tomorrowCourses.firstOrNull()
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index f71ed1d..860d708 100644
+index c428769..0bc6238 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -99,9 +99,18 @@ object CourseReminderHelper {
@@ -246,7 +246,7 @@ index f71ed1d..860d708 100644
      const val LIVE_STARTED_ID = 2004
      const val LIVE_IN_CLASS_ID = 2005
      // 测试实时活动独立 ID，对齐超级岛 5000/5001/5002，不覆盖真实课提醒
-@@ -312,6 +321,25 @@ object CourseReminderHelper {
+@@ -342,6 +351,25 @@ object CourseReminderHelper {
          }.timeInMillis
      }
  
@@ -272,7 +272,7 @@ index f71ed1d..860d708 100644
      /**
       * 课表边界闹钟专用：课前提醒点、上课瞬间、下课瞬间。
       *
-@@ -790,6 +818,21 @@ object CourseReminderHelper {
+@@ -820,6 +848,21 @@ object CourseReminderHelper {
          // 用于把刷新对齐到上课瞬间，避免倒计时归零后等一整分钟才切"已上课"
          var imminentStartMillis: Long? = null
  
@@ -294,7 +294,7 @@ index f71ed1d..860d708 100644
          for (course in todayCourses) {
              val startTime = getCourseStartTime(course, repository)
              val endTime = getCourseEndTime(course, repository)
-@@ -803,8 +846,24 @@ object CourseReminderHelper {
+@@ -833,8 +876,24 @@ object CourseReminderHelper {
              val endMin = (endParts[0].toIntOrNull() ?: 0) * 60 + (endParts[1].toIntOrNull() ?: 0)
  
              if (currentMinutes in startMin until endMin) {
@@ -321,7 +321,7 @@ index f71ed1d..860d708 100644
              }
  
              val minutesToStart = startMin - currentMinutes
-@@ -1107,10 +1166,16 @@ object CourseReminderHelper {
+@@ -1137,10 +1196,16 @@ object CourseReminderHelper {
  
      /** 节假日/调休数据变更后：重排提醒并立即刷新已放置的小部件 */
      fun onHolidayDataChanged(context: Context) {
@@ -338,7 +338,7 @@ index f71ed1d..860d708 100644
      }
  
      /** Remove a real ongoing course notification when holiday changes no longer resolve it for today. */
-@@ -1264,7 +1329,7 @@ object CourseReminderHelper {
+@@ -1309,7 +1374,7 @@ object CourseReminderHelper {
          val repository = CourseRepository(context)
          val today = java.time.LocalDate.now()
          val todayKey = today.toString()
@@ -347,7 +347,7 @@ index f71ed1d..860d708 100644
  
          // 假期余额：假期中每天一条（返校日当天不发，那天由返校提醒负责）
          val span = ReturnDayReminder.currentHolidaySpan(context, today)
-@@ -1312,7 +1377,9 @@ object CourseReminderHelper {
+@@ -1357,7 +1422,9 @@ object CourseReminderHelper {
                  showReminderNotification(
                      context,
                      NOTIFY_ID_RETURN_PREP,
@@ -358,7 +358,7 @@ index f71ed1d..860d708 100644
                      multiLinePrep,
                      channelId = CHANNEL_HOLIDAY_ID,
                  )
-@@ -1328,9 +1395,13 @@ object CourseReminderHelper {
+@@ -1373,9 +1440,13 @@ object CourseReminderHelper {
          if (repository.getReturnDayBalanceEnabled()) {
              scheduleReturnDayExactAlarm(
                  context, alarmManager, RC_RETURN_BALANCE_ALARM, TYPE_RETURN_DAILY_BALANCE, balanceTarget,
@@ -373,7 +373,7 @@ index f71ed1d..860d708 100644
          }
          if (repository.getReturnDayPrepEnabled()) {
              scheduleReturnDayExactAlarm(
-@@ -1342,20 +1413,48 @@ object CourseReminderHelper {
+@@ -1387,20 +1458,48 @@ object CourseReminderHelper {
                      repository.getReturnDayPrepHour(),
                      repository.getReturnDayPrepMinute(),
                  ),
@@ -424,7 +424,7 @@ index f71ed1d..860d708 100644
          val intent = Intent(context, AlarmReceiver::class.java).apply {
              putExtra(EXTRA_REMINDER_TYPE, type)
          }
-@@ -1365,14 +1464,11 @@ object CourseReminderHelper {
+@@ -1410,14 +1509,11 @@ object CourseReminderHelper {
              intent,
              PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
          )
@@ -443,7 +443,7 @@ index f71ed1d..860d708 100644
      }
  
      private fun cancelReturnDayExactAlarm(
-@@ -1380,6 +1476,8 @@ object CourseReminderHelper {
+@@ -1425,6 +1521,8 @@ object CourseReminderHelper {
          alarmManager: AlarmManager,
          requestCode: Int,
          type: Int,
@@ -452,7 +452,7 @@ index f71ed1d..860d708 100644
      ) {
          val intent = Intent(context, AlarmReceiver::class.java).apply {
              putExtra(EXTRA_REMINDER_TYPE, type)
-@@ -1391,6 +1489,9 @@ object CourseReminderHelper {
+@@ -1436,6 +1534,9 @@ object CourseReminderHelper {
              PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
          )
          alarmManager.cancel(pendingIntent)
@@ -462,7 +462,7 @@ index f71ed1d..860d708 100644
      }
  
      /**
-@@ -1405,6 +1506,8 @@ object CourseReminderHelper {
+@@ -1450,6 +1551,8 @@ object CourseReminderHelper {
          repository: CourseRepository,
      ) {
          if (repository.getIslandNotification() && IslandNotificationHelper.isIslandSupported(context)) return
@@ -471,7 +471,7 @@ index f71ed1d..860d708 100644
          val today = java.time.LocalDate.now()
          val tomorrow = today.plusDays(1)
          val todayIsReturn = ReturnDayReminder.isReturnDay(context, today)
-@@ -1414,12 +1517,16 @@ object CourseReminderHelper {
+@@ -1459,12 +1562,16 @@ object CourseReminderHelper {
          val resolution = resolveDaySchedule(context, targetDate)
          val first = resolution.courses.firstOrNull() ?: return
          val startTime = getCourseStartTime(first, repository) ?: return
@@ -492,7 +492,7 @@ index f71ed1d..860d708 100644
          if (now - prefs.getLong(KEY_RETURN_LIVE_PUSH, 0L) < 15 * 60 * 1000L) return
          val span = ReturnDayReminder.currentHolidaySpan(context, targetDate)
          showReturnDayLiveNotification(
-@@ -1456,7 +1563,8 @@ object CourseReminderHelper {
+@@ -1501,7 +1608,8 @@ object CourseReminderHelper {
              if (courseName.isNotEmpty()) append(courseName)
              if (section.isNotEmpty()) append("｜").append(section)
              if (startTime.isNotEmpty()) append(" ").append(startTime)
@@ -502,7 +502,7 @@ index f71ed1d..860d708 100644
          }
          val contentIntent = PendingIntent.getActivity(
              context,
-@@ -1736,7 +1844,18 @@ object CourseReminderHelper {
+@@ -1783,7 +1891,18 @@ object CourseReminderHelper {
          manager.notify(startedNotificationId, startedNotification)
      }
  
@@ -521,7 +521,7 @@ index f71ed1d..860d708 100644
          val manager = context.getSystemService(NotificationManager::class.java)
          val alertChannel = NotificationChannel(
              CHANNEL_REMINDER_ID,
-@@ -1764,6 +1883,7 @@ object CourseReminderHelper {
+@@ -1811,6 +1930,7 @@ object CourseReminderHelper {
          }
          manager.createNotificationChannel(alertChannel)
          manager.createNotificationChannel(liveChannel)
@@ -529,7 +529,7 @@ index f71ed1d..860d708 100644
      }
  
      fun showReminderNotification(
-@@ -2156,10 +2276,10 @@ object CourseReminderHelper {
+@@ -2198,10 +2318,10 @@ object CourseReminderHelper {
              // 连堂课间为 0 时触发点可能已过上课时刻：落"已上课"；超宽限期则不再打扰
              val elapsed = nowMs - courseStartMillis
              if (elapsed > ISLAND_START_GRACE_MS) {
@@ -542,7 +542,7 @@ index f71ed1d..860d708 100644
              if (useIsland) {
                  IslandNotificationHelper.sendPreClassIslandNotification(
                      context = context,
-@@ -2256,7 +2376,7 @@ object CourseReminderHelper {
+@@ -2298,7 +2418,7 @@ object CourseReminderHelper {
                  IslandNotificationHelper.cancelIslandNotifications(context)
                  IslandNotificationHelper.IslandState.clear(context)
                  IslandNotificationHelper.IslandState.clear(context, testMode = true)
@@ -551,7 +551,7 @@ index f71ed1d..860d708 100644
              }
              return
          }
-@@ -2282,7 +2402,7 @@ object CourseReminderHelper {
+@@ -2324,7 +2444,7 @@ object CourseReminderHelper {
              // 连带收起另一半（倒计时/已上课），避免残留岛一直停在 00:00
              IslandNotificationHelper.cancelIslandState(context, state.notificationId)
              IslandNotificationHelper.IslandState.clear(context, testMode)
@@ -560,7 +560,7 @@ index f71ed1d..860d708 100644
              return
          }
  
-@@ -2292,10 +2412,10 @@ object CourseReminderHelper {
+@@ -2334,10 +2454,10 @@ object CourseReminderHelper {
                  // 隔夜或重启后残留的状态：不要再补一个过期的"已上课"，直接收起
                  IslandNotificationHelper.cancelIslandState(context, state.notificationId)
                  IslandNotificationHelper.IslandState.clear(context, testMode)
@@ -573,7 +573,7 @@ index f71ed1d..860d708 100644
              IslandNotificationHelper.onClassStart(
                  context = context,
                  courseName = state.courseName,
-@@ -2413,12 +2533,16 @@ object CourseReminderHelper {
+@@ -2455,12 +2575,16 @@ object CourseReminderHelper {
                      windowStart = prevEnd
                  }
              }
@@ -637,10 +637,10 @@ index 40df3b3..c00d56e 100644
          // courseStartMillis = null → 静态岛（不画倒计时），左右槽位回落到课程名/教室
          val paramsRaw = buildIslandParamsJson(
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
-index b502f48..9307ebd 100644
+index e0354ca..f67b024 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
-@@ -590,12 +590,16 @@ fun CourseReminderScreen(
+@@ -591,12 +591,16 @@ fun CourseReminderScreen(
                                      title = "小米超级岛",
                                      summary = when {
                                          !isIslandSupported ->
@@ -661,10 +661,10 @@ index b502f48..9307ebd 100644
                                          rlog("island_switch", "on=$it supported=$isIslandSupported")
                                          settingsViewModel.setIslandNotification(it)
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-index 4b9abc2..6981847 100644
+index 8faa13d..1644907 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-@@ -2030,8 +2030,12 @@ private fun sectionRangeTimeText(
+@@ -2041,8 +2041,12 @@ private fun sectionRangeTimeText(
      startSection: Int,
      endSection: Int,
  ): String {
@@ -679,7 +679,7 @@ index 4b9abc2..6981847 100644
      return when {
          start.isNotEmpty() && end.isNotEmpty() -> "$start–$end"
          start.isNotEmpty() -> start
-@@ -2081,6 +2085,10 @@ private fun ReturnDayReminderCard() {
+@@ -2092,6 +2096,10 @@ private fun ReturnDayReminderCard() {
      var showWeekdayDialog by remember { mutableStateOf(false) }
      var prepEnabled by remember { mutableStateOf(repository.getReturnDayPrepEnabled()) }
      var prepText by remember { mutableStateOf(repository.getReturnDayPrepText()) }
@@ -690,7 +690,7 @@ index 4b9abc2..6981847 100644
      var showPrepDialog by remember { mutableStateOf(false) }
      var showPrepTimeDialog by remember { mutableStateOf(false) }
      var balanceEnabled by remember { mutableStateOf(repository.getReturnDayBalanceEnabled()) }
-@@ -2154,10 +2162,10 @@ private fun ReturnDayReminderCard() {
+@@ -2165,10 +2173,10 @@ private fun ReturnDayReminderCard() {
                  SwitchPreference(
                      title = "返校准备清单",
                      summary = if (prepEnabled) {
@@ -704,7 +704,7 @@ index 4b9abc2..6981847 100644
                      },
                      checked = prepEnabled,
                      onCheckedChange = { checked ->
-@@ -2168,10 +2176,7 @@ private fun ReturnDayReminderCard() {
+@@ -2179,10 +2187,7 @@ private fun ReturnDayReminderCard() {
                  if (prepEnabled) {
                      ArrowPreference(
                          title = "提醒时间",
@@ -716,7 +716,7 @@ index 4b9abc2..6981847 100644
                          onClick = { showPrepTimeDialog = true },
                      )
                      ArrowPreference(
-@@ -2339,7 +2344,7 @@ private fun ReturnDayReminderCard() {
+@@ -2350,7 +2355,7 @@ private fun ReturnDayReminderCard() {
          var draftText by remember(showPrepDialog) { mutableStateOf(prepText) }
          Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
              Text(
@@ -725,7 +725,7 @@ index 4b9abc2..6981847 100644
                  style = MiuixTheme.textStyles.body1.copy(
                      fontSize = 14.sp,
                      color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-@@ -2425,10 +2430,12 @@ private fun ReturnDayReminderCard() {
+@@ -2436,10 +2441,12 @@ private fun ReturnDayReminderCard() {
      timePickerDialog(
          title = "清单提醒时间",
          show = showPrepTimeDialog,
@@ -741,10 +741,10 @@ index 4b9abc2..6981847 100644
              repository.setReturnDayPrepMinute(m)
              CourseReminderHelper.onHolidayDataChanged(context)
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-index 5ccdef9..09424c8 100644
+index 4072b91..f31919f 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-@@ -1731,7 +1731,11 @@ fun CourseScheduleApp() {
+@@ -1738,7 +1738,11 @@ fun CourseScheduleApp() {
          (1..5).toList() + settingsViewModel.getWeekendDaysForWeek(currentViewingWeek)
              .filter { it in 6..7 }
      }
@@ -757,7 +757,7 @@ index 5ccdef9..09424c8 100644
      val weekDates = remember(currentViewingWeek, classStartTime, teachingWeekRules) {
          try {
              val startDate = LocalDate.parse(classStartTime.replace("/", "-"))
-@@ -2501,11 +2505,13 @@ fun CourseScheduleApp() {
+@@ -2508,11 +2512,13 @@ fun CourseScheduleApp() {
              showSwitchSchedule && switchOverlayActive -> 0f
              else -> 1f
          }
@@ -776,8 +776,8 @@ index 5ccdef9..09424c8 100644
  
          // liquidGlass 录制跳帧指纹：结构量变了才 update→markNeedsRecord。
          // 必须 remember 出稳定 List，否则 equals 失败会强制录制。
-@@ -2523,16 +2529,18 @@ fun CourseScheduleApp() {
-                 wallpaperBitmap, com.haooz.chedule.ui.components.TabletNavSideState.expanded, scheduleShowCourseDetail.value
+@@ -2533,16 +2539,18 @@ fun CourseScheduleApp() {
+                 pagerState.currentPage
              )
          }
 -        // 局部 val 不能直接捕获进 remember lambda，一律经 rememberUpdatedState
@@ -805,7 +805,7 @@ index 5ccdef9..09424c8 100644
          val latestIsWindowCutout by rememberUpdatedState(isWindowCutoutActive)
          val latestShowCustomize by rememberUpdatedState(showCustomizePage)
          val latestIsCustomizeExiting by rememberUpdatedState(isCustomizeExiting)
-@@ -2567,16 +2575,16 @@ fun CourseScheduleApp() {
+@@ -2580,16 +2588,16 @@ fun CourseScheduleApp() {
                      (latestShowCustomize && latestIsCustomizeExiting) ||
                      latestShowSwitch && latestSwitchAnimForward && latestSwitchAnimRunning ||
                      latestSwitchAnimRunning ||
@@ -831,7 +831,7 @@ index 5ccdef9..09424c8 100644
                      // 拖拽课程卡片时像素每帧变
                      latestDraggingCard
              }
-@@ -2585,9 +2593,6 @@ fun CourseScheduleApp() {
+@@ -2613,9 +2621,6 @@ fun CourseScheduleApp() {
          Box(
              modifier = Modifier
                  .fillMaxSize()
@@ -839,32 +839,8 @@ index 5ccdef9..09424c8 100644
 -                // RenderEffect 图层，0 半径也照常走一遍离屏合成。
 -                .then(mainContentBlurModifier)
                  .then(
-                     if (navBarStyle != "rail") {
-                         // 圆角裁剪在 graphicsLayer 内部完成（见下），这里不再单独 clip
-@@ -2595,6 +2600,23 @@ fun CourseScheduleApp() {
-                     } else Modifier
-                 )
-                 .graphicsLayer {
-+                    // 主内容模糊：在绘制期读半径（理由见上方注释）。
-+                    // 半径为 0 时把 renderEffect 置空，0 半径不必走一遍离屏合成。
-+                    val blurDp =
-+                        if (shortcutMenuBlurRadius.value > 0.01f) shortcutMenuBlurRadius.value
-+                        else managePageBlurRadius.value
-+                    renderEffect = if (blurDp > 0.01f) {
-+                        // 必须用 Compose 的 BlurEffect：GraphicsLayerScope.renderEffect 收的是
-+                        // androidx.compose.ui.graphics.RenderEffect。TileMode.Clamp 与
-+                        // Modifier.blur 的默认 BlurredEdgeTreatment.Rectangle 一致。
-+                        androidx.compose.ui.graphics.BlurEffect(
-+                            blurDp,
-+                            blurDp,
-+                            androidx.compose.ui.graphics.TileMode.Clamp,
-+                        )
-+                    } else {
-+                        null
-+                    }
-                     val baseScale =
-                         if (!showSwitchSchedule) backgroundScale.value
-                         else if (isEntryAnimating) 1f
+                     if (mainLayerNeeded) {
+                         Modifier.graphicsLayer {
 diff --git a/app/src/main/java/com/haooz/chedule/ui/basic/CollapsibleTopAppBar.kt b/app/src/main/java/com/haooz/chedule/ui/basic/CollapsibleTopAppBar.kt
 index dab7d85..e5dc1fd 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/basic/CollapsibleTopAppBar.kt
@@ -930,7 +906,7 @@ index e7f522d..7b1a472 100644
                  .edgeLight(shape = ContinuousRoundedRectangle(18.dp), edgeLight = rememberDefaultEdgeLight())
                  .clickable(
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
-index 888ca6a..b6a371e 100644
+index 59ca258..2d2eb34 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 @@ -400,16 +400,23 @@ private fun CourseCardsLayer(
@@ -1094,60 +1070,18 @@ index f6e40b2..fed0605 100644
                                  .edgeLight(
                                      shape = ContinuousCapsule(),
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-index 67f6935..d5160e6 100644
+index adce933..4a7f62e 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-@@ -125,22 +125,39 @@ fun BlurCard(
-     if (hasBackdrop) {
-         val shape = ContinuousRoundedRectangle(cornerRadius)
-         val defaultEdgeLight = rememberDefaultEdgeLight()
-+        // drawBackdrop 的 equals 是**按引用**比较 effects / onDrawSurface 的：
-+        // 每次重组新建这两个 lambda 会让 element 判不等 → update() → 失效绘制缓存 →
-+        // 重跑 blur + lens（lens 还要重建 RuntimeShader）。今日页有 5~6 张玻璃卡、
-+        // 页面本身还带 1Hz 计时，所以必须 remember（CourseCard 里已经是这么做的）。
-+        val cardEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
-+            remember(blurRadius, refraction) {
-+                {
-+                    blur(blurRadius.dp.toPx())
-+                    if (refraction != CardRefractionLevel.OFF) {
-+                        lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
-+                    }
-+                }
-+            }
-+        val onCardSurface: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit =
-+            remember(isDark, surfaceOpacity) {
-+                {
-+                    drawRect(
-+                        if (isDark) Color.Black.copy(alpha = surfaceOpacity)
-+                        else Color.White.copy(alpha = surfaceOpacity)
-+                    )
-+                }
-+            }
-+        val cardShape: () -> ContinuousRoundedRectangle =
-+            remember(cornerRadius) { { ContinuousRoundedRectangle(cornerRadius) } }
+@@ -147,6 +147,7 @@ fun BlurCard(
+                     )
+                 }
+             }
++
          Box(
              modifier = modifier
                  .clip(shape)
-                 .drawBackdrop(
-                     backdrop = wallpaperBackdrop,
--                    shape = { ContinuousRoundedRectangle(cornerRadius) },
--                    effects = {
--                        blur(blurRadius.dp.toPx())
--                        if (refraction != CardRefractionLevel.OFF) {
--                            lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
--                        }
--                    },
-+                    shape = cardShape,
-+                    effects = cardEffects,
-                     highlight = null,
--                    onDrawSurface = {
--                        drawRect(if (isDark) Color.Black.copy(alpha = surfaceOpacity) else Color.White.copy(alpha = surfaceOpacity))
--                    }
-+                    onDrawSurface = onCardSurface
-                 )
-                 .then(
-                     if (showEdgeLight) {
-@@ -635,12 +652,20 @@ fun TodayScreen(
+@@ -650,12 +651,20 @@ fun TodayScreen(
                          )
                      }
                  }
@@ -1173,55 +1107,6 @@ index 67f6935..d5160e6 100644
  
                  val holidayCountdownSnapshot = remember(
                      isPageToday,
-@@ -1678,23 +1703,38 @@ private fun CourseSectionTitle(
- 
-     if (wallpaperBackdrop != null) {
-         val shape = ContinuousCapsule()
-+        // 同 BlurCard：drawBackdrop 的 effects / onDrawSurface 按引用比较，
-+        // 每次重组新建 lambda 会让毛玻璃与小透镜每次重组重建一次。
-+        // 今日页每页有 3+ 个分组标题、页面本身还带 1Hz 计时，所以必须 remember。
-+        val sectionShape: () -> com.kyant.capsule.ContinuousRoundedRectangle = remember { { ContinuousCapsule() } }
-+        val sectionEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
-+            remember(blurRadius, refraction) {
-+                {
-+                    blur(blurRadius.dp.toPx())
-+                    if (refraction != CardRefractionLevel.OFF) {
-+                        lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
-+                    }
-+                }
-+            }
-+        val onSectionSurface: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit =
-+            remember(isDark, surfaceOpacity) {
-+                {
-+                    drawRect(
-+                        if (isDark) Color.Black.copy(alpha = surfaceOpacity)
-+                        else Color.White.copy(alpha = surfaceOpacity)
-+                    )
-+                }
-+            }
-         Box(
-             modifier = modifier
-                 .padding(vertical = 6.dp)
-                 .clip(shape)
-                 .drawBackdrop(
-                     backdrop = wallpaperBackdrop,
--                    shape = { shape },
--                    effects = {
--                        blur(blurRadius.dp.toPx())
--                        if (refraction != CardRefractionLevel.OFF) {
--                            lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
--                        }
--                    },
-+                    shape = sectionShape,
-+                    effects = sectionEffects,
-                     highlight = null,
--                    onDrawSurface = {
--                        drawRect(if (isDark) Color.Black.copy(alpha = surfaceOpacity) else Color.White.copy(alpha = surfaceOpacity))
--                    }
-+                    onDrawSurface = onSectionSurface
-                 )
-                 // 标题与课程卡一致用淡描边；亮版只留给今日助手/格言
-                 .edgeLight(shape = shape, edgeLight = rememberCardEdgeLight())
 diff --git a/app/src/main/java/com/haooz/chedule/widget/WidgetUpdateCache.kt b/app/src/main/java/com/haooz/chedule/widget/WidgetUpdateCache.kt
 index 83de3f2..ce90121 100644
 --- a/app/src/main/java/com/haooz/chedule/widget/WidgetUpdateCache.kt

@@ -1,4 +1,4 @@
-From d844ce4a64ce0e074c587adbae284a51485d5667 Mon Sep 17 00:00:00 2001
+From 5aa94fca754288f0651208931eef92de12a97886 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 08:21:53 +0800
 Subject: [PATCH 06/25] =?UTF-8?q?v24=EF=BC=9A=E4=BF=AE=E8=AF=BE=E8=A1=A8?=
@@ -33,7 +33,7 @@ computeDropTarget 改成用 sectionTop 反查（与 DayColumn 空白格点击的
 - 课中实况 ProgressStyle 分支：BigTextStyle 随后被 ProgressStyle 覆盖，
   expandedText（含教室）被整个丢掉，降级路径却有教室；用 setSubText 把教室补回来
 
-(cherry picked from commit 46d0629f1fe99050f6ca3c0d1a7b8c26ff950365)
+(cherry picked from commit b7c5ded4ec064f2b1ceae802bcac7d47843569da)
 ---
  .../haooz/chedule/reminder/AlarmReceiver.kt   | 27 ++++++++--------
  .../chedule/reminder/CourseReminderHelper.kt  |  4 +++
@@ -90,12 +90,12 @@ index 397c142..f8d3d13 100644
                      // 课表可能已变更：全量重注册，清掉过期闹钟
                      Log.d("AlarmReceiver", "Stale alarm: $courseName($startTime) no longer in today's schedule")
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 089502a..67a04b0 100644
+index b1f1720..d813096 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-@@ -1742,7 +1742,11 @@ object CourseReminderHelper {
+@@ -1787,7 +1787,11 @@ object CourseReminderHelper {
                  .setSmallIcon(R.mipmap.ic_launcher)
-                 .setContentTitle("$courseName | 上课中")
+                 .setContentTitle(courseName)
                  .setContentText(infoLine)
 +                // BigTextStyle 随后会被 ProgressStyle 覆盖，expandedText（含教室）会整个丢掉 ——
 +                // 降级路径（NotificationCompat + BigTextStyle）是带教室的，两条路观感不一致。
@@ -106,10 +106,10 @@ index 089502a..67a04b0 100644
                  .setOngoing(true)
                  .setOnlyAlertOnce(true)
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-index 09424c8..a117561 100644
+index f31919f..dcafcd7 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-@@ -2218,6 +2218,38 @@ fun CourseScheduleApp() {
+@@ -2225,6 +2225,38 @@ fun CourseScheduleApp() {
          val relY = firstSectionCenterY - topY
          if (relY < 0f) return null
          val sectionH = geom.sectionHeightPx
@@ -149,7 +149,7 @@ index 09424c8..a117561 100644
          var cursor = 0f
          for (s in 1..geom.morningSections) {
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
-index 1105ee5..d3f37bb 100644
+index 6fbe405..4baf84c 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
 @@ -147,7 +147,17 @@ data class ScheduleGridGeometry(
@@ -171,7 +171,7 @@ index 1105ee5..d3f37bb 100644
  )
  
  @SuppressLint("ConfigurationScreenWidthHeight")
-@@ -1086,7 +1096,9 @@ fun MainScheduleScreen(
+@@ -1092,7 +1102,9 @@ fun MainScheduleScreen(
                                          morningSections = morningSections,
                                          afternoonSections = afternoonSections,
                                          eveningSections = eveningSections,

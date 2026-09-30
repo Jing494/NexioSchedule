@@ -1,4 +1,4 @@
-From b59876f9f7c009d08752f41af3a4d3076943337d Mon Sep 17 00:00:00 2001
+From 053d52226b8a394500a632ee263745a8310889eb Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 13:39:57 +0800
 Subject: [PATCH 14/25] =?UTF-8?q?v32:=20=E4=BF=AE=E8=AF=BE=E4=B8=AD?=
@@ -42,7 +42,7 @@ Content-Transfer-Encoding: 8bit
 14 项场景板约束，含"老按钮与默认参数未被改动""UI 不自己拼发送逻辑"）；
 assembleRelease 通过；签名与 sha256 通过；dex 内新符号全部 FOUND。
 
-(cherry picked from commit cc52fc6761cb8cdb1463b5242a11d919b0ed8034)
+(cherry picked from commit 13c2f1b47a9535edeb5c7f097a5a2a1f5eaaf9ef)
 ---
  .../chedule/reminder/CourseReminderHelper.kt  | 87 ++++++++++++++++--
  .../reminder/IslandNotificationHelper.kt      | 70 +++++++++++++--
@@ -52,10 +52,10 @@ assembleRelease 通过；签名与 sha256 通过；dex 内新符号全部 FOUND�
  create mode 100644 app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
 
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 2130fe0..bdc1363 100644
+index 6dc610b..19fe799 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-@@ -2218,15 +2218,41 @@ object CourseReminderHelper {
+@@ -2262,15 +2262,41 @@ object CourseReminderHelper {
       * 测试实时活动：与超级岛测试同一套固定课程，不依赖真实课表。
       * 课前 70 秒倒计时 + 课中 120 秒，便于验证倒计时 / 已上课 / 课中进度全链路。
       */
@@ -103,7 +103,7 @@ index 2130fe0..bdc1363 100644
              context = context,
              courseName = courseName,
              classroom = classroom,
-@@ -2234,10 +2260,57 @@ object CourseReminderHelper {
+@@ -2278,10 +2304,57 @@ object CourseReminderHelper {
              startTime = startTime,
              startMillis = startMillis,
              endMillis = endMillis,
@@ -368,7 +368,7 @@ index 0000000..8f4190c
 +    }
 +}
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
-index 23cecf5..ae24bf5 100644
+index 26ce90c..8eccedd 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 @@ -57,6 +57,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
@@ -391,7 +391,7 @@ index 23cecf5..ae24bf5 100644
      }
      // 课中提醒：超级岛 / 原生实况共用同一开关
      var inClassEnabled by remember {
-@@ -320,6 +323,9 @@ fun CourseReminderScreen(
+@@ -321,6 +324,9 @@ fun CourseReminderScreen(
                      // 提醒体检：把"设了却收不到"的常见系统原因直接摆出来
                      item { ReminderHealthCard() }
  
@@ -401,7 +401,7 @@ index 23cecf5..ae24bf5 100644
                      // 开启提醒
                      item {
                          Card(
-@@ -1507,3 +1513,68 @@ private fun ReminderHealthCard() {
+@@ -1508,3 +1514,68 @@ private fun ReminderHealthCard() {
          }
      }
  }

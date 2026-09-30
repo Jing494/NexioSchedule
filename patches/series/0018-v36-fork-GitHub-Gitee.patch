@@ -1,4 +1,4 @@
-From 7f930f356fb0e581cb4ebe38110382b92c565e63 Mon Sep 17 00:00:00 2001
+From d533a8a19eabf7a6a52c2477a20ed158d6f30097 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 22:00:41 +0800
 Subject: [PATCH 18/25] =?UTF-8?q?v36:=20=E6=9B=B4=E6=96=B0=E6=BA=90?=
@@ -20,7 +20,7 @@ Content-Transfer-Encoding: 8bit
 - UpdateDialog：恢复应用内下载安装（现在下到的是本 fork 自己签名的包，可直接覆盖安装）；
   拿不到直链时兜底打开 Gitee 下载页（国内优先）。
 
-(cherry picked from commit e6f8cedbae857202fa68fe5d1477557237b5e0c7)
+(cherry picked from commit 1a0cdcfddd76655e430b69e9b47b8137c46c2c8a)
 ---
  .../chedule/ui/components/UpdateDialog.kt     | 22 ++++++++-----------
  .../haooz/chedule/ui/utils/UpdateChecker.kt   | 16 ++++++++++----

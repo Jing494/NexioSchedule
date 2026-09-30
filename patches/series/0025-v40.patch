@@ -1,4 +1,4 @@
-From 8fcdbd413cc8b43a3caa0d707bfe12cb629e3fbc Mon Sep 17 00:00:00 2001
+From 267f7d4236782f55334534e5b2946caaa66c71ed Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Mon, 28 Sep 2026 21:56:54 +0800
 Subject: [PATCH 25/25] =?UTF-8?q?v40=EF=BC=9A=E4=BF=AE=E5=A4=87=E4=BB=BD/?=
@@ -24,7 +24,7 @@ onHolidayDataChanged 重排提醒与闹钟。
 同时给质量门禁补一条不变量（第 22 条）：禁止把这里退回白名单式实现 ——
 这类"漏掉不带前缀的设置"不会有编译错误，只能靠约束钉住。
 
-(cherry picked from commit afb5096e10fa98c172f4cd4ed3287985e0f63f43)
+(cherry picked from commit f6bfa5eff0462a546488150d1e6d5214d6f353b6)
 ---
  .../haooz/chedule/data/CourseRepository.kt    | 46 +++++++++----------
  1 file changed, 23 insertions(+), 23 deletions(-)

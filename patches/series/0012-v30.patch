@@ -1,4 +1,4 @@
-From 83b96162359934b5737982b8d39a846cde41ca51 Mon Sep 17 00:00:00 2001
+From d94bb5ed3bd41dbb9bf95e03e6200f68ae542ba4 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 11:44:20 +0800
 Subject: [PATCH 12/25] =?UTF-8?q?v30:=20=E4=BF=AE=E6=AF=9B=E7=8E=BB?=
@@ -33,7 +33,7 @@ assembleRelease 通过；签名与 sha256 通过；
 包内容确实变了（v29 classes.dex sha71f4b93e… → v30 sha13286820…，
 APK 总大小三版同为 6130530 是 zip 对齐的巧合）。
 
-(cherry picked from commit 0f37580d98f6370366e19d66bb96574ef65cad19)
+(cherry picked from commit 2ef974cac80d3d32bbc29fdd28afea218a798676)
 ---
  .../java/com/haooz/chedule/ui/components/CourseCard.kt |  8 +++++++-
  .../java/com/haooz/chedule/ui/components/DayColumn.kt  |  8 +++++++-
@@ -41,10 +41,10 @@ APK 总大小三版同为 6130530 是 zip 对齐的巧合）。
  3 files changed, 22 insertions(+), 4 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
-index 1143d68..c065fa0 100644
+index 9d0b346..140415a 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
-@@ -212,7 +212,13 @@ fun CourseCard(
+@@ -219,7 +219,13 @@ fun CourseCard(
                                  blur(blurPx * glassFactor)
                              }
                              if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
@@ -60,10 +60,10 @@ index 1143d68..c065fa0 100644
                          }
                      }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
-index 2dfb587..21f4fd8 100644
+index 2e9a7f6..ec0a116 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
-@@ -755,7 +755,13 @@ fun SpecialBandOverlay(
+@@ -756,7 +756,13 @@ fun SpecialBandOverlay(
                                  blur(blurPx * glassFactor)
                              }
                              if (cardRefraction != com.haooz.chedule.data.CardRefractionLevel.OFF) {
@@ -79,12 +79,12 @@ index 2dfb587..21f4fd8 100644
                          }
                      }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-index 0e9648c..5bef52c 100644
+index b87fc19..e0102a6 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 @@ -145,8 +145,11 @@ fun BlurCard(
                      if (glassFactor > 0.01f) {
-                         blur(blurRadius.dp.toPx() * glassFactor)
+                         blur(blurPx * glassFactor)
                          if (refraction != CardRefractionLevel.OFF) {
 +                            // 折射宽度不乘系数、只淡强度：乘宽度会让高光环向边缘收拢/扫过，
 +                            // 观感是"蹭的一下冒出来"（库 effects/Lens.kt 里 refractionHeight
@@ -95,9 +95,9 @@ index 0e9648c..5bef52c 100644
                                  refraction.lensStrengthDp.dp.toPx() * glassFactor
                              )
                          }
-@@ -1760,8 +1763,11 @@ private fun CourseSectionTitle(
+@@ -1756,8 +1759,11 @@ private fun CourseSectionTitle(
                      if (glassFactor > 0.01f) {
-                         blur(blurRadius.dp.toPx() * glassFactor)
+                         blur(blurPx * glassFactor)
                          if (refraction != CardRefractionLevel.OFF) {
 +                            // 折射宽度不乘系数、只淡强度：乘宽度会让高光环向边缘收拢/扫过，
 +                            // 观感是"蹭的一下冒出来"（库 effects/Lens.kt 里 refractionHeight

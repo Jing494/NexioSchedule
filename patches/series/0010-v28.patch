@@ -1,4 +1,4 @@
-From fb3d1892df44c6a502307b00b07ec805a4d1634b Mon Sep 17 00:00:00 2001
+From 4db9e969112fc05847409814d49d209b6b4e1951 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 10:53:17 +0800
 Subject: [PATCH 10/25] =?UTF-8?q?v28:=20=E6=B5=81=E7=95=85=E5=BA=A6=20?=
@@ -68,7 +68,7 @@ Content-Transfer-Encoding: 8bit
   单行唤醒 3300 → 115）；唤醒间隔值域（不忙等、不久睡）。
 - 编译门禁 assembleRelease 通过；apksigner verify + sha256 + dex 字符串核验见 dist-v28。
 
-(cherry picked from commit 9d3a237194cf4a8852264097e5613138ac54c9d3)
+(cherry picked from commit f70062cc30b9dbf8c5aca7d189776a7cf2c0ef40)
 ---
  .../chedule/reminder/CourseReminderHelper.kt  | 42 ++++++++++----
  .../ui/activities/CourseReminderScreen.kt     | 29 +++++++++-
@@ -76,17 +76,17 @@ Content-Transfer-Encoding: 8bit
  .../haooz/chedule/ui/components/CourseCard.kt | 17 ++++--
  .../haooz/chedule/ui/components/DayColumn.kt  | 14 +++--
  .../ui/effects/edgelight/EdgeLightModifier.kt |  6 ++
- .../chedule/ui/screens/MainScheduleScreen.kt  | 26 +++++++--
+ .../chedule/ui/screens/MainScheduleScreen.kt  | 24 ++++++--
  .../chedule/ui/screens/TodayAssistant.kt      | 10 +++-
  .../haooz/chedule/ui/screens/TodayScreen.kt   | 56 ++++++++++++++++---
  .../com/haooz/chedule/ui/utils/GlassPerf.kt   | 33 +++++++++++
  .../com/haooz/chedule/ui/utils/MinuteTick.kt  | 19 +++++++
- 11 files changed, 255 insertions(+), 41 deletions(-)
+ 11 files changed, 254 insertions(+), 40 deletions(-)
  create mode 100644 app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
  create mode 100644 app/src/main/java/com/haooz/chedule/ui/utils/MinuteTick.kt
 
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 23188dd..fa8219a 100644
+index 17b9806..02c1876 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -215,6 +215,8 @@ object CourseReminderHelper {
@@ -115,7 +115,7 @@ index 23188dd..fa8219a 100644
      private fun writeRcSet(context: Context, key: String, rcs: Set<Int>) {
          context.getSharedPreferences(PREF_ALARM_REGISTRY, Context.MODE_PRIVATE).edit {
              putStringSet(key, rcs.map { it.toString() }.toSet())
-@@ -631,16 +643,26 @@ object CourseReminderHelper {
+@@ -661,16 +673,26 @@ object CourseReminderHelper {
              )
              alarmManager.cancel(pending)
          }
@@ -153,10 +153,10 @@ index 23188dd..fa8219a 100644
      }
  
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
-index 44f52d8..23cecf5 100644
+index 12815a5..26ce90c 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
-@@ -1369,7 +1369,34 @@ private fun buildReminderHealth(context: android.content.Context): List<Reminder
+@@ -1370,7 +1370,34 @@ private fun buildReminderHealth(context: android.content.Context): List<Reminder
          } else null,
      )
  
@@ -193,7 +193,7 @@ index 44f52d8..23cecf5 100644
          com.haooz.chedule.reminder.CourseReminderHelper.CHANNEL_REMINDER_ID,
          com.haooz.chedule.reminder.CourseReminderHelper.CHANNEL_HOLIDAY_ID,
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
-index 9455cf9..349fc7f 100644
+index d01eb4a..c84d637 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/MainActivity.kt
 @@ -68,6 +68,7 @@ import androidx.compose.runtime.produceState
@@ -202,9 +202,9 @@ index 9455cf9..349fc7f 100644
  import androidx.compose.runtime.rememberUpdatedState
 +import androidx.compose.runtime.snapshotFlow
  import androidx.compose.runtime.setValue
+ import androidx.compose.runtime.snapshotFlow
  import androidx.compose.runtime.withFrameNanos
- import androidx.compose.ui.Alignment
-@@ -140,6 +141,7 @@ import com.haooz.chedule.ui.screens.TabletCourseManagePane
+@@ -141,6 +142,7 @@ import com.haooz.chedule.ui.screens.TabletCourseManagePane
  import com.haooz.chedule.ui.screens.TabletSwitchSchedulePane
  import com.haooz.chedule.ui.screens.TodayScreen
  import com.haooz.chedule.ui.theme.CourseScheduleTheme
@@ -212,7 +212,7 @@ index 9455cf9..349fc7f 100644
  import com.haooz.chedule.ui.utils.LocalForcedDarkTheme
  import com.haooz.chedule.ui.utils.applyNavigationBarIsDark
  import com.haooz.chedule.ui.utils.applyThemeAwareSystemBars
-@@ -157,6 +159,8 @@ import com.kyant.backdrop.effects.vibrancy
+@@ -158,6 +160,8 @@ import com.kyant.backdrop.effects.vibrancy
  import com.kyant.capsule.ContinuousRoundedRectangle
  import kotlinx.coroutines.Dispatchers
  import kotlinx.coroutines.delay
@@ -221,7 +221,7 @@ index 9455cf9..349fc7f 100644
  import kotlinx.coroutines.launch
  import kotlinx.coroutines.withContext
  import top.yukonga.miuix.kmp.basic.ButtonDefaults
-@@ -2549,6 +2553,37 @@ fun CourseScheduleApp() {
+@@ -2556,6 +2560,37 @@ fun CourseScheduleApp() {
              showSwitchSchedule && switchOverlayActive -> 0f
              else -> 1f
          }
@@ -259,7 +259,7 @@ index 9455cf9..349fc7f 100644
          // 主内容模糊**不在 composition 里读半径**。
          //
          // 原来这里写成 `Modifier.blur(半径.dp)`，半径取自两个 Animatable（长按拖动 /
-@@ -3193,8 +3228,13 @@ fun CourseScheduleApp() {
+@@ -3257,8 +3292,13 @@ fun CourseScheduleApp() {
                              val mainPagerModifier = Modifier
                                  .fillMaxSize()
                                  .nestedScroll(mainContentNestedScroll)
@@ -276,7 +276,7 @@ index 9455cf9..349fc7f 100644
                              val mainPagerPageContent: @Composable (Int) -> Unit = { page ->
                                  if (!isShiftMode) {
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
-index 37fcb07..8b60ff3 100644
+index 5621416..7380477 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
 @@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
@@ -287,7 +287,7 @@ index 37fcb07..8b60ff3 100644
  import com.haooz.chedule.ui.utils.isAppDarkTheme
  import com.kyant.backdrop.Backdrop
  import com.kyant.backdrop.backdrops.SharedBlurBackdrop
-@@ -198,11 +199,17 @@ fun CourseCard(
+@@ -205,11 +206,17 @@ fun CourseCard(
              val backdropEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
                  remember(isSharedBlur, blurPx, lensRadiusPx, lensStrengthPx, cardRefraction) {
                      {
@@ -311,7 +311,7 @@ index 37fcb07..8b60ff3 100644
                      }
                  }
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
-index b6a371e..b3048e4 100644
+index 2d2eb34..df036c5 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 @@ -46,6 +46,7 @@ import com.haooz.chedule.data.Course
@@ -322,7 +322,7 @@ index b6a371e..b3048e4 100644
  import com.kyant.backdrop.Backdrop
  import com.kyant.backdrop.backdrops.SharedBlurBackdrop
  import com.kyant.backdrop.drawBackdrop
-@@ -744,11 +745,14 @@ fun SpecialBandOverlay(
+@@ -745,11 +746,14 @@ fun SpecialBandOverlay(
              val bandEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
                  remember(isSharedBlur, blurPx, lensRadiusPx, lensStrengthPx, cardRefraction) {
                      {
@@ -360,7 +360,7 @@ index d9b533a..e2dbb30 100644
          if (edgeLightLayer != null) {
              val size = size
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
-index d3f37bb..8d5f852 100644
+index 4baf84c..3b4b477 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
 @@ -109,6 +109,7 @@ import com.kyant.backdrop.effects.lens
@@ -371,11 +371,11 @@ index d3f37bb..8d5f852 100644
  import kotlinx.coroutines.launch
  import top.yukonga.miuix.kmp.basic.ButtonDefaults
  import top.yukonga.miuix.kmp.basic.Card
-@@ -762,7 +763,11 @@ fun MainScheduleScreen(
+@@ -763,7 +764,11 @@ fun MainScheduleScreen(
              }
          }
  
--// beyondViewportPageCount=2：邻近 2 周提前 composition，快滑跨周时目标页多半已就绪
+-
 +// beyondViewportPageCount=1：只保留紧邻 1 页预合成。
 +// 原来是 2 → 同时组合+测量+布局 5 个周页，而每页是「verticalScroll + 节次列 + 7 个 DayColumn × 数十张卡」，
 +// 5 页就是 5 倍节点量与布局量，且每次跨越页作用域的重组都要乘 5。
@@ -384,16 +384,7 @@ index d3f37bb..8d5f852 100644
      HorizontalPager(
          state = pagerState,
          modifier = Modifier
-@@ -774,7 +779,7 @@ fun MainScheduleScreen(
-                     latestIsWallpaperEditing || latestDraggingCourseIds.isNotEmpty()
-                 },
-             ),
--        beyondViewportPageCount = 2,
-+        beyondViewportPageCount = 1,
-         // 横向触摸改由 pagerAxisTakeoverGesture 驱动；纵滑主导时交给 verticalScroll
-         userScrollEnabled = false
-     ) { page ->
-@@ -818,10 +823,19 @@ fun MainScheduleScreen(
+@@ -824,10 +829,19 @@ fun MainScheduleScreen(
                  Box(modifier = Modifier.fillMaxWidth()) {
                      val dayBoundsArray = remember { arrayOfNulls<FloatArray>(8) }
                      var lastDayBoundsVersion by remember { mutableIntStateOf(0) }
@@ -454,7 +445,7 @@ index 5d72ef0..462d7e7 100644
      }
  
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-index d5160e6..27c5c2d 100644
+index 4a7f62e..1889bb1 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 @@ -29,6 +29,7 @@ import androidx.compose.runtime.mutableIntStateOf
@@ -465,7 +456,7 @@ index d5160e6..27c5c2d 100644
  import androidx.compose.runtime.setValue
  import androidx.compose.runtime.snapshotFlow
  import androidx.compose.runtime.staticCompositionLocalOf
-@@ -52,6 +53,7 @@ import androidx.compose.ui.text.style.TextAlign
+@@ -53,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
  import androidx.compose.ui.unit.Dp
  import androidx.compose.ui.unit.dp
  import androidx.compose.ui.unit.sp
@@ -473,7 +464,7 @@ index d5160e6..27c5c2d 100644
  import com.haooz.chedule.data.CardRefractionLevel
  import com.haooz.chedule.data.Course
  import com.haooz.chedule.data.CourseRepository
-@@ -64,6 +66,7 @@ import com.haooz.chedule.ui.basic.collapsibleTopInset
+@@ -65,6 +67,7 @@ import com.haooz.chedule.ui.basic.collapsibleTopInset
  import com.haooz.chedule.ui.effects.edgelight.edgeLight
  import com.haooz.chedule.ui.effects.edgelight.rememberCardEdgeLight
  import com.haooz.chedule.ui.effects.edgelight.rememberDefaultEdgeLight
@@ -482,24 +473,24 @@ index d5160e6..27c5c2d 100644
  import com.haooz.chedule.ui.utils.overScrollVertical
  import com.haooz.chedule.ui.utils.pagerAxisTakeoverGesture
 @@ -132,9 +135,14 @@ fun BlurCard(
-         val cardEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
-             remember(blurRadius, refraction) {
+         val glassEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
+             remember(refraction, blurPx) {
                  {
--                    blur(blurRadius.dp.toPx())
+-                    blur(blurPx)
 -                    if (refraction != CardRefractionLevel.OFF) {
 -                        lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
 +                    // 滑动/翻页进行中降级：跳过 blur + lens（每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器）。
 +                    // 只在**绘制期**读开关，绝不进 remember 的键 —— 否则 lambda 身份翻面即变，
 +                    // drawBackdrop 会判不等并整块重建绘制缓存（v22 那个椭圆伪影是同一类坑）。
 +                    if (glassBlurEnabled()) {
-+                        blur(blurRadius.dp.toPx())
++                        blur(blurPx)
 +                        if (refraction != CardRefractionLevel.OFF) {
 +                            lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
 +                        }
                      }
                  }
              }
-@@ -259,6 +267,10 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
+@@ -258,6 +266,10 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
          }
          while (true) {
              val now = LocalTime.now()
@@ -510,7 +501,7 @@ index d5160e6..27c5c2d 100644
              when {
                  startTime == null || endTime == null -> {
                      if (courseStatus != "未知") courseStatus = "未知"
-@@ -267,6 +279,10 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
+@@ -266,6 +278,10 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
                  }
                  now.isBefore(startTime) -> {
                      if (courseStatus != "未开始") courseStatus = "未开始"
@@ -521,7 +512,7 @@ index d5160e6..27c5c2d 100644
                  }
                  now.isAfter(endTime) -> {
                      if (courseStatus != "已结束") courseStatus = "已结束"
-@@ -283,9 +299,20 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
+@@ -282,9 +298,20 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
                      if (newMinutes != remainingMinutes) remainingMinutes = newMinutes
                      // 秒数只在最后一分钟文案使用
                      if (newMinutes <= 0 && newSeconds != remainingSeconds) remainingSeconds = newSeconds
@@ -543,7 +534,7 @@ index d5160e6..27c5c2d 100644
          }
      }
  
-@@ -580,7 +607,11 @@ fun TodayScreen(
+@@ -579,7 +606,11 @@ fun TodayScreen(
                      .pagerAxisTakeoverGesture(pagerState = pagerState),
                  userScrollEnabled = false,
              ) { page ->
@@ -556,7 +547,7 @@ index d5160e6..27c5c2d 100644
                  // 只把当前页的滚动状态报给 Activity（顶栏折叠 / 液态玻璃重录）
                  LaunchedEffect(pageListState, page) {
                      snapshotFlow {
-@@ -1647,7 +1678,9 @@ private fun QuoteCard(
+@@ -1646,7 +1677,9 @@ private fun QuoteCard(
              if (nextScene != scene) scene = nextScene
              val nextHour = LocalTime.now().hour
              if (nextHour != hour) hour = nextHour
@@ -567,18 +558,18 @@ index d5160e6..27c5c2d 100644
          }
      }
  
-@@ -1710,9 +1743,14 @@ private fun CourseSectionTitle(
-         val sectionEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
-             remember(blurRadius, refraction) {
+@@ -1706,9 +1739,14 @@ private fun CourseSectionTitle(
+         val titleEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
+             remember(refraction, blurPx) {
                  {
--                    blur(blurRadius.dp.toPx())
+-                    blur(blurPx)
 -                    if (refraction != CardRefractionLevel.OFF) {
 -                        lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
 +                    // 滑动/翻页进行中降级：跳过 blur + lens（每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器）。
 +                    // 只在**绘制期**读开关，绝不进 remember 的键 —— 否则 lambda 身份翻面即变，
 +                    // drawBackdrop 会判不等并整块重建绘制缓存（v22 那个椭圆伪影是同一类坑）。
 +                    if (glassBlurEnabled()) {
-+                        blur(blurRadius.dp.toPx())
++                        blur(blurPx)
 +                        if (refraction != CardRefractionLevel.OFF) {
 +                            lens(refraction.lensRadiusDp.dp.toPx(), refraction.lensStrengthDp.dp.toPx())
 +                        }

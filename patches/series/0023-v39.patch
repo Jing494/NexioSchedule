@@ -1,4 +1,4 @@
-From 2efbcc2f9faa7218c55c1e77270d6bb218be8793 Mon Sep 17 00:00:00 2001
+From eeb851ce4537d1c397168bc06b7def47779cf703 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Mon, 28 Sep 2026 21:31:46 +0800
 Subject: [PATCH 23/25] =?UTF-8?q?v39=EF=BC=9A=E4=BF=AE=E5=8D=87=E5=9F=BA?=
@@ -31,7 +31,7 @@ Content-Transfer-Encoding: 8bit
 排查方式（可复跑）：把仓库里所有 get/set 配对扫一遍，找"有读没有写"（UI 上永远动不了）
 与"有写没有读"（死配置）的项 —— 当前全仓库 0 个。
 
-(cherry picked from commit 020b043b70932ef840d5f7804f8da4c4fdd86690)
+(cherry picked from commit 10987e9791054ca269ea23c4e4239439d484f27c)
 ---
  .../haooz/chedule/data/CourseRepository.kt    |  68 -----
  .../com/haooz/chedule/data/HolidayManager.kt  |   2 +-
@@ -276,10 +276,10 @@ index dd6af7c..205df63 100644
                  val tomorrow = java.time.LocalDate.now().plusDays(1)
                  if (com.haooz.chedule.data.ReturnDayReminder.isReturnDay(context, repository, tomorrow)) {
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 9d95b32..4f510a9 100644
+index 595745c..e31b37a 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-@@ -1214,7 +1214,7 @@ object CourseReminderHelper {
+@@ -1244,7 +1244,7 @@ object CourseReminderHelper {
      /** 节假日/调休数据变更后：重排提醒并立即刷新已放置的小部件 */
      fun onHolidayDataChanged(context: Context) {
          // 顺手 bump 假期版本号：今日页状态卡、课表页豁免标记、小部件都靠它做 remember 键。
@@ -288,7 +288,7 @@ index 9d95b32..4f510a9 100644
          // 关掉开关后今日页还会一直显示旧的「返校啦」卡片。
          HolidayManager.notifyConfigChanged(context)
          startReminderService(context)
-@@ -1446,7 +1446,7 @@ object CourseReminderHelper {
+@@ -1491,7 +1491,7 @@ object CourseReminderHelper {
              !java.time.LocalTime.now().isBefore(balanceTarget) &&
              prefs.getString(KEY_RETURN_BALANCE_DATE, null) != todayKey
          ) {
@@ -297,7 +297,7 @@ index 9d95b32..4f510a9 100644
              showReminderNotification(
                  context,
                  NOTIFY_ID_RETURN_BALANCE,
-@@ -1518,10 +1518,15 @@ object CourseReminderHelper {
+@@ -1563,10 +1563,15 @@ object CourseReminderHelper {
       * 余额通知的标题/正文。**主路径与"立即测试"按钮共用这一份**，
       * 否则两处文案迟早会分叉（这正是本项目已经踩过的坑）。
       *
@@ -314,7 +314,7 @@ index 9d95b32..4f510a9 100644
          repository: CourseRepository,
          span: ReturnDayReminder.HolidaySpan,
      ): Pair<String, String> {
-@@ -1529,7 +1534,7 @@ object CourseReminderHelper {
+@@ -1574,7 +1579,7 @@ object CourseReminderHelper {
          val title = if (lastDay) "今天是${span.name}最后一天" else "${span.name}还剩 ${span.daysLeft} 天"
          val body = when {
              !lastDay -> "好好休息，返校前我会再提醒你"
@@ -323,7 +323,7 @@ index 9d95b32..4f510a9 100644
              else -> "最后一天了，好好休息吧"
          }
          return title to body
-@@ -1580,7 +1585,7 @@ object CourseReminderHelper {
+@@ -1625,7 +1630,7 @@ object CourseReminderHelper {
          }
          val span = ReturnDayReminder.currentHolidaySpan(context, java.time.LocalDate.now())
          val (title, body) = if (span != null) {
@@ -332,7 +332,7 @@ index 9d95b32..4f510a9 100644
          } else {
              // 不在假期里：正式提醒不会发，这里给演示
              "假期余额提醒（测试）" to "当前不在假期内，正式提醒会在假期中按设定时间发出"
-@@ -1670,8 +1675,9 @@ object CourseReminderHelper {
+@@ -1715,8 +1720,9 @@ object CourseReminderHelper {
          repository: CourseRepository,
      ) {
          if (repository.getIslandNotification() && IslandNotificationHelper.isIslandSupported(context)) return
@@ -344,7 +344,7 @@ index 9d95b32..4f510a9 100644
          val today = java.time.LocalDate.now()
          val tomorrow = today.plusDays(1)
          val todayIsReturn = ReturnDayReminder.isReturnDay(context, today)
-@@ -1710,7 +1716,7 @@ object CourseReminderHelper {
+@@ -1755,7 +1761,7 @@ object CourseReminderHelper {
       *
       * 为什么不能写死「明天返校」：目标日（正文所依据的那天）可能是**今天**。
       * `ReturnDayReminder.isReturnDay(d) = isRestDay(d) && isSchoolDay(d+1)`，
@@ -367,10 +367,10 @@ index 0575006..9a0e623 100644
      ),
  
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-index ea3ba8a..1e34fcd 100644
+index da1ef55..102e132 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-@@ -608,7 +608,7 @@ fun HolidaySettingsScreen(
+@@ -613,7 +613,7 @@ fun HolidaySettingsScreen(
                  SectionTitleRow(
                      text = "假期余额提醒",
                      description = "• 假期期间每天一条，含假期最后一天（不占超级岛/实时动态的位置）\n" +
@@ -379,7 +379,7 @@ index ea3ba8a..1e34fcd 100644
                      liquidGlassBackdrop = liquidGlassBackdrop,
                  )
                  HolidayBalanceCard()
-@@ -657,7 +657,7 @@ fun HolidaySettingsScreen(
+@@ -662,7 +662,7 @@ fun HolidaySettingsScreen(
                  SectionTitleRow(
                      text = "返校准备清单",
                      description = "• 返校日到点推一条普通通知，内容自己写\n" +
@@ -388,7 +388,7 @@ index ea3ba8a..1e34fcd 100644
                      liquidGlassBackdrop = liquidGlassBackdrop,
                  )
                  ReturnDayPrepCard()
-@@ -2025,75 +2025,6 @@ private fun pickerTextStyle() = MiuixTheme.textStyles.body1.copy(
+@@ -2036,75 +2036,6 @@ private fun pickerTextStyle() = MiuixTheme.textStyles.body1.copy(
  
  // ===================== 返校提醒（周末 / 节假日最后一天） =====================
  
@@ -464,7 +464,7 @@ index ea3ba8a..1e34fcd 100644
  private fun timePickerDialog(
          title: String,
          show: Boolean,
-@@ -2149,7 +2080,7 @@ private fun timePickerDialog(
+@@ -2160,7 +2091,7 @@ private fun timePickerDialog(
  /**
   * 「返校准备清单」独立成卡。
   *
@@ -473,7 +473,7 @@ index ea3ba8a..1e34fcd 100644
   * （`getReturnDayPrepEnabled() && isReturnDay(今天)`）—— 豁免关掉它照样会在周日/假期最后一天响。
   * "配置被藏起来、功能却还在跑"是同一类毛病，所以一并抬出来自己一张卡。
   */
-@@ -2204,7 +2135,7 @@ private fun ReturnDayPrepCard() {
+@@ -2215,7 +2146,7 @@ private fun ReturnDayPrepCard() {
              }
              Text(
                  "• 触发条件：当天休息 且 次日要上课（普通周日、假期最后一天）\n" +
@@ -482,7 +482,7 @@ index ea3ba8a..1e34fcd 100644
                  style = MiuixTheme.textStyles.body1.copy(
                      fontSize = 13.sp,
                      color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-@@ -2273,7 +2204,7 @@ private fun ReturnDayPrepCard() {
+@@ -2284,7 +2215,7 @@ private fun ReturnDayPrepCard() {
  /**
   * 「假期余额提醒」独立成卡。
   *
@@ -491,7 +491,7 @@ index ea3ba8a..1e34fcd 100644
   * 而两者其实没有从属关系（余额是"假期还剩几天"，豁免是"返校那天上哪几节"）。
   * 现在单独一张卡，开关/时间/开始提醒/测试都在这里。
   */
-@@ -2330,7 +2261,7 @@ private fun HolidayBalanceCard() {
+@@ -2341,7 +2272,7 @@ private fun HolidayBalanceCard() {
              }
              Text(
                  "• 假期期间每天都发一条，含假期最后一天（以前最后一天会漏掉）\n" +
@@ -500,7 +500,7 @@ index ea3ba8a..1e34fcd 100644
                      "关着只说「好好休息」\n" +
                      "• 不占超级岛/实时动态的位置，只是普通通知",
                  style = MiuixTheme.textStyles.body1.copy(
-@@ -2401,211 +2332,3 @@ private fun HolidayBalanceCard() {
+@@ -2412,211 +2343,3 @@ private fun HolidayBalanceCard() {
      }
  }
  

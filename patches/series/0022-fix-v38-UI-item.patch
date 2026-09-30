@@ -1,4 +1,4 @@
-From 7d2e984043250a4e8fec17f3694d30e783456d17 Mon Sep 17 00:00:00 2001
+From 152b8f51cd21b18b5c4a8463e0180391f37d42d1 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 23:34:59 +0800
 Subject: [PATCH 22/25] =?UTF-8?q?fix(v38):=20=E4=BF=AE=20UI=20=E7=BB=93?=
@@ -11,16 +11,16 @@ MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-(cherry picked from commit d07a3fe79843f64bac96cd19fe3524cf1ac632f9)
+(cherry picked from commit f1fd8d5daa949e5f221d9c51b237a0c8145f9700)
 ---
  .../com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt     | 1 -
  1 file changed, 1 deletion(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-index 5a5f887..ea3ba8a 100644
+index fd17109..da1ef55 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-@@ -603,7 +603,6 @@ fun HolidaySettingsScreen(
+@@ -608,7 +608,6 @@ fun HolidaySettingsScreen(
                      )
                  }
              }

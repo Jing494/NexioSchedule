@@ -1,4 +1,4 @@
-From a8f1ebc0391ec93f2155ec564ababf9d90208545 Mon Sep 17 00:00:00 2001
+From 959cb6946e7132f92a368a5612415026a29d7e1a Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 07:34:06 +0800
 Subject: [PATCH 04/25] =?UTF-8?q?v22=EF=BC=9A=E4=BF=AE=E6=A4=AD=E5=9C=86?=
@@ -33,7 +33,7 @@ Content-Transfer-Encoding: 8bit
 【其他】
 - ensureNotificationChannels 改为 10 分钟心跳复核（原一次性布尔会让'通道被用户删掉'后不再重建）
 
-(cherry picked from commit bb6e7738570c100d11b1e23cea51345fe333d9f7)
+(cherry picked from commit edac9650a678db65e79ca168c68b541921eaaea5)
 ---
  .../haooz/chedule/data/ReturnDayReminder.kt   | 56 ++++++++++----
  .../chedule/reminder/CourseReminderHelper.kt  | 40 ++++++++--
@@ -148,7 +148,7 @@ index 6df9488..b1028c2 100644
      }
  }
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 860d708..417d573 100644
+index 0bc6238..bbccd03 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -60,6 +60,21 @@ object CourseReminderHelper {
@@ -173,7 +173,7 @@ index 860d708..417d573 100644
      const val EXTRA_REMINDER_TYPE = "reminder_type"
      const val EXTRA_COURSE_NAME = "course_name"
      const val EXTRA_COURSE_SECTION = "course_section"
-@@ -400,6 +415,9 @@ object CourseReminderHelper {
+@@ -430,6 +445,9 @@ object CourseReminderHelper {
              // 立即占位：检查与更新必须原子，否则两条并发线程会同时通过判断、各全量重排一次
              lastServiceStartAt = now
          }
@@ -183,7 +183,7 @@ index 860d708..417d573 100644
          doStartReminderService(context, repository)
      }
  
-@@ -1603,8 +1621,8 @@ object CourseReminderHelper {
+@@ -1648,8 +1666,8 @@ object CourseReminderHelper {
                          .setProgress(progressPercent.coerceIn(0, 100))
                  )
              }
@@ -194,9 +194,9 @@ index 860d708..417d573 100644
              manager.notify(
                  RETURN_DAY_LIVE_ID,
                  styleBuilder.build().apply {
-@@ -1739,8 +1757,8 @@ object CourseReminderHelper {
-                         .setProgress(liveProgress)
-                 )
+@@ -1787,8 +1805,8 @@ object CourseReminderHelper {
+                 }
+                 styleBuilder.setStyle(progressStyle)
              }
 -            runCatching { styleBuilder.setRequestPromotedOngoing(true) }
 -            runCatching { styleBuilder.setShortCriticalText(shortCriticalText) }
@@ -205,7 +205,7 @@ index 860d708..417d573 100644
              styleBuilder.build().apply { flags = flags or Notification.FLAG_ONLY_ALERT_ONCE }
          } else {
              NotificationCompat.Builder(context, CHANNEL_LIVE_ID)
-@@ -1850,12 +1868,20 @@ object CourseReminderHelper {
+@@ -1897,12 +1915,20 @@ object CourseReminderHelper {
       * 原实现每次发通知都 `createNotificationChannel` ×2 —— 那就是 2 次 binder 往返 +
       * 2 个 NotificationChannel 分配。课中提醒是**每分钟**发一次的，
       * 等于每分钟白付两次跨进程调用去设置同一个通道。
@@ -228,7 +228,7 @@ index 860d708..417d573 100644
          val manager = context.getSystemService(NotificationManager::class.java)
          val alertChannel = NotificationChannel(
              CHANNEL_REMINDER_ID,
-@@ -1883,7 +1909,7 @@ object CourseReminderHelper {
+@@ -1930,7 +1956,7 @@ object CourseReminderHelper {
          }
          manager.createNotificationChannel(alertChannel)
          manager.createNotificationChannel(liveChannel)

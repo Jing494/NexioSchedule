@@ -1,4 +1,4 @@
-From d5873361bdf28eba769a5c21863bedacb21987dc Mon Sep 17 00:00:00 2001
+From f4751b3423d05753535c9352c00043a11c9a87de Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 23:24:50 +0800
 Subject: [PATCH 20/25] =?UTF-8?q?v38=EF=BC=9A=E5=8D=87=E5=9F=BA=E5=87=86?=
@@ -19,7 +19,7 @@ rebase 到上游 f2c4ab6 后，CI dry-run 报 11 个编译错误，逐个修好�
   与上游的 holidayExemptCourseIds），会让同一门豁免课在课程卡路径与格子路径上一个打「假」标、
   一个不打 → 统一用上游那套（HolidayCourseExclusion 算出的 id 集合），删掉我的 exemptSections 参数。
 
-(cherry picked from commit 4190df6ffc626584b2961a1613c9038c1259befb)
+(cherry picked from commit ddadcff899b0ba62c853fade657b6ce5d5cc26f3)
 ---
  .../ui/activities/HolidaySettingsScreen.kt    |  4 +-
  .../haooz/chedule/ui/components/DayColumn.kt  | 10 ++---
@@ -28,7 +28,7 @@ rebase 到上游 f2c4ab6 后，CI dry-run 报 11 个编译错误，逐个修好�
  4 files changed, 40 insertions(+), 13 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-index 3d80716..3ae6299 100644
+index 4566d34..acff258 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 @@ -29,7 +29,6 @@ import androidx.compose.foundation.lazy.LazyColumn
@@ -39,7 +39,7 @@ index 3d80716..3ae6299 100644
  import androidx.compose.foundation.verticalScroll
  import androidx.compose.material3.Icon
  import androidx.compose.runtime.Composable
-@@ -554,6 +553,9 @@ fun HolidaySettingsScreen(
+@@ -559,6 +558,9 @@ fun HolidaySettingsScreen(
                  SectionTitleRow(
                      text = "教学周重组",
                      description = "• 长假可能带来教学周的重组，并引发后续教学周的顺延更改\n• 可在此进行教学周重组，后续教学周将重新分配计算",
@@ -50,7 +50,7 @@ index 3d80716..3ae6299 100644
                      description = "• 假期期间每天一条，含假期最后一天（不占超级岛/实时动态的位置）\n" +
                          "• 独立开关：不再挂在「返校节次豁免」下面 —— 关掉豁免不会连带关掉余额提醒",
 diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
-index 21f4fd8..76b7e47 100644
+index ec0a116..ddbe6f9 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
 @@ -90,7 +90,6 @@ fun DayColumn(
@@ -148,10 +148,10 @@ index fed0605..f6e40b2 100644
                                  .edgeLight(
                                      shape = ContinuousCapsule(),
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
-index 8d5f852..7dda848 100644
+index 3b4b477..f5bae4e 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
-@@ -992,7 +992,6 @@ fun MainScheduleScreen(
+@@ -998,7 +998,6 @@ fun MainScheduleScreen(
                                  isHoliday = isHoliday,
                                  holidayExemptCourseIds = holidayExemptCourseIds,
                                  isWorkSwap = isWorkSwap,

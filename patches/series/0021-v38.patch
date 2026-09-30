@@ -1,4 +1,4 @@
-From c049aaafeb1b2f6c476e76efd87653398ceb3dd2 Mon Sep 17 00:00:00 2001
+From fd0ed7bf27711b0f2cdc579e6bd10a281bacc7e1 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 23:27:14 +0800
 Subject: [PATCH 21/25] =?UTF-8?q?v38:=20=E6=B8=85=E7=90=86=E5=8D=87?=
@@ -20,7 +20,7 @@ saveEndCourseExclusion + 刷新）。同一个功能两个入口必然分叉，�
   任一开着都算开启 —— 否则用户在上游设置项里打开了排除，返校提醒却不跟；
 - 设置页现在的三条入口：教学周重组 / 假期余额提醒（本 fork 独有）/ 节假日末期课程排除（上游）。
 
-(cherry picked from commit a47bfcc798849cd1b5f882743adc7f5c8e7c80bb)
+(cherry picked from commit b274d8b5dd1fad584387c430d8da4b5ee491e14c)
 ---
  .../haooz/chedule/data/ReturnDayReminder.kt   |  8 +++++-
  .../ui/activities/HolidaySettingsScreen.kt    | 28 ++++++++-----------
@@ -46,10 +46,10 @@ index b1028c2..a4f4091 100644
      /**
       * 返校日当天不被假期清空的节次。
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-index 3ae6299..5a5f887 100644
+index acff258..fd17109 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-@@ -555,23 +555,6 @@ fun HolidaySettingsScreen(
+@@ -560,23 +560,6 @@ fun HolidaySettingsScreen(
                      description = "• 长假可能带来教学周的重组，并引发后续教学周的顺延更改\n• 可在此进行教学周重组，后续教学周将重新分配计算",
                      liquidGlassBackdrop = liquidGlassBackdrop,
                  )
@@ -73,7 +73,7 @@ index 3ae6299..5a5f887 100644
                  if (teachingWeekReorganizations.isNotEmpty()) {
                      Card(
                          cornerRadius = 20.dp,
-@@ -620,6 +603,17 @@ fun HolidaySettingsScreen(
+@@ -625,6 +608,17 @@ fun HolidaySettingsScreen(
                      )
                  }
              }

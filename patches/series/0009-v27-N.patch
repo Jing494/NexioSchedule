@@ -1,4 +1,4 @@
-From 7533539e82e443697b5df1fe9eda49d308c1341b Mon Sep 17 00:00:00 2001
+From b639d3cd41ff33da614f3ebb3a7ce446b448c621 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 10:31:15 +0800
 Subject: [PATCH 09/25] =?UTF-8?q?v27=EF=BC=9A=E5=81=87=E6=9C=9F=E4=BD=99?=
@@ -46,7 +46,7 @@ Content-Transfer-Encoding: 8bit
   主路径仍写；三张卡各一份、豁免卡已无 prep/balance 残留；body 余额 0 处引用
 - 全部 ALL PASS；编译 + R8 + lintVital 通过
 
-(cherry picked from commit 46a890a4066cdd3a023f698c4b9d7b85dc9085e1)
+(cherry picked from commit 2d00f069d2564fe28cd30a590d2752e01ca59b6a)
 ---
  .../haooz/chedule/data/CourseRepository.kt    |  13 +
  .../chedule/reminder/CourseReminderHelper.kt  |  99 +++-
@@ -86,10 +86,10 @@ index 5cf4dc7..b02d689 100644
      fun getReturnDayPrepEnabled(): Boolean {
          return prefs.getBoolean(KEY_RETURN_DAY_PREP_ENABLED, false)
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index b114b21..23188dd 100644
+index 305c46e..17b9806 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-@@ -1371,15 +1371,16 @@ object CourseReminderHelper {
+@@ -1416,15 +1416,16 @@ object CourseReminderHelper {
          // 现在统一为：只要在假期内就发；最后一天换成「最后一天」的文案。
          if (span != null &&
              repository.getReturnDayBalanceEnabled() &&
@@ -109,7 +109,7 @@ index b114b21..23188dd 100644
                  channelId = CHANNEL_HOLIDAY_ID,
              )
              prefs.edit { putString(KEY_RETURN_BALANCE_DATE, todayKey) }
-@@ -1394,25 +1395,11 @@ object CourseReminderHelper {
+@@ -1439,25 +1440,11 @@ object CourseReminderHelper {
              if (!java.time.LocalTime.now().isBefore(target) &&
                  prefs.getString(KEY_RETURN_PREP_DATE, null) != todayKey
              ) {
@@ -137,7 +137,7 @@ index b114b21..23188dd 100644
                      channelId = CHANNEL_HOLIDAY_ID,
                  )
                  prefs.edit { putString(KEY_RETURN_PREP_DATE, todayKey) }
-@@ -1456,6 +1443,80 @@ object CourseReminderHelper {
+@@ -1501,6 +1488,80 @@ object CourseReminderHelper {
          }
      }
  
@@ -219,7 +219,7 @@ index b114b21..23188dd 100644
       * 把余额/清单的精确闹钟排到「今天该时刻」；已过则排到明天（自续链的锚点）。
       *
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
-index 9307ebd..44f52d8 100644
+index f67b024..12815a5 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 @@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Arrangement
@@ -230,7 +230,7 @@ index 9307ebd..44f52d8 100644
  import androidx.compose.foundation.layout.Row
  import androidx.compose.foundation.layout.Spacer
  import androidx.compose.foundation.layout.fillMaxSize
-@@ -316,6 +317,9 @@ fun CourseReminderScreen(
+@@ -317,6 +318,9 @@ fun CourseReminderScreen(
                      ),
                      verticalArrangement = Arrangement.spacedBy(12.dp)
                  ) {
@@ -240,7 +240,7 @@ index 9307ebd..44f52d8 100644
                      // 开启提醒
                      item {
                          Card(
-@@ -1305,3 +1309,174 @@ fun CourseReminderScreen(
+@@ -1306,3 +1310,174 @@ fun CourseReminderScreen(
          }
      }
  }
@@ -416,10 +416,10 @@ index 9307ebd..44f52d8 100644
 +    }
 +}
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-index 6981847..3d80716 100644
+index 1644907..4566d34 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
-@@ -554,6 +554,20 @@ fun HolidaySettingsScreen(
+@@ -559,6 +559,20 @@ fun HolidaySettingsScreen(
                  SectionTitleRow(
                      text = "教学周重组",
                      description = "• 长假可能带来教学周的重组，并引发后续教学周的顺延更改\n• 可在此进行教学周重组，后续教学周将重新分配计算",
@@ -440,7 +440,7 @@ index 6981847..3d80716 100644
                      liquidGlassBackdrop = liquidGlassBackdrop,
                  )
                  if (teachingWeekReorganizations.isNotEmpty()) {
-@@ -643,6 +657,16 @@ fun HolidaySettingsScreen(
+@@ -648,6 +662,16 @@ fun HolidaySettingsScreen(
                      )
                  }
              }
@@ -457,7 +457,7 @@ index 6981847..3d80716 100644
          }
      }
  
-@@ -2072,7 +2096,316 @@ private fun mergeSectionRanges(sections: Collection<Int>): List<Pair<Int, Int>>
+@@ -2083,7 +2107,316 @@ private fun mergeSectionRanges(sections: Collection<Int>): List<Pair<Int, Int>>
   * 从而走既有提醒链路（课前闹钟 / 今日页 / 小部件 / 次日提醒 / 超级岛）。
   *
   * 节次是**多选**（支持第 9、11 节这种跳选），不是连续区间。
@@ -774,7 +774,7 @@ index 6981847..3d80716 100644
  @Composable
  private fun ReturnDayReminderCard() {
      val context = LocalContext.current
-@@ -2083,18 +2416,8 @@ private fun ReturnDayReminderCard() {
+@@ -2094,18 +2427,8 @@ private fun ReturnDayReminderCard() {
      var followWeekday by remember { mutableIntStateOf(repository.getReturnDayFollowWeekday()) }
      var showSectionDialog by remember { mutableStateOf(false) }
      var showWeekdayDialog by remember { mutableStateOf(false) }
@@ -793,7 +793,7 @@ index 6981847..3d80716 100644
  
      fun applySections(next: Set<Int>) {
          selectedSections = next
-@@ -2159,52 +2482,6 @@ private fun ReturnDayReminderCard() {
+@@ -2170,52 +2493,6 @@ private fun ReturnDayReminderCard() {
                      summary = weekdaySummary,
                      onClick = { showWeekdayDialog = true },
                  )
@@ -846,7 +846,7 @@ index 6981847..3d80716 100644
                  Text(
                      "命中条件：当天休息 且 次日要上课（假期最后一天 / 周日）\n" +
                          "豁免的是课表里当天的真实课程 —— 节次里没课就不会显示",
-@@ -2334,128 +2611,6 @@ private fun ReturnDayReminderCard() {
+@@ -2345,128 +2622,6 @@ private fun ReturnDayReminderCard() {
          }
      }
  
