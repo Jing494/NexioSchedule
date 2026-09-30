@@ -1,4 +1,4 @@
-From eeb851ce4537d1c397168bc06b7def47779cf703 Mon Sep 17 00:00:00 2001
+From 1d810bd99d9d97e5be746480984e750ef5409a2f Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Mon, 28 Sep 2026 21:31:46 +0800
 Subject: [PATCH 23/25] =?UTF-8?q?v39=EF=BC=9A=E4=BF=AE=E5=8D=87=E5=9F=BA?=
@@ -31,7 +31,7 @@ Content-Transfer-Encoding: 8bit
 排查方式（可复跑）：把仓库里所有 get/set 配对扫一遍，找"有读没有写"（UI 上永远动不了）
 与"有写没有读"（死配置）的项 —— 当前全仓库 0 个。
 
-(cherry picked from commit 10987e9791054ca269ea23c4e4239439d484f27c)
+(cherry picked from commit fe26d56b6b2f9e67d814841397b85b5045d7143f)
 ---
  .../haooz/chedule/data/CourseRepository.kt    |  68 -----
  .../com/haooz/chedule/data/HolidayManager.kt  |   2 +-
@@ -276,7 +276,7 @@ index dd6af7c..205df63 100644
                  val tomorrow = java.time.LocalDate.now().plusDays(1)
                  if (com.haooz.chedule.data.ReturnDayReminder.isReturnDay(context, repository, tomorrow)) {
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 595745c..e31b37a 100644
+index 4903059..6cd995a 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -1244,7 +1244,7 @@ object CourseReminderHelper {
@@ -288,7 +288,7 @@ index 595745c..e31b37a 100644
          // 关掉开关后今日页还会一直显示旧的「返校啦」卡片。
          HolidayManager.notifyConfigChanged(context)
          startReminderService(context)
-@@ -1491,7 +1491,7 @@ object CourseReminderHelper {
+@@ -1492,7 +1492,7 @@ object CourseReminderHelper {
              !java.time.LocalTime.now().isBefore(balanceTarget) &&
              prefs.getString(KEY_RETURN_BALANCE_DATE, null) != todayKey
          ) {
@@ -297,7 +297,7 @@ index 595745c..e31b37a 100644
              showReminderNotification(
                  context,
                  NOTIFY_ID_RETURN_BALANCE,
-@@ -1563,10 +1563,15 @@ object CourseReminderHelper {
+@@ -1564,10 +1564,15 @@ object CourseReminderHelper {
       * 余额通知的标题/正文。**主路径与"立即测试"按钮共用这一份**，
       * 否则两处文案迟早会分叉（这正是本项目已经踩过的坑）。
       *
@@ -314,7 +314,7 @@ index 595745c..e31b37a 100644
          repository: CourseRepository,
          span: ReturnDayReminder.HolidaySpan,
      ): Pair<String, String> {
-@@ -1574,7 +1579,7 @@ object CourseReminderHelper {
+@@ -1575,7 +1580,7 @@ object CourseReminderHelper {
          val title = if (lastDay) "今天是${span.name}最后一天" else "${span.name}还剩 ${span.daysLeft} 天"
          val body = when {
              !lastDay -> "好好休息，返校前我会再提醒你"
@@ -323,7 +323,7 @@ index 595745c..e31b37a 100644
              else -> "最后一天了，好好休息吧"
          }
          return title to body
-@@ -1625,7 +1630,7 @@ object CourseReminderHelper {
+@@ -1626,7 +1631,7 @@ object CourseReminderHelper {
          }
          val span = ReturnDayReminder.currentHolidaySpan(context, java.time.LocalDate.now())
          val (title, body) = if (span != null) {
@@ -332,7 +332,7 @@ index 595745c..e31b37a 100644
          } else {
              // 不在假期里：正式提醒不会发，这里给演示
              "假期余额提醒（测试）" to "当前不在假期内，正式提醒会在假期中按设定时间发出"
-@@ -1715,8 +1720,9 @@ object CourseReminderHelper {
+@@ -1716,8 +1721,9 @@ object CourseReminderHelper {
          repository: CourseRepository,
      ) {
          if (repository.getIslandNotification() && IslandNotificationHelper.isIslandSupported(context)) return
@@ -344,7 +344,7 @@ index 595745c..e31b37a 100644
          val today = java.time.LocalDate.now()
          val tomorrow = today.plusDays(1)
          val todayIsReturn = ReturnDayReminder.isReturnDay(context, today)
-@@ -1755,7 +1761,7 @@ object CourseReminderHelper {
+@@ -1756,7 +1762,7 @@ object CourseReminderHelper {
       *
       * 为什么不能写死「明天返校」：目标日（正文所依据的那天）可能是**今天**。
       * `ReturnDayReminder.isReturnDay(d) = isRestDay(d) && isSchoolDay(d+1)`，

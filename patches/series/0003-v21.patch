@@ -1,4 +1,4 @@
-From 33e9d8d1a6f31919b6e80844ea191887141f7ac9 Mon Sep 17 00:00:00 2001
+From 491c48c3d7e477f131d14c98a31343593e186f4a Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sat, 26 Sep 2026 23:40:58 +0800
 Subject: [PATCH 03/25] =?UTF-8?q?=E5=AE=A1=E8=AE=A1=E4=BF=AE=E5=A4=8D=20+?=
@@ -36,7 +36,7 @@ Content-Transfer-Encoding: 8bit
 - EdgeLightElement 值重载按值比较（原来每次重组都失效 outline 缓存）
 - AlarmReceiver 去掉每次闹钟都跑的 SimpleDateFormat 调试日志；6 处裸 Log.d 改走门控 logD
 
-(cherry picked from commit cac31fee01c211f7a276b80575a4192bee0ee2b9)
+(cherry picked from commit 5133cf086055574ae830919b41a973b54d155838)
 ---
  .../com/haooz/chedule/data/HolidayManager.kt  |  11 ++
  .../haooz/chedule/data/ReturnDayReminder.kt   |  58 ++++--
@@ -224,7 +224,7 @@ index 90f626d..397c142 100644
                          .currentHolidaySpan(context, tomorrow)
                      val firstReturnCourse = tomorrowCourses.firstOrNull()
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index c428769..0bc6238 100644
+index 8b63c15..d58da2a 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -99,9 +99,18 @@ object CourseReminderHelper {
@@ -338,7 +338,7 @@ index c428769..0bc6238 100644
      }
  
      /** Remove a real ongoing course notification when holiday changes no longer resolve it for today. */
-@@ -1309,7 +1374,7 @@ object CourseReminderHelper {
+@@ -1310,7 +1375,7 @@ object CourseReminderHelper {
          val repository = CourseRepository(context)
          val today = java.time.LocalDate.now()
          val todayKey = today.toString()
@@ -347,7 +347,7 @@ index c428769..0bc6238 100644
  
          // 假期余额：假期中每天一条（返校日当天不发，那天由返校提醒负责）
          val span = ReturnDayReminder.currentHolidaySpan(context, today)
-@@ -1357,7 +1422,9 @@ object CourseReminderHelper {
+@@ -1358,7 +1423,9 @@ object CourseReminderHelper {
                  showReminderNotification(
                      context,
                      NOTIFY_ID_RETURN_PREP,
@@ -358,7 +358,7 @@ index c428769..0bc6238 100644
                      multiLinePrep,
                      channelId = CHANNEL_HOLIDAY_ID,
                  )
-@@ -1373,9 +1440,13 @@ object CourseReminderHelper {
+@@ -1374,9 +1441,13 @@ object CourseReminderHelper {
          if (repository.getReturnDayBalanceEnabled()) {
              scheduleReturnDayExactAlarm(
                  context, alarmManager, RC_RETURN_BALANCE_ALARM, TYPE_RETURN_DAILY_BALANCE, balanceTarget,
@@ -373,7 +373,7 @@ index c428769..0bc6238 100644
          }
          if (repository.getReturnDayPrepEnabled()) {
              scheduleReturnDayExactAlarm(
-@@ -1387,20 +1458,48 @@ object CourseReminderHelper {
+@@ -1388,20 +1459,48 @@ object CourseReminderHelper {
                      repository.getReturnDayPrepHour(),
                      repository.getReturnDayPrepMinute(),
                  ),
@@ -424,7 +424,7 @@ index c428769..0bc6238 100644
          val intent = Intent(context, AlarmReceiver::class.java).apply {
              putExtra(EXTRA_REMINDER_TYPE, type)
          }
-@@ -1410,14 +1509,11 @@ object CourseReminderHelper {
+@@ -1411,14 +1510,11 @@ object CourseReminderHelper {
              intent,
              PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
          )
@@ -443,7 +443,7 @@ index c428769..0bc6238 100644
      }
  
      private fun cancelReturnDayExactAlarm(
-@@ -1425,6 +1521,8 @@ object CourseReminderHelper {
+@@ -1426,6 +1522,8 @@ object CourseReminderHelper {
          alarmManager: AlarmManager,
          requestCode: Int,
          type: Int,
@@ -452,7 +452,7 @@ index c428769..0bc6238 100644
      ) {
          val intent = Intent(context, AlarmReceiver::class.java).apply {
              putExtra(EXTRA_REMINDER_TYPE, type)
-@@ -1436,6 +1534,9 @@ object CourseReminderHelper {
+@@ -1437,6 +1535,9 @@ object CourseReminderHelper {
              PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
          )
          alarmManager.cancel(pendingIntent)
@@ -462,7 +462,7 @@ index c428769..0bc6238 100644
      }
  
      /**
-@@ -1450,6 +1551,8 @@ object CourseReminderHelper {
+@@ -1451,6 +1552,8 @@ object CourseReminderHelper {
          repository: CourseRepository,
      ) {
          if (repository.getIslandNotification() && IslandNotificationHelper.isIslandSupported(context)) return
@@ -471,7 +471,7 @@ index c428769..0bc6238 100644
          val today = java.time.LocalDate.now()
          val tomorrow = today.plusDays(1)
          val todayIsReturn = ReturnDayReminder.isReturnDay(context, today)
-@@ -1459,12 +1562,16 @@ object CourseReminderHelper {
+@@ -1460,12 +1563,16 @@ object CourseReminderHelper {
          val resolution = resolveDaySchedule(context, targetDate)
          val first = resolution.courses.firstOrNull() ?: return
          val startTime = getCourseStartTime(first, repository) ?: return
@@ -492,7 +492,7 @@ index c428769..0bc6238 100644
          if (now - prefs.getLong(KEY_RETURN_LIVE_PUSH, 0L) < 15 * 60 * 1000L) return
          val span = ReturnDayReminder.currentHolidaySpan(context, targetDate)
          showReturnDayLiveNotification(
-@@ -1501,7 +1608,8 @@ object CourseReminderHelper {
+@@ -1502,7 +1609,8 @@ object CourseReminderHelper {
              if (courseName.isNotEmpty()) append(courseName)
              if (section.isNotEmpty()) append("｜").append(section)
              if (startTime.isNotEmpty()) append(" ").append(startTime)
@@ -502,7 +502,7 @@ index c428769..0bc6238 100644
          }
          val contentIntent = PendingIntent.getActivity(
              context,
-@@ -1783,7 +1891,18 @@ object CourseReminderHelper {
+@@ -1784,7 +1892,18 @@ object CourseReminderHelper {
          manager.notify(startedNotificationId, startedNotification)
      }
  
@@ -521,7 +521,7 @@ index c428769..0bc6238 100644
          val manager = context.getSystemService(NotificationManager::class.java)
          val alertChannel = NotificationChannel(
              CHANNEL_REMINDER_ID,
-@@ -1811,6 +1930,7 @@ object CourseReminderHelper {
+@@ -1812,6 +1931,7 @@ object CourseReminderHelper {
          }
          manager.createNotificationChannel(alertChannel)
          manager.createNotificationChannel(liveChannel)
@@ -529,7 +529,7 @@ index c428769..0bc6238 100644
      }
  
      fun showReminderNotification(
-@@ -2198,10 +2318,10 @@ object CourseReminderHelper {
+@@ -2199,10 +2319,10 @@ object CourseReminderHelper {
              // 连堂课间为 0 时触发点可能已过上课时刻：落"已上课"；超宽限期则不再打扰
              val elapsed = nowMs - courseStartMillis
              if (elapsed > ISLAND_START_GRACE_MS) {
@@ -542,7 +542,7 @@ index c428769..0bc6238 100644
              if (useIsland) {
                  IslandNotificationHelper.sendPreClassIslandNotification(
                      context = context,
-@@ -2298,7 +2418,7 @@ object CourseReminderHelper {
+@@ -2299,7 +2419,7 @@ object CourseReminderHelper {
                  IslandNotificationHelper.cancelIslandNotifications(context)
                  IslandNotificationHelper.IslandState.clear(context)
                  IslandNotificationHelper.IslandState.clear(context, testMode = true)
@@ -551,7 +551,7 @@ index c428769..0bc6238 100644
              }
              return
          }
-@@ -2324,7 +2444,7 @@ object CourseReminderHelper {
+@@ -2325,7 +2445,7 @@ object CourseReminderHelper {
              // 连带收起另一半（倒计时/已上课），避免残留岛一直停在 00:00
              IslandNotificationHelper.cancelIslandState(context, state.notificationId)
              IslandNotificationHelper.IslandState.clear(context, testMode)
@@ -560,7 +560,7 @@ index c428769..0bc6238 100644
              return
          }
  
-@@ -2334,10 +2454,10 @@ object CourseReminderHelper {
+@@ -2335,10 +2455,10 @@ object CourseReminderHelper {
                  // 隔夜或重启后残留的状态：不要再补一个过期的"已上课"，直接收起
                  IslandNotificationHelper.cancelIslandState(context, state.notificationId)
                  IslandNotificationHelper.IslandState.clear(context, testMode)
@@ -573,7 +573,7 @@ index c428769..0bc6238 100644
              IslandNotificationHelper.onClassStart(
                  context = context,
                  courseName = state.courseName,
-@@ -2455,12 +2575,16 @@ object CourseReminderHelper {
+@@ -2456,12 +2576,16 @@ object CourseReminderHelper {
                      windowStart = prevEnd
                  }
              }

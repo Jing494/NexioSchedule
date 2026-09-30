@@ -1,4 +1,4 @@
-From 4db9e969112fc05847409814d49d209b6b4e1951 Mon Sep 17 00:00:00 2001
+From 00a4a0b15b0719a91329f68d6fcacde76de988b9 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 10:53:17 +0800
 Subject: [PATCH 10/25] =?UTF-8?q?v28:=20=E6=B5=81=E7=95=85=E5=BA=A6=20?=
@@ -68,7 +68,7 @@ Content-Transfer-Encoding: 8bit
   单行唤醒 3300 → 115）；唤醒间隔值域（不忙等、不久睡）。
 - 编译门禁 assembleRelease 通过；apksigner verify + sha256 + dex 字符串核验见 dist-v28。
 
-(cherry picked from commit f70062cc30b9dbf8c5aca7d189776a7cf2c0ef40)
+(cherry picked from commit 04940364c326059d756c004c3c3e05374c3e2c76)
 ---
  .../chedule/reminder/CourseReminderHelper.kt  | 42 ++++++++++----
  .../ui/activities/CourseReminderScreen.kt     | 29 +++++++++-
@@ -86,7 +86,7 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 app/src/main/java/com/haooz/chedule/ui/utils/MinuteTick.kt
 
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 17b9806..02c1876 100644
+index f375e25..9ea8f0a 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -215,6 +215,8 @@ object CourseReminderHelper {

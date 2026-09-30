@@ -1,4 +1,4 @@
-From 90fa11cc1ca74d797c5c99ebfa657e7270ea4818 Mon Sep 17 00:00:00 2001
+From 68881255320bdfee333b34e34f6e010d82fe69c1 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 09:57:57 +0800
 Subject: [PATCH 08/25] =?UTF-8?q?v26=EF=BC=9A=E4=BF=AE=E3=80=8C=E5=81=87?=
@@ -27,16 +27,16 @@ Content-Transfer-Encoding: 8bit
 所有闹钟 exactAllowReason=policy_permission、receiver 能被唤醒（广播历史可见）、
 crash 缓冲区无本包记录。所以问题在应用逻辑，不在系统。
 
-(cherry picked from commit 0874cf046304029e0aa979fbcd34684c36167b55)
+(cherry picked from commit 62429499783f1eb53102c65619d84a755b3eb77c)
 ---
  .../chedule/reminder/CourseReminderHelper.kt      | 15 +++++++++++----
  1 file changed, 11 insertions(+), 4 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index d813096..305c46e 100644
+index 228a25c..cb22198 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-@@ -1407,17 +1407,24 @@ object CourseReminderHelper {
+@@ -1408,17 +1408,24 @@ object CourseReminderHelper {
              repository.getReturnDayBalanceHour(),
              repository.getReturnDayBalanceMinute(),
          )

@@ -179,6 +179,16 @@ CHECKS = [
         [],
     ),
     (
+        "rebase 易踩：isColorOs() 的收尾右花括号（漏了会让后面所有成员嵌套错层）",
+        # 真实事故：升基准解冲突时，上游那段 isColorOs() 的收尾 `}` 属于"公共区"，
+        # 被排到了我方 222 行之后 → 该函数永不闭合、后续成员全被套进它内部，
+        # 编译期表现为一大批 Unresolved reference。括号总数检查不可靠（字符串模板/正则字面量
+        # 会造成误报），所以这里针对该模式做定点守卫。
+        f"{J}/reminder/CourseReminderHelper.kt",
+        [r"\}\.getOrDefault\(false\)\n    \}\n"],
+        [],
+    ),
+    (
         "备份导出必须是黑名单式（白名单会漏掉所有不带前缀的用户设置）",
         f"{J}/data/CourseRepository.kt",
         [r"val excludedKeys = setOf\(KEY_DEFAULT_FOLDER_MIGRATED\)"],

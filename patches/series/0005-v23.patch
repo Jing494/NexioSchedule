@@ -1,4 +1,4 @@
-From 8611915b38b6d430104b7afe9a1387449246f87c Mon Sep 17 00:00:00 2001
+From e41840b9a668ffb5f082b3fdd5dc4b8a6a0c6eb6 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 08:00:24 +0800
 Subject: [PATCH 05/25] =?UTF-8?q?v23=EF=BC=9A=E4=BF=AE=E8=B6=85=E7=BA=A7?=
@@ -46,14 +46,14 @@ Content-Transfer-Encoding: 8bit
 - islandTimeout 写死 3600s（岛消失时间，单位 s）→ 晚自习这种 >60 分钟的课会中途收岛。
   现在同样按时间线给（距上课/下课秒数 + 120），明天返校放宽到 12 小时。
 
-(cherry picked from commit 9f4ba946489d4ad5b79621172a2831af866429a9)
+(cherry picked from commit bb5a0f358611778efd32cb54cd5819830f08617f)
 ---
  .../chedule/reminder/CourseReminderHelper.kt  |  11 +-
  .../reminder/IslandNotificationHelper.kt      | 263 +++++++++++++-----
  2 files changed, 206 insertions(+), 68 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index bbccd03..b1f1720 100644
+index 6f542fc..2db05af 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -446,8 +446,15 @@ object CourseReminderHelper {

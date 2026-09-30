@@ -1,4 +1,4 @@
-From b639d3cd41ff33da614f3ebb3a7ce446b448c621 Mon Sep 17 00:00:00 2001
+From 4fe5754634995d9026d43704079579b58ec458a1 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 10:31:15 +0800
 Subject: [PATCH 09/25] =?UTF-8?q?v27=EF=BC=9A=E5=81=87=E6=9C=9F=E4=BD=99?=
@@ -46,7 +46,7 @@ Content-Transfer-Encoding: 8bit
   主路径仍写；三张卡各一份、豁免卡已无 prep/balance 残留；body 余额 0 处引用
 - 全部 ALL PASS；编译 + R8 + lintVital 通过
 
-(cherry picked from commit 2d00f069d2564fe28cd30a590d2752e01ca59b6a)
+(cherry picked from commit a33565077fe1da0fa661fbd5983e69f1187d204c)
 ---
  .../haooz/chedule/data/CourseRepository.kt    |  13 +
  .../chedule/reminder/CourseReminderHelper.kt  |  99 +++-
@@ -86,10 +86,10 @@ index 5cf4dc7..b02d689 100644
      fun getReturnDayPrepEnabled(): Boolean {
          return prefs.getBoolean(KEY_RETURN_DAY_PREP_ENABLED, false)
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 305c46e..17b9806 100644
+index cb22198..f375e25 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-@@ -1416,15 +1416,16 @@ object CourseReminderHelper {
+@@ -1417,15 +1417,16 @@ object CourseReminderHelper {
          // 现在统一为：只要在假期内就发；最后一天换成「最后一天」的文案。
          if (span != null &&
              repository.getReturnDayBalanceEnabled() &&
@@ -109,7 +109,7 @@ index 305c46e..17b9806 100644
                  channelId = CHANNEL_HOLIDAY_ID,
              )
              prefs.edit { putString(KEY_RETURN_BALANCE_DATE, todayKey) }
-@@ -1439,25 +1440,11 @@ object CourseReminderHelper {
+@@ -1440,25 +1441,11 @@ object CourseReminderHelper {
              if (!java.time.LocalTime.now().isBefore(target) &&
                  prefs.getString(KEY_RETURN_PREP_DATE, null) != todayKey
              ) {
@@ -137,7 +137,7 @@ index 305c46e..17b9806 100644
                      channelId = CHANNEL_HOLIDAY_ID,
                  )
                  prefs.edit { putString(KEY_RETURN_PREP_DATE, todayKey) }
-@@ -1501,6 +1488,80 @@ object CourseReminderHelper {
+@@ -1502,6 +1489,80 @@ object CourseReminderHelper {
          }
      }
  

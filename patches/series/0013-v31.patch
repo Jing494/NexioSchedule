@@ -1,4 +1,4 @@
-From c6acbb04f48249c1ac11ab1c3c75fa92c10f28b1 Mon Sep 17 00:00:00 2001
+From 4af9095631df7a2774ec23ab86d2b3c8aae0b51c Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 13:11:13 +0800
 Subject: [PATCH 13/25] =?UTF-8?q?v31:=20=E4=BF=AE=E3=80=8C=E8=BF=94?=
@@ -44,7 +44,7 @@ Content-Transfer-Encoding: 8bit
 标题·兜底·短文本都用 verb / 三个调用点都传 targetDate / 16:00 口径互补）+
 1 项前提核对（isReturnDay 公式）。assembleRelease 通过；签名与 sha256 通过。
 
-(cherry picked from commit a84245d38d0b28b83a7511efe81302530f8ec3b2)
+(cherry picked from commit d4b89352fe760acd75c9445e8cefdce304719254)
 ---
  .../haooz/chedule/reminder/AlarmReceiver.kt   |  4 ++
  .../chedule/reminder/CourseReminderHelper.kt  | 42 +++++++++++++++++--
@@ -74,10 +74,10 @@ index f8d3d13..9ab603e 100644
                              progressPercent = span?.progressPercent,
                          )
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 02c1876..6dc610b 100644
+index 9ea8f0a..238f381 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-@@ -1694,12 +1694,42 @@ object CourseReminderHelper {
+@@ -1695,12 +1695,42 @@ object CourseReminderHelper {
              courseName = first.name,
              section = first.getTimeDisplayText(),
              startTime = startTime,
@@ -120,7 +120,7 @@ index 02c1876..6dc610b 100644
      /**
       * 「明天返校」原生实时动态通知。
       *
-@@ -1712,19 +1742,23 @@ object CourseReminderHelper {
+@@ -1713,19 +1743,23 @@ object CourseReminderHelper {
          courseName: String,
          section: String,
          startTime: String,
@@ -146,7 +146,7 @@ index 02c1876..6dc610b 100644
          }
          val contentIntent = PendingIntent.getActivity(
              context,
-@@ -1764,7 +1798,7 @@ object CourseReminderHelper {
+@@ -1765,7 +1799,7 @@ object CourseReminderHelper {
                  )
              }
              promotedCatching("returnDay.setRequestPromotedOngoing") { styleBuilder.setRequestPromotedOngoing(true) }
@@ -155,7 +155,7 @@ index 02c1876..6dc610b 100644
              manager.notify(
                  RETURN_DAY_LIVE_ID,
                  styleBuilder.build().apply {
-@@ -1789,7 +1823,7 @@ object CourseReminderHelper {
+@@ -1790,7 +1824,7 @@ object CourseReminderHelper {
                      Notification.CATEGORY_REMINDER
                  }
              )

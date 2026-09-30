@@ -1,4 +1,4 @@
-From d8d5a5e272d8c544c41571d0687ba16630883a29 Mon Sep 17 00:00:00 2001
+From 1d70cf6ebe7432a1301b5a2579ca3b4cbf620035 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 23:04:12 +0800
 Subject: [PATCH 19/25] =?UTF-8?q?v37=EF=BC=9A=E4=BF=AE=E3=80=8C=E4=B8=A4?=
@@ -27,7 +27,7 @@ Content-Transfer-Encoding: 8bit
 - UpdateSettingsScreen：LaunchedEffect 的 key 加上 effectiveDownloadSource；
   「检查更新」在缓存下载地址为空时改为强制重查，而不是直接开对话框。
 
-(cherry picked from commit 8d1f517aa3494c6bee482832279434e82f6f4920)
+(cherry picked from commit f9c0764f84c87d11e01f780290b65bc1f6ee4b4e)
 ---
  .../ui/activities/UpdateSettingsScreen.kt     | 12 ++++--
  .../haooz/chedule/ui/utils/UpdateChecker.kt   | 38 ++++++++++++-------

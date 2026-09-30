@@ -1,4 +1,4 @@
-From d94bb5ed3bd41dbb9bf95e03e6200f68ae542ba4 Mon Sep 17 00:00:00 2001
+From 04938d523ca08fe53465c0e7674762f3df320e1d Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 11:44:20 +0800
 Subject: [PATCH 12/25] =?UTF-8?q?v30:=20=E4=BF=AE=E6=AF=9B=E7=8E=BB?=
@@ -33,7 +33,7 @@ assembleRelease 通过；签名与 sha256 通过；
 包内容确实变了（v29 classes.dex sha71f4b93e… → v30 sha13286820…，
 APK 总大小三版同为 6130530 是 zip 对齐的巧合）。
 
-(cherry picked from commit 2ef974cac80d3d32bbc29fdd28afea218a798676)
+(cherry picked from commit 5322e58b54febc8aa538e00d43cc3cf867d91c42)
 ---
  .../java/com/haooz/chedule/ui/components/CourseCard.kt |  8 +++++++-
  .../java/com/haooz/chedule/ui/components/DayColumn.kt  |  8 +++++++-

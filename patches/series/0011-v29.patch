@@ -1,4 +1,4 @@
-From ffe3f060e0f45c0f2011517505fce8ccb4be7862 Mon Sep 17 00:00:00 2001
+From 54510c2e3bae84a450c36e6c224139987cf991ae Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 11:27:44 +0800
 Subject: [PATCH 11/25] =?UTF-8?q?v29:=20=E6=AF=9B=E7=8E=BB=E7=92=83?=
@@ -36,7 +36,7 @@ Content-Transfer-Encoding: 8bit
 assembleRelease BUILD SUCCESSFUL；apksigner + sha256 + badging 通过；
 dex 独立佐证 glassPerfFactor FOUND、glassBlurEnabled MISSING。
 
-(cherry picked from commit 791252fa3603903f0a2bf423607009fb9bf24523)
+(cherry picked from commit 3d29b76e0d9c2a645a1b5e0676e57648771810c2)
 ---
  .../chedule/ui/activities/MainActivity.kt     | 19 ++++---
  .../haooz/chedule/ui/components/CourseCard.kt | 12 +++--

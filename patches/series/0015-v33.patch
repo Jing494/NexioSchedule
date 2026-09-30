@@ -1,4 +1,4 @@
-From fa7daedf1d48ab378f852e701db1658c8cc236dc Mon Sep 17 00:00:00 2001
+From 658baecdccdf65b662300c445056e4f81a160fa3 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 14:04:18 +0800
 Subject: [PATCH 15/25] =?UTF-8?q?v33:=20=E6=B5=8B=E8=AF=95=E7=8B=AC?=
@@ -46,7 +46,7 @@ Kotlin 守护进程 →1536m；实测 BUILD SUCCESSFUL 11m34s（比 4G/双 worke
 验证：verify_testpage_v33.py 22 项全过（覆盖矩阵 / 独立成页 / 体检卡折叠与位置用下标比较 /
 次日文案只有一份实现）；编译、签名、sha256、badging、APK 内编译后 Manifest 均核验通过。
 
-(cherry picked from commit 70757bd1a290154afd84dd77ddb76ba98d446538)
+(cherry picked from commit a1946ea16b2e1b03e5f9e07ae8567998e9ceff39)
 ---
  app/src/main/AndroidManifest.xml              |   7 +
  .../haooz/chedule/reminder/AlarmReceiver.kt   |  30 +-
@@ -129,7 +129,7 @@ index 9ab603e..dd6af7c 100644
                  // 明天是「返校日」（假期/周末最后一天、次日要上课）→ 顺带推一条超级岛。
                  // 复用既有岛发送路径（含 XMSF 绕白名单），这里只是多一个调用方。
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 19fe799..595745c 100644
+index d836ca4..4903059 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -1328,6 +1328,55 @@ object CourseReminderHelper {

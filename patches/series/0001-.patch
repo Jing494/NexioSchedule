@@ -1,4 +1,4 @@
-From 86cd37af0413a37bac7a505c3ee0a5a5202ad215 Mon Sep 17 00:00:00 2001
+From 6b29264ee503d85df21a3c00c007d44ac09fa675 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sat, 26 Sep 2026 19:12:29 +0800
 Subject: [PATCH 01/25] =?UTF-8?q?=E6=9C=AC=E5=9C=B0=E4=BF=AE=E5=A4=8D:?=
@@ -37,12 +37,12 @@ Content-Transfer-Encoding: 8bit
 关键修正
 - 移除 setColorized(true):它是我们为「符合规范」加的推荐项,却会打坏 HyperOS 的实况激活
 
-(cherry picked from commit 5a7e4267b3d6f04ad514a2a4237876033c9091cb)
+(cherry picked from commit 8ac99258aa226a3f82878b497281c57b967205de)
 ---
  .../haooz/chedule/data/CourseRepository.kt    | 144 ++++++
  .../haooz/chedule/data/ReturnDayReminder.kt   | 167 +++++++
  .../haooz/chedule/reminder/AlarmReceiver.kt   |  35 ++
- .../chedule/reminder/CourseReminderHelper.kt  | 300 +++++++++++-
+ .../chedule/reminder/CourseReminderHelper.kt  | 301 +++++++++++-
  .../reminder/IslandNotificationHelper.kt      |  70 +++
  .../chedule/reminder/WidgetRefreshReceiver.kt |   2 +
  .../ui/activities/CourseReminderScreen.kt     |  38 +-
@@ -57,7 +57,7 @@ Content-Transfer-Encoding: 8bit
  .../widget/CourseWidgetProviderStandard.kt    |   9 +-
  .../widget/TodayCourseWidgetProviderPad.kt    |   7 +-
  .../TodayCourseWidgetProviderStandard.kt      |   7 +-
- 18 files changed, 1364 insertions(+), 31 deletions(-)
+ 18 files changed, 1365 insertions(+), 31 deletions(-)
  create mode 100644 app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
 
 diff --git a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
@@ -442,7 +442,7 @@ index 4c4ec1e..e4ca747 100644
                  CourseReminderHelper.scheduleNextDayOnly(context)
                  CourseReminderHelper.onAlarmProcessed(context)
 diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
-index 6cd91e5..4587dfa 100644
+index 6cd91e5..a0cfda1 100644
 --- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 +++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
 @@ -19,6 +19,7 @@ import com.haooz.chedule.data.HolidayCourseExclusion
@@ -480,11 +480,10 @@ index 6cd91e5..4587dfa 100644
      const val CHANNEL_LIVE_NAME = "课程提醒实况"
  
      // 发送去重：JSON map(courseId->时间戳)+日期，跨日失效。
-@@ -1263,6 +1277,230 @@ object CourseReminderHelper {
-             val rom = (get.invoke(null, "ro.build.version.oplusrom") as? String).orEmpty()
-             rom.isNotBlank()
+@@ -1265,6 +1279,231 @@ object CourseReminderHelper {
          }.getOrDefault(false)
-+
+     }
+ 
 +    /**
 +     * 假期余额 / 返校准备清单的每日提醒。
 +     *
@@ -708,10 +707,12 @@ index 6cd91e5..4587dfa 100644
 +            flags = flags or Notification.FLAG_ONLY_ALERT_ONCE
 +        }
 +        manager.notify(RETURN_DAY_LIVE_ID, notification)
-     }
- 
++    }
++
      /**
-@@ -1293,6 +1531,10 @@ object CourseReminderHelper {
+      * 原生实况课中进度：API 36+ 用 ProgressStyle + 提升 ongoing，与 SleepDown 同思路。
+      * 每分钟只在剩余分钟/进度变化时重推，挂到下课自动结束。
+@@ -1293,6 +1532,10 @@ object CourseReminderHelper {
          val wasInClass = prefs.getBoolean("in_class_active", false)
          val remainMin = inClassRemainMinutes(endMillis, now)
          val progress = inClassProgressPercent(startMillis, endMillis, remainMin)
@@ -722,7 +723,7 @@ index 6cd91e5..4587dfa 100644
          val lastMin = prefs.getInt("last_in_class_minutes", -1)
          val lastProgress = prefs.getInt("last_in_class_progress", -1)
  
-@@ -1327,8 +1569,13 @@ object CourseReminderHelper {
+@@ -1327,8 +1570,13 @@ object CourseReminderHelper {
          val shortCriticalText = "${remainMin}分钟"
  
          // 课中只保留进度卡片，不挂动作按钮（点整卡打开课表即可）
@@ -738,7 +739,7 @@ index 6cd91e5..4587dfa 100644
                  .setSmallIcon(R.mipmap.ic_launcher)
                  .setContentTitle(courseName)
                  .setContentText(infoLine)
-@@ -1339,29 +1586,34 @@ object CourseReminderHelper {
+@@ -1339,29 +1587,34 @@ object CourseReminderHelper {
                  .setShowWhen(false)
                  .setCategory(Notification.CATEGORY_PROGRESS)
                  .setTimeoutAfter(endMillis - now)
@@ -789,7 +790,7 @@ index 6cd91e5..4587dfa 100644
                  .setOngoing(true)
                  .setOnlyAlertOnce(true)
                  .setShowWhen(false)
-@@ -1375,7 +1627,6 @@ object CourseReminderHelper {
+@@ -1375,7 +1628,6 @@ object CourseReminderHelper {
                      flags = flags or Notification.FLAG_ONLY_ALERT_ONCE
                  }
          }
@@ -797,7 +798,7 @@ index 6cd91e5..4587dfa 100644
          manager.notify(inClassId, notification)
          prefs.edit {
              putBoolean("in_class_active", true)
-@@ -1487,8 +1738,15 @@ object CourseReminderHelper {
+@@ -1487,8 +1739,15 @@ object CourseReminderHelper {
          manager.createNotificationChannel(liveChannel)
      }
  
@@ -814,7 +815,7 @@ index 6cd91e5..4587dfa 100644
  
          val intent = Intent(context, MainActivity::class.java).apply {
              flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-@@ -1501,7 +1759,7 @@ object CourseReminderHelper {
+@@ -1501,7 +1760,7 @@ object CourseReminderHelper {
              PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
          )
  
