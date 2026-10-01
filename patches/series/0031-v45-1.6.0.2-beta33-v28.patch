@@ -1,0 +1,75 @@
+From 3d78f9eb7de7323265a44d0418106e783fe3e983 Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Thu, 1 Oct 2026 10:16:37 +0800
+Subject: [PATCH 31/31] =?UTF-8?q?v45=EF=BC=9A=E4=BF=AE=E3=80=8C=E5=8D=87?=
+ =?UTF-8?q?=E5=9F=BA=E5=87=86=E5=88=B0=201.6.0.2-beta33=20=E7=9A=84?=
+ =?UTF-8?q?=E7=BC=96=E8=AF=91=E5=90=8E=E9=81=97=E7=97=87=E3=80=8D=E2=80=94?=
+ =?UTF-8?q?=E2=80=94=20=E5=8D=A1=E7=89=87=E5=80=92=E8=AE=A1=E6=97=B6?=
+ =?UTF-8?q?=E5=B7=B2=E8=A2=AB=E4=B8=8A=E6=B8=B8=E6=90=AC=E8=B5=B0=EF=BC=8C?=
+ =?UTF-8?q?=E6=B8=85=E6=8E=89=20v28=20=E9=81=97=E7=95=99=E7=9A=84=E5=AD=A4?=
+ =?UTF-8?q?=E5=84=BF=E5=BC=95=E7=94=A8?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+现象：CI 编译 11 条 Unresolved reference，全在 TodayScreen.kt 课程卡的状态轮询里
+（newMinutes / newSeconds / remainingMinutes / remainingSeconds / totalSeconds）。
+
+根因：上游 5899c173（v1.6.0beta31）把卡片里的「还剩 X 分钟」整块搬进了今日助手
+（TodayAssistant.kt 的 ceilMinutesUntil / formatCountdownMinutes），卡片改为只标状态
+「正在上课」。我 v28 那个 hunk 在 beta33 上仍然匹配上下文，于是只留下了几行
+*使用* 这些局部变量的代码，声明跟着上游一起消失 —— 重基准时不会报错，本地又不编译，
+一路到 CI 编译才发现。
+
+改法：跟随上游口径，本分支不再写倒计时状态。既然这里只剩「进行中 → 已结束」一次翻转，
+就直接睡到下课时刻（上限 60s，与「未开始」分支同一口径）—— 比上游改造前的固定 1s
+轮询少 60 倍唤醒，且不改变任何可见行为。
+
+教训记进 LOCAL-CHANGES §十：本地不编译时，「重基准后遗症」只能靠 CI 兜住，
+所以每次升基准必须先跑 dry_run，绿灯了再发版。
+---
+ .../haooz/chedule/ui/screens/TodayScreen.kt   | 27 +++++++++----------
+ 1 file changed, 13 insertions(+), 14 deletions(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
+index 39dedb38..57b647ab 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
+@@ -289,21 +289,20 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
+                 }
+                 else -> {
+                     if (courseStatus != "进行中") courseStatus = "进行中"
+-                    // 仅值变化时写入，避免每秒触发重组
+-                    if (newMinutes != remainingMinutes) remainingMinutes = newMinutes
+-                    // 秒数只在最后一分钟文案使用
+-                    if (newMinutes <= 0 && newSeconds != remainingSeconds) remainingSeconds = newSeconds
+-                    // 关键：下一次唤醒**从当前剩余秒数推**，不要从"下一个整分"推。
++                    // ★ 上游 v1.6.0beta31（5899c173）起，这张卡片不再显示「还剩 X 分钟」——
++                    //   倒计时整块挪进了今日助手（TodayAssistant.kt 的 ceilMinutesUntil /
++                    //   formatCountdownMinutes），卡片只标状态（下方 statusText 的注释）。
++                    //   于是本分支**没有可写的状态**了：循环里唯一还会变的，只剩
++                    //   「进行中 → 已结束」这一次翻转。
++                    //   所以直接睡到下课时刻即可（上限 60s，与未开始分支同一口径）。
++                    //   改造前固定 1s 时，一屏几十张卡片每秒各醒一次、却什么都不做。
+                     //
+-                    // 显示用的是 floor 语义（totalSeconds / 60），分钟值 v 的窗口是
+-                    // (end-60(v+1), end-60v]，所以下一个跳变点距现在恰好 totalSeconds % 60 + 1 秒。
+-                    // 而"睡到下一个整分"在**进入循环的瞬间恰好压在跳变点上**时会取到退化值：
+-                    // 此时 floor(end-now) 还是旧的一档（例如开课那一刻算出来仍是 45，
+-                    // 可 40ms 后就是 44），于是那一分钟（44）会被整个跳过，肉眼看到 45 → 43。
+-                    // 未开始分支正好睡到 start（整分），必然踩到这个边界，所以必须这样推。
+-                    // +1 秒是为了跨过跳变点那一瞬间本身；落在退化点上时下一轮会自愈。
+-                    nextTickMs = if (newMinutes <= 0) 1_000L
+-                    else ((totalSeconds % 60 + 1) * 1_000L)
++                    //   注：这里不能改成「从剩余秒数推下一个整分」那种写法 ——
++                    //   这行曾是 v28 的优化点，重基准到 beta33 后上游删掉了声明它们的
++                    //   代码块，只剩几行引用「上游已删掉的局部变量」的孤儿代码 ——
++                    //   本地不编译发现不了，直到 CI 编译才炸（见 LOCAL-CHANGES §十）。
++                    val untilEnd = java.time.Duration.between(now, endTime).toMillis()
++                    nextTickMs = untilEnd.coerceIn(1_000L, 60_000L)
+                 }
+             }
+             delay(nextTickMs)
+-- 
+2.55.0
+

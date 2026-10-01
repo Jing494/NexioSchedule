@@ -1,7 +1,7 @@
-From 38949fc087ed97012e8a06f83d85571ef311e555 Mon Sep 17 00:00:00 2001
+From 508004c1394e97c2b0c21b4bd5a0404365e4c7af Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Wed, 30 Sep 2026 20:04:26 +0800
-Subject: [PATCH 26/30] =?UTF-8?q?fix(base):=20=E6=B5=8B=E8=AF=95=E8=B7=AF?=
+Subject: [PATCH 26/31] =?UTF-8?q?fix(base):=20=E6=B5=8B=E8=AF=95=E8=B7=AF?=
  =?UTF-8?q?=E5=BE=84=E5=8E=BB=E6=8E=89=20classroom=20=E5=BD=A2=E5=8F=82=20?=
  =?UTF-8?q?=E2=80=94=E2=80=94=20=E4=B8=8A=E6=B8=B8=E5=B7=B2=E6=94=B9=20sho?=
  =?UTF-8?q?wStartedLiveNotification=20=E7=AD=BE=E5=90=8D?=
