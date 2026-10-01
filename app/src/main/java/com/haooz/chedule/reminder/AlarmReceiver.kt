@@ -87,7 +87,8 @@ class AlarmReceiver : BroadcastReceiver() {
                 val freshStartTime = CourseReminderHelper.getCourseStartTime(matched, repository) ?: startTime
                 val freshEndTime = CourseReminderHelper.getCourseEndTime(matched, repository) ?: ""
                 val startMillis = CourseReminderHelper.parseTimeToTodayMillis(freshStartTime)
-                val endMillis = CourseReminderHelper.parseTimeToTodayMillis(freshEndTime)
+                // 跨零点的课（23:30–00:30 晚自习）要按次日算结束，否则课中卡/岛永远不出现
+                val endMillis = CourseReminderHelper.endMillisFor(startMillis, freshEndTime)
 
                 if (startMillis <= 0L) {
                     Log.d("AlarmReceiver", "Invalid start time for ${matched.name}, skipped")

@@ -45,7 +45,6 @@ object ClassDndHelper {
     private const val RC_DND_TEST_START = 39901
     private const val RC_DND_TEST_END = 49901
 
-    private const val DAY_MS = 24 * 60 * 60 * 1000L
 
     // 闹钟登记表：课程删除/换课表后 id 变化，只按当前课程取消会留下孤儿闹钟
     private const val PREF_ALARM_REGISTRY = "reminder_alarm_registry"
@@ -495,12 +494,12 @@ object ClassDndHelper {
             val startMillis = CourseReminderHelper.parseTimeToTodayMillis(
                 CourseReminderHelper.getCourseStartTime(course, repository)
             )
-            val parsedEnd = CourseReminderHelper.parseTimeToTodayMillis(
-                CourseReminderHelper.getCourseEndTime(course, repository)
+            // 跨零点的课（如 23:00–01:00）下课点落在次日 —— 统一走 endMillisFor，别再各处自己加一天
+            val endMillis = CourseReminderHelper.endMillisFor(
+                startMillis,
+                CourseReminderHelper.getCourseEndTime(course, repository),
             )
-            if (startMillis <= 0L || parsedEnd <= 0L) continue
-            // 跨零点的课（如 23:00-01:00）下课点落在次日
-            val endMillis = if (parsedEnd <= startMillis) parsedEnd + DAY_MS else parsedEnd
+            if (startMillis <= 0L || endMillis <= 0L) continue
 
             val startRc = RC_DND_START_BASE + course.id.hashCode()
             val endRc = RC_DND_END_BASE + course.id.hashCode()
