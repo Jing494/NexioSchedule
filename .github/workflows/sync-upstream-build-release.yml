@@ -1,0 +1,503 @@
+# 同步上游 + 自动构建 + 发布 Release（全程在 GitHub runner 上，本地不参与）
+#
+# 设计参考了 xiaoxun007/NexioSchedule 的做法，但有两处**必须不同**：
+#   1) 签名密钥：本 fork 用**自己的 keystore**（放 repo secrets，绝不入库），
+#      这样能直接覆盖安装你手机上现有那版；参考仓库用的是可公开的 debug key。
+#   2) 同步方式：**合并式 fork** —— `master` 就是发布分支（= 上游 + 本 fork 的定制提交），
+#      CI 直接构建它，不再"钉住旧基准 + 重放补丁"：
+#          · 定时 / 手动触发 → 上游有新提交就先自动 `git merge upstream/master`；
+#          · 合并干净且没命中「分歧清单」→ 构建 → 门禁/契约/签名全绿 → **才**推 master、才发版
+#            （顺序刻意如此：远端 master 永远不会前进到一个"构建不过"的状态）；
+#          · 合并冲突 → `merge --abort`，**什么都不推**，本次仍用旧 master 出包，另开 Issue 等人工处理。
+#      `patches/` 与 `tools/check_patches.py` 是旧机制（钉基准 + 重放补丁）的留档，已不参与构建。
+#
+# 首次使用：先把 4 个 secrets 配好（见 README「自动构建」一节），再手动 Run 一次。
+
+name: 同步上游并构建 Release APK
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'      # 每 6 小时自动跟一次上游：能干净合并就构建+发版，冲突/命中清单只开 Issue
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '只构建不发布（改定制 / 验 CI 时用：跑完守卫就停，不占版本号、不产生 Release）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write              # 发 Release / 推送 master 同步
+  issues: write                # 失败时开 Issue 提醒
+
+# 同一个 ref 同时只跑一个；重复触发自动取消旧的（省额度）
+concurrency:
+  group: sync-build-${{ github.ref }}
+  cancel-in-progress: true
+
+# 【合并式 fork】不再钉上游基准：master = 上游 + 本 fork 的定制提交，
+# 上游用 `git merge upstream/master` 并入（见「合并上游到 master」那一步）。
+# 所以这里**故意没有 UPSTREAM_BASE** —— 旧机制（钉死基准 + 重放补丁）已退役：
+# 升上游不必再改 workflow、不必重新生成补丁，只需要处理（可能的）合并冲突。
+
+jobs:
+  sync-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库（完整历史）
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: 配置 git 并拉取上游
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/HaoZai000/NexioSchedule.git
+          git fetch upstream master
+
+      - name: 判断上游是否有新提交
+        id: check
+        run: |
+          if git merge-base --is-ancestor upstream/master HEAD; then
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+            echo "✅ 已是最新上游，无需构建"
+          else
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
+            echo "upstream_sha=$(git rev-parse --short upstream/master)" >> "$GITHUB_OUTPUT"
+            echo "🔄 检测到上游新提交 $(git rev-parse --short upstream/master)"
+          fi
+
+      - name: 合并上游到 master（合并式 fork：冲突就停，不动现有构建）
+        id: merge
+        run: |
+          # 合并式同步：master = 上游 + 本 fork 的定制提交。
+          # ★ 冲突时 abort 且**不推任何东西** —— 远端 master 保持可用，
+          #   本次仍用旧 master 出包（不断供），另开 Issue 请人工处理。
+          # ★ 合并结果只存在于本 runner 的工作区，直到「推送 master」那一步才回写远端。
+          echo "merged=false" >> "$GITHUB_OUTPUT"
+          echo "conflict=false" >> "$GITHUB_OUTPUT"
+          if [ "${{ steps.check.outputs.has_update }}" != "true" ]; then
+            echo "上游无新提交，跳过合并（直接构建当前 master）"
+            exit 0
+          fi
+          # ★ 只 merge 一次并抓下输出：原来在冲突分支里又 merge 了一次（多余，且会二次改动工作区）
+          if OUT=$(git merge --no-edit upstream/master 2>&1); then
+            echo "merged=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 合并干净；本次带入的上游改动："
+            printf '%s\n' "$OUT" | grep -E 'files? changed|insertions' | head -2 || true
+            git log --no-merges --format='- %s' HEAD^1..HEAD | head -20 || true
+          else
+            printf '%s\n' "$OUT" | grep -E '^CONFLICT|^Auto-merging' | head -30 > /tmp/conflict.txt || true
+            git merge --abort 2>/dev/null || true
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+            echo "本次合并冲突（下面这些文件两边都改了）："
+            cat /tmp/conflict.txt
+            echo "::warning::上游改了同一处代码，合并冲突 —— 远端 master 保持不变（本次仍用旧 master 构建），另开 Issue 等人工处理"
+          fi
+
+      - name: 分歧清单守卫｜命中就只验证不自动发版
+        id: watch
+        run: |
+          # tools/divergence-watch.txt 列出「我们故意跟上游不一样」的地方
+          #（备份语义、毛玻璃系数、分钟节拍、岛 B 区联动 …）。
+          # 合并一旦碰到这些文件，说明上游很可能又动了那块 ——
+          # 这种改动**必须人工过一眼**，否则会把我们的取舍悄悄翻回去。
+          echo "blocked=false" >> "$GITHUB_OUTPUT"
+          if [ "${{ steps.merge.outputs.merged }}" != "true" ]; then
+            echo "本次没有合并，跳过清单检查"; exit 0
+          fi
+          if [ ! -f tools/divergence-watch.txt ]; then
+            echo "没有清单文件，跳过"; exit 0
+          fi
+          MAP=$(grep -v '^#' tools/divergence-watch.txt | grep -v '^[[:space:]]*$' || true)
+          if [ -z "$MAP" ]; then echo "清单为空，跳过"; exit 0; fi
+          HIT=$(git diff --name-only HEAD~1 HEAD | grep -xF -f <(printf '%s\n' "$MAP") || true)
+          if [ -n "$HIT" ]; then
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::命中「故意分歧清单」，本次只验证不自动发版："
+            printf '%s\n' "$HIT"
+          else
+            echo "✅ 未命中分歧清单"
+          fi
+
+      - name: 质量门禁｜不变量核对（不过就不发版）
+        if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
+        run: |
+          # 这些条目全部来自本地踩过的坑（岛 B 区联动 / 折射宽度恒定 / 日子词唯一 /
+          # 次日文案共享 / 余额最后一天 / sectionTopDp 单一真源 / 下载源只认带包的版本 …）。
+          #
+          # ★ 必须 set -o pipefail：bash 里管道的退出码是**最后一个命令**的，
+          #   写成 `python3 ci_check.py . | tee log` 时 python 的失败会被 tee 吞掉、步骤照样绿
+          #   —— 这门禁曾经因此一路空转、看着全绿。
+          # ★ 合并式 fork 下，检出的工作树**就是要发布的那份 master**，所以直接用树里的脚本；
+          #   不再 `git archive origin/master tools`：那样在"拿别的 ref 预演这个 workflow"时
+          #   会偷偷跑 master 上的另一份脚本，预演就不作数了。
+          set -euo pipefail
+          GATE="$(pwd)/tools/ci_check.py"
+          if [ ! -f "$GATE" ]; then
+            echo "::error::工作树里没有 tools/ci_check.py —— 门禁脚本缺失，直接挡住发版（宁可不发，也不要假绿灯）"
+            exit 1
+          fi
+          echo "门禁脚本: $GATE"
+          python3 "$GATE" . | tee /tmp/ci_check.log
+
+      - name: 设置 JDK 21
+        if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Gradle 缓存（CI 提速）
+        if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          cache-read-only: false
+
+      - name: 安装 Android SDK（platform/build-tools 37）
+        if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK_ROOT" \
+            "platforms;android-37.0" "build-tools;37.0.0" > /dev/null
+          echo "SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: 计算 fork 版本号并构建
+        id: build
+        if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # CI 在云端，用官方 Gradle 源（仓库里的 wrapper 指向的是国内镜像）
+          sed -i 's#distributionUrl=.*#distributionUrl=https://services.gradle.org/distributions/gradle-9.5.1-bin.zip#' \
+            gradle/wrapper/gradle-wrapper.properties
+          VNAME=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          MAINVER=$(echo "$VNAME" | sed 's/-.*//')
+          VC=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
+          # 序号 = **全仓库**历史 gh 发布数 + 1（不是"同 MAINVER 下的第几个"）。
+          #   为什么要全局计数：分母用 MAINVER 的话，基准一升级（1.5.6 → 1.6.0.1）
+          #   计数会从 5 掉回 0，FORK_CODE = VC*100+1 = 15601 < 已有的 15605，
+          #   既触发不了"覆盖安装"，也会被下面的单调性守卫拦下。全局计数天然单调。
+          GH_COUNT=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
+            --jq '.[].tag_name' 2>/dev/null | sed 's/.*-gh//' | grep -cE '^[0-9]+$' || true)
+          GH_N=$((GH_COUNT + 1))
+          FORK_CODE=$((VC * 100 + GH_N))
+          # 版本号用第 4 段递增：1.5.6.1-gh1 / 1.5.6.2-gh2 …
+          # 这样 App 的更新检查（比较数字段）才能认出"有新版"，同时 MAJOR.MINOR.PATCH 与上游保持对齐。
+          FORK_VER="${MAINVER}.${GH_N}-gh${GH_N}"
+          sed -i "s/versionName = \"[^\"]*\"/versionName = \"${FORK_VER}\"/" app/build.gradle.kts
+          sed -i "s/versionCode = [0-9]*/versionCode = ${FORK_CODE}/" app/build.gradle.kts
+          {
+            echo "MAINVER=$MAINVER"; echo "VNAME=$VNAME"; echo "VC=$VC"
+            echo "GH_N=$GH_N";     echo "FORK_CODE=$FORK_CODE"; echo "FORK_VER=$FORK_VER"
+          } >> "$GITHUB_OUTPUT"
+          echo "本次构建：${FORK_VER}（versionCode=${FORK_CODE}，上游 ${VNAME}/${VC}）"
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon
+
+      - name: 用 fork keystore 签名
+        if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ]; then
+            echo "::error::缺少 secrets.KEYSTORE_BASE64 —— 请按 README「自动构建」一节配置 4 个 secrets 后再运行"
+            exit 1
+          fi
+          mkdir -p signing
+          printf '%s' "$KS_B64" | base64 -d > signing/fork.jks
+          chmod 600 signing/fork.jks
+          BT="$SDK_ROOT/build-tools/37.0.0"
+          mkdir -p app/build/outputs/final
+          APK_NAME="Nexio.v${{ steps.build.outputs.FORK_VER }}.apk"
+          "$BT/zipalign" -f 4 app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/final/aligned.apk
+          "$BT/apksigner" sign --ks signing/fork.jks --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:KS_PASS --key-pass env:KEY_PASS \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out "app/build/outputs/final/$APK_NAME" app/build/outputs/final/aligned.apk
+          "$BT/apksigner" verify --print-certs "app/build/outputs/final/$APK_NAME" | head -6
+          ( cd app/build/outputs/final && sha256sum "$APK_NAME" > "$APK_NAME.sha256" && cat "$APK_NAME.sha256" )
+          ls -lh app/build/outputs/final/
+
+      - name: 守卫｜APK 契约核验（签名指纹 / 版本号 / 单调递增）
+        if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECT_CERT: a7fdc7b704db284774a0124fb13495b5e6ee4a05f6430547ad8ec21aba5ac938
+        run: |
+          APK="app/build/outputs/final/Nexio.v${{ steps.build.outputs.FORK_VER }}.apk"
+          BT="$SDK_ROOT/build-tools/37.0.0"
+          # ① 签名指纹必须与"手机上现有那版"一致（否则装了也不能覆盖升级）
+          CERT=$("$BT/apksigner" verify --print-certs "$APK" | grep -m1 -i 'SHA-256 digest' | sed 's/.*digest: //')
+          if [ "$CERT" != "$EXPECT_CERT" ]; then
+            echo "::error::签名指纹不符：期望 $EXPECT_CERT，实际 $CERT（secrets 里的 keystore 是不是换过？）"
+            exit 1
+          fi
+          echo "✅ 签名指纹一致：$CERT"
+          # ② 包内版本号必须等于本次算出的值（防止 sed 版本号没生效）
+          # 用 build-tools 的 aapt2 读包内版本号（apkanalyzer 在 runner 上不保证存在；
+          # 且 platformBuildVersionCode 也会被贪婪匹配到，所以只取第一处 versionCode）
+          PKG=$("$BT/aapt2" dump badging "$APK" | grep -m1 '^package:')
+          BADGING=$(printf '%s' "$PKG" | grep -o "versionName='[^']*'" | head -1 | cut -d"'" -f2)
+          VCODE=$(printf '%s' "$PKG" | grep -o "versionCode='[0-9]*'" | head -1 | cut -d"'" -f2)
+          echo "包内：versionName=$BADGING versionCode=$VCODE"
+          if [ "$BADGING" != "${{ steps.build.outputs.FORK_VER }}" ]              || [ "$VCODE" != "${{ steps.build.outputs.FORK_CODE }}" ]; then
+            echo "::error::包内版本号与预期不符（预期 ${{ steps.build.outputs.FORK_VER }} / ${{ steps.build.outputs.FORK_CODE }}）"
+            exit 1
+          fi
+          # ③ versionCode 必须严格大于所有已发版本（保证能直接覆盖安装）
+          MAX=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 2>/dev/null | awk '{print $1}' | head -0; true)
+          MAX=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' 2>/dev/null                 | sed 's/.*-gh//' | grep -E '^[0-9]+$' | sort -n | tail -1)
+          MAX=${MAX:-0}
+          N=${{ steps.build.outputs.GH_N }}
+          if [ "$N" -le "$MAX" ]; then
+            echo "::error::序号 $N 不大于历史最大值 $MAX —— versionCode 会与旧版冲突"
+            exit 1
+          fi
+          echo "✅ versionCode 单调：本次 ${{ steps.build.outputs.FORK_CODE }}（序号 $N > 历史 $MAX）"
+
+      - name: 推送 master（只有"合并干净 + 未命中分歧清单 + 非 dry_run"才推）
+        # ★ 顺序刻意如此：先合并 → 再构建与全部门禁/契约核验 → **最后才推 master**。
+        #   这样远端 master 永远不会指向一个"构建不过"的树；冲突时 merged=false，同样不推。
+        if: steps.merge.outputs.merged == 'true' && steps.watch.outputs.blocked != 'true' && inputs.dry_run != true
+        run: |
+          git push origin HEAD:master
+          echo "✅ master 已前进到 $(git rev-parse --short HEAD)（已含本次合并进来的上游提交）"
+
+      - name: 上传构建产物（Actions 页面可下载）
+        continue-on-error: true
+        if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Nexio-fork-release-${{ steps.build.outputs.FORK_VER }}
+          path: app/build/outputs/final/Nexio.v*.apk*
+
+      - name: 发布 GitHub Release
+        # dry_run=true = 只验证构建与守卫，不发版、不占版本号（改定制 / 验 CI 时先用它验证）
+        if: (github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true') && steps.watch.outputs.blocked != 'true' && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.build.outputs.FORK_VER }}"
+          UP_SHORT=$(git rev-parse --short upstream/master)
+          MERGED="${{ steps.merge.outputs.merged }}"
+          if [ "$MERGED" = "true" ]; then
+            UP_TITLE="### 🔄 本次并入的上游提交"
+            UP_LOG=$(git log --no-merges --format='- %s' HEAD^1..HEAD | head -20)
+          else
+            UP_TITLE="### 🔄 上游合并情况"
+            UP_LOG="（本次没有新上游提交，按当前 master 出包）"
+          fi
+          CUSTOM_LOG=$(git log upstream/master..HEAD --no-merges --format='- %s' | head -40)
+          CERT=$("$SDK_ROOT/build-tools/37.0.0/apksigner" verify --print-certs \
+            "app/build/outputs/final/Nexio.v${{ steps.build.outputs.FORK_VER }}.apk" 2>/dev/null \
+            | grep -m1 -i 'SHA-256 digest' | sed 's/.*digest: //')
+          cat > /tmp/notes.md << MDEOF
+          ### 📦 构建信息
+          - **上游版本**：HaoZai000/NexioSchedule@${UP_SHORT}（上游 versionName \`${{ steps.build.outputs.VNAME }}\` / versionCode \`${{ steps.build.outputs.VC }}\`）
+          - **本 fork 版本**：\`${TAG}\`（versionName \`${{ steps.build.outputs.FORK_VER }}\` / versionCode \`${{ steps.build.outputs.FORK_CODE }}\`）
+          - **签名证书 SHA-256**：\`${CERT}\`
+          - **构建方式**：GitHub Actions 全程构建（本地不参与）；合并式 fork —— 直接构建 master（上游 + 定制提交）
+
+          ${UP_TITLE}
+          ${UP_LOG}
+
+          ### 🧩 本 fork 的定制提交（master 上、上游没有的）
+          ${CUSTOM_LOG}
+
+          ### ✅ 自动核验（均由 CI 完成，不通过就不会发出来）
+          - 质量门禁 \`tools/ci_check.py\`：全部通过
+          - 签名指纹与目标 keystore 一致、包内版本号与上述一致、序号单调递增
+          - 已生成同名 \`.sha256\` 校验文件
+
+          ### ⚠️ 安装注意
+          - 本 fork 用自己的 keystore 签名：**从上游原版切过来需要先卸载**（会丢 App 内数据，建议先做一次 WebDAV 备份）；
+          - **同一 fork 系列可直接覆盖安装**（versionCode 单调递增：上游码×100 + 序号）；
+          - 校验：下载后比对同名 \`.sha256\`（\`sha256sum -c\` 即可）。
+          MDEOF
+          gh release create "$TAG" app/build/outputs/final/Nexio.v*.apk app/build/outputs/final/*.sha256 \
+            --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file /tmp/notes.md \
+            || echo "Release 已存在或创建失败（忽略）"
+
+      - name: 合并冲突 / 命中分歧清单时开 Issue（不阻塞已有 master）
+        continue-on-error: true
+        if: steps.merge.outputs.conflict == 'true' || steps.watch.outputs.blocked == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CONFLICT="${{ steps.merge.outputs.conflict }}"
+          BLOCKED="${{ steps.watch.outputs.blocked }}"
+          EXIST=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "上游合并需要人工处理" --json number --jq 'length' 2>/dev/null || echo 0)
+          if [ "$EXIST" != "0" ]; then echo "已有同类 Issue（#$EXIST），跳过"; exit 0; fi
+          {
+            if [ "$CONFLICT" = "true" ]; then
+              echo "## ⚠️ 上游改了同一处代码，自动合并冲突（已 abort，远端 master 未变）"
+              echo
+              echo "本次仍用**旧 master** 构建出包（不会断供），但新上游没并进来。改法（**不用本地编译**，CI 会编译）："
+              echo
+              echo '```'
+              echo "git fetch origin master && git checkout master && git pull"
+              echo "git remote add upstream https://github.com/HaoZai000/NexioSchedule.git   # 若还没加"
+              echo "git fetch upstream master && git merge upstream/master"
+              echo "# 手工解冲突 → git add … → git commit → git push origin master"
+              echo "# 然后手动 Run 一次本 workflow 出包"
+              echo '```'
+              echo
+              echo "冲突文件（两边都改过的）："
+              echo '```'
+              head -30 /tmp/conflict.txt 2>/dev/null || echo "(没抓到清单，请看运行日志)"
+              echo '```'
+            fi
+            if [ "$BLOCKED" = "true" ]; then
+              echo "## 🚦 本次合并碰到了「故意与上游分歧」的文件"
+              echo
+              echo "\`tools/divergence-watch.txt\` 里列的都是本 fork **故意**跟上游不一样的地方"
+              echo "（备份语义、毛玻璃系数、分钟节拍、岛 B 区联动 …）。上游一改这些文件，"
+              echo "自动合并就有可能把我们的取舍悄悄翻回去 —— 所以这次**只验证、不发版**。"
+              echo
+              echo "请人工过一眼这些文件的 diff，确认取舍没被翻掉后，手动 Run 一次本 workflow 即可正常发版。"
+            fi
+          } > /tmp/issue.md
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "上游合并需要人工处理：$(date +%F)" --body-file /tmp/issue.md || true
+
+      - name: 同步发布到 Gitee（可选：配了 GITEE_TOKEN 才执行）
+        # 非关键路径：Gitee 抖动不该让整条流水线红叉（GitHub 那边已经发好了）
+        continue-on-error: true
+        if: (github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true') && steps.watch.outputs.blocked != 'true' && inputs.dry_run != true
+        env:
+          GT: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: ${{ vars.GITEE_REPO }}
+        run: |
+          if [ -z "$GT" ] || [ -z "$GITEE_REPO" ]; then
+            echo "未配置 GITEE_TOKEN / GITEE_REPO，跳过 Gitee 同步（不影响 GitHub 发布）"
+            exit 0
+          fi
+          TAG="v${{ steps.build.outputs.FORK_VER }}"
+          APK="app/build/outputs/final/Nexio.v${{ steps.build.outputs.FORK_VER }}.apk"
+          API="https://gitee.com/api/v5/repos/$GITEE_REPO"
+          echo "同步到 Gitee: $GITEE_REPO $TAG"
+          # 建 release（已存在则取回 id）
+          #
+          # 踩过的坑（这就是"Gitee 从来没有自动同步"的根因）：
+          #   1) Gitee 建 release **必须传 target_commitish**，否则 400 target_commitish is missing；
+          #   2) 兜底查询 /releases/tags/{tag} 在不存在时返回 HTTP 200 + body `null`，
+          #      直接 `.get('id')` 会抛异常并把真实错误吞掉（日志只剩一句 warning）。
+          # 现在：显式传 target_commitish、解析时判 null、失败时把**原始响应**打出来。
+          RESP=$(curl -s -X POST "$API/releases" \
+            --data-urlencode "access_token=$GT" \
+            --data-urlencode "tag_name=$TAG" \
+            --data-urlencode "name=$TAG" \
+            --data-urlencode "target_commitish=master" \
+            --data-urlencode "body=本包与 GitHub Release 同一构建产物：https://github.com/${{ github.repository }}/releases/tag/$TAG")
+          RID=$(printf '%s' "$RESP" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('id','') if isinstance(d,dict) else '')" 2>/dev/null || true)
+          if [ -z "$RID" ]; then
+            echo "::warning::Gitee release 创建失败，原始响应：$RESP"
+            RESP2=$(curl -s "$API/releases/tags/$TAG?access_token=$GT")
+            RID=$(printf '%s' "$RESP2" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('id','') if isinstance(d,dict) else '')" 2>/dev/null || true)
+            [ -n "$RID" ] || echo "::warning::按 tag 查也拿不到 id，原始响应：$RESP2"
+          fi
+          if [ -z "$RID" ]; then echo "::warning::Gitee release 创建/查询失败，跳过附件上传"; exit 0; fi
+          # 上传附件并**核验真的挂上了**。
+          #
+          # 为什么必须核验（真机踩过）：Gitee 建 release 时会自动挂上源码 zip，
+          # 而 .apk 是这一步之后才 attach 上去的，实测两者相差 8 分钟。
+          # 这段窗口里"最新 release"是个**没有安装包**的版本 —— App 选中它，
+          # 下载按钮就只会弹「未找到下载链接」。所以：
+          #   · 上传失败必须重试（跨国上传会抖）；
+          #   · 三次都不行就**删掉这条 release**，宁可"暂时没有新版"，
+          #     也不要留一个"最新但没包"的坑（App 侧虽已只认带包的版本，这是双保险）。
+          echo "Gitee release id=$RID，上传附件…"
+          ATTACHED=0
+          for attempt in 1 2 3; do
+            curl -s -X POST "$API/releases/$RID/attach_files" \
+              -F "access_token=$GT" -F "file=@$APK" -o /tmp/attach.json || true
+            head -c 200 /tmp/attach.json; echo
+            APK_N=$(curl -s "$API/releases/$RID?access_token=$GT" | python3 -c "import json,sys;d=json.load(sys.stdin);print(sum(1 for a in (d.get('assets') or []) if str(a.get('name','')).endswith('.apk')) if isinstance(d,dict) else 0)" 2>/dev/null || echo 0)
+            if [ "${APK_N:-0}" != "0" ]; then ATTACHED=1; echo "  核验：该 release 已有 .apk 附件（第 $attempt 次）"; break; fi
+            echo "::warning::第 $attempt 次上传后仍看不到 .apk 附件，5 秒后重试…"
+            sleep 5
+          done
+          if [ "$ATTACHED" != "1" ]; then
+            echo "::error::Gitee .apk 附件上传失败 —— 删除这条 release，避免 App 选中「最新但没有安装包」的版本"
+            curl -s -X DELETE "$API/releases/$RID?access_token=$GT" | head -c 200; echo
+            exit 1
+          fi
+          echo "✅ Gitee 附件上传完成并已核验（.apk 在附件里）"
+
+      - name: 同步代码到 Gitee（可选：镜像 master 与源码分支）
+        continue-on-error: true
+        if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
+        env:
+          GT: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: ${{ vars.GITEE_REPO }}
+        run: |
+          if [ -z "$GT" ] || [ -z "$GITEE_REPO" ]; then
+            echo "未配置 GITEE_TOKEN / GITEE_REPO，跳过代码镜像"; exit 0
+          fi
+          GURL="https://oauth2:$GT@gitee.com/$GITEE_REPO.git"
+          # ★ master 用**强制**推送：Gitee 侧只是镜像，一切以 GitHub 为准。
+          #   合并式 fork 切换时 lineage 变过一次（旧的是"钉基准 + 重放补丁"形态），
+          #   非强制推会一直 "non-fast-forward" 失败、只留一条 warning —— 镜像就悄悄烂在那儿了。
+          if git push --force "$GURL" origin/master:refs/heads/master; then
+            echo "✅ master 已镜像到 Gitee（强制：镜像以 GitHub 为准）"
+          else
+            echo "::warning::master 镜像失败（Gitee 侧权限或网络问题）"
+          fi
+          # 发布栈分支只是留档；上游删掉它/不存在也不算错
+          if git push "$GURL" origin/local-audit-v21:refs/heads/local-audit-v21 2>/dev/null; then
+            echo "✅ local-audit-v21 已镜像到 Gitee"
+          else
+            echo "（local-audit-v21 镜像跳过或失败，可忽略）"
+          fi
+
+      - name: 被取消/失败时清理「没有安装包」的 Gitee release
+        # 真事：concurrency.cancel-in-progress 会在**下一轮 dispatch 时取消正在跑的这轮**，
+        # 而 Gitee 建 release 与上传 .apk 之间有几秒~几分钟的窗口（跨国上传实测 8 分钟）。
+        # 被取消就留下一条"有 release 却没有安装包"的记录 —— App 侧虽然会跳过它（v37 起只认带包的），
+        # 但 Gitee 上那条会一直挂着，看着像"新版发不出来"。
+        # 这里在取消/失败时把它删掉，保持「要么完整、要么没有」。
+        continue-on-error: true
+        if: cancelled() || failure()
+        env:
+          GT: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: ${{ vars.GITEE_REPO }}
+        run: |
+          set -uo pipefail
+          VER="${{ steps.build.outputs.FORK_VER }}"
+          if [ -z "$GT" ] || [ -z "$GITEE_REPO" ] || [ -z "$VER" ]; then
+            echo "未配置 token / 没有算出版本号，跳过清理"; exit 0
+          fi
+          TAG="v$VER"
+          API="https://gitee.com/api/v5/repos/$GITEE_REPO"
+          RID=$(curl -s "$API/releases/tags/$TAG?access_token=$GT" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('id','') if isinstance(d,dict) else '')" 2>/dev/null || true)
+          if [ -z "$RID" ]; then echo "Gitee 上没有 $TAG，无需清理"; exit 0; fi
+          APK_N=$(curl -s "$API/releases/$RID?access_token=$GT" | python3 -c "import json,sys;d=json.load(sys.stdin);print(sum(1 for a in (d.get('assets') or []) if str(a.get('name','')).endswith('.apk')) if isinstance(d,dict) else 0)" 2>/dev/null || echo 0)
+          if [ "${APK_N:-0}" = "0" ]; then
+            echo "::warning::$TAG 在 Gitee 上没有 .apk（上传被中断），删除这条 release 以免留下半成品"
+            curl -s -X DELETE "$API/releases/$RID?access_token=$GT" | head -c 200; echo
+          else
+            echo "$TAG 在 Gitee 上已带 .apk，保留"
+          fi
+
+      - name: 失败时开 Issue 提醒（构建 / 门禁 / 契约失败）
+        continue-on-error: true
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "自动构建失败：$(date +%F)" \
+            --body "本次 workflow 失败（多为**合并后的代码编译不过 / 门禁或契约核验不过**）。
+
+          - 运行记录：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - 排查顺序：先看失败步骤的日志。若是编译错误，重点看**最近一次上游合并带进来的改动**
+            是否把本 fork 还在用的符号删掉/改名了（合并"干净"不代表语义不冲突 ——
+            典型：上游删了一个功能块，我们的定制 hunk 还在原地引用它）。
+          - 修好后推上 master（或直接手动 Run 一次），**只需改文件，不用本地编译**。
+          - 远端 master 不受影响：本次失败不会推送任何东西。" \
+            || echo "开 Issue 失败（忽略）"

@@ -1,0 +1,151 @@
+From 15d7baecf23353195880f0c014ff4057f95fca3b Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Thu, 1 Oct 2026 09:49:43 +0800
+Subject: [PATCH 28/31] =?UTF-8?q?v43=EF=BC=9A=E4=BF=AE=E8=B7=A8=E9=9B=B6?=
+ =?UTF-8?q?=E7=82=B9=E7=9A=84=E8=AF=BE=E6=B2=A1=E6=9C=89=E8=AF=BE=E4=B8=AD?=
+ =?UTF-8?q?=E5=8D=A1/=E5=B2=9B=EF=BC=8823:30=E2=80=9300:30=20=E6=99=9A?=
+ =?UTF-8?q?=E8=87=AA=E4=B9=A0=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+上游也有这个 bug：`parseTimeToTodayMillis("00:30")` 拿到的是**今天** 00:30，
+比 23:30 的开始时刻早 23 小时 → 下游 `endMillis <= startMillis` 一律判无效 →
+课中卡 / 课中岛 / 进度永远不会出现，只闪一条「已上课」
+（用户视角就是"上课提醒了，但没有课中进度"）。
+
+ClassDndHelper 早就有同样的处理（注释写着"跨零点的课（如 23:00-01:00）下课点落在次日"），
+但只覆盖了它自己那条链。现在统一成 CourseReminderHelper.endMillisFor()，4 个调用点改用它：
+- AlarmReceiver（闹钟主路径）
+- CourseReminderHelper 课前发送路径 / 课前岛路径
+- ClassDndHelper（并去掉它自己那份 DAY_MS）
+
+判据：结束早于开始、且相差超过 12 小时 → 视为跨零点补一天；
+真正的数据错误（如 10:00–09:00 只差 1 小时）不会被误判成跨天。
+离线复算过 5 组（23:30–00:30 / 22:00–01:00 / 普通课 / 数据错误 / 18:30–19:30）。
+门禁第 30 条：禁止再直接用 parseTimeToTodayMillis 算结束。
+
+(cherry picked from commit 969c98303bcc8c321133107714d450949be7e19d)
+---
+ .../haooz/chedule/reminder/AlarmReceiver.kt   |  3 +-
+ .../haooz/chedule/reminder/ClassDndHelper.kt  | 11 +++---
+ .../chedule/reminder/CourseReminderHelper.kt  | 38 ++++++++++++++++++-
+ 3 files changed, 43 insertions(+), 9 deletions(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
+index 205df639..c41da7f8 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/AlarmReceiver.kt
+@@ -87,7 +87,8 @@ class AlarmReceiver : BroadcastReceiver() {
+                 val freshStartTime = CourseReminderHelper.getCourseStartTime(matched, repository) ?: startTime
+                 val freshEndTime = CourseReminderHelper.getCourseEndTime(matched, repository) ?: ""
+                 val startMillis = CourseReminderHelper.parseTimeToTodayMillis(freshStartTime)
+-                val endMillis = CourseReminderHelper.parseTimeToTodayMillis(freshEndTime)
++                // 跨零点的课（23:30–00:30 晚自习）要按次日算结束，否则课中卡/岛永远不出现
++                val endMillis = CourseReminderHelper.endMillisFor(startMillis, freshEndTime)
+ 
+                 if (startMillis <= 0L) {
+                     Log.d("AlarmReceiver", "Invalid start time for ${matched.name}, skipped")
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/ClassDndHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/ClassDndHelper.kt
+index d4e35347..69a7b090 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/ClassDndHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/ClassDndHelper.kt
+@@ -45,7 +45,6 @@ object ClassDndHelper {
+     private const val RC_DND_TEST_START = 39901
+     private const val RC_DND_TEST_END = 49901
+ 
+-    private const val DAY_MS = 24 * 60 * 60 * 1000L
+ 
+     // 闹钟登记表：课程删除/换课表后 id 变化，只按当前课程取消会留下孤儿闹钟
+     private const val PREF_ALARM_REGISTRY = "reminder_alarm_registry"
+@@ -495,12 +494,12 @@ object ClassDndHelper {
+             val startMillis = CourseReminderHelper.parseTimeToTodayMillis(
+                 CourseReminderHelper.getCourseStartTime(course, repository)
+             )
+-            val parsedEnd = CourseReminderHelper.parseTimeToTodayMillis(
+-                CourseReminderHelper.getCourseEndTime(course, repository)
++            // 跨零点的课（如 23:00–01:00）下课点落在次日 —— 统一走 endMillisFor，别再各处自己加一天
++            val endMillis = CourseReminderHelper.endMillisFor(
++                startMillis,
++                CourseReminderHelper.getCourseEndTime(course, repository),
+             )
+-            if (startMillis <= 0L || parsedEnd <= 0L) continue
+-            // 跨零点的课（如 23:00-01:00）下课点落在次日
+-            val endMillis = if (parsedEnd <= startMillis) parsedEnd + DAY_MS else parsedEnd
++            if (startMillis <= 0L || endMillis <= 0L) continue
+ 
+             val startRc = RC_DND_START_BASE + course.id.hashCode()
+             val endRc = RC_DND_END_BASE + course.id.hashCode()
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+index 1d792efe..1e1fdc2c 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+@@ -321,6 +321,25 @@ object CourseReminderHelper {
+         return todayMillis(hour, minute)
+     }
+ 
++    /**
++     * 由「开始毫秒 + 结束时间字符串」算结束毫秒，**处理跨零点的课**。
++     *
++     * 例：晚自习 23:30–00:30。`parseTimeToTodayMillis("00:30")` 拿到的是**今天** 00:30，
++     * 比开始时刻早 23 小时，下游 `endMillis <= startMillis` 会一律判无效 →
++     * 课中卡 / 课中岛 / 进度永远不会出现，只闪一条「已上课」
++     * （用户视角就是"上课提醒了，但没有课中进度"）。
++     * ClassDndHelper 早就有同样的处理，但只覆盖了它自己那条链 —— 这里统一成一个入口。
++     *
++     * 判据：结束早于开始、且相差超过 12 小时 → 视为跨零点，补一天。
++     * 真正的数据错误（如 10:00–09:00 只差 1 小时）不会被误判成跨天。
++     */
++    fun endMillisFor(startMillis: Long, endTime: String?): Long {
++        val raw = parseTimeToTodayMillis(endTime)
++        if (raw <= 0L || startMillis <= 0L) return raw
++        val day = 24L * 60L * 60L * 1000L
++        return if (raw < startMillis && startMillis - raw > day / 2) raw + day else raw
++    }
++
+     internal fun hasSameLocalMinute(time: String?, timestampMillis: Long): Boolean {
+         if (time.isNullOrBlank()) return false
+         val parts = time.trim().split(":")
+@@ -775,7 +794,7 @@ object CourseReminderHelper {
+                         (useIsland && hasIslandPreClassSentToday(context, dedupId))
+                     if (!alreadySent) {
+                         val startMillis = todayMillis(startHour, startMinute)
+-                        val endMillis = parseTimeToTodayMillis(getCourseEndTime(course, repository))
++                        val endMillis = endMillisFor(startMillis, getCourseEndTime(course, repository))
+                         sendPreClassNotification(
+                             context, alarmManager, repository, course, startTime,
+                             useIsland, startMillis, endMillis
+@@ -2117,6 +2136,21 @@ object CourseReminderHelper {
+     @Volatile
+     private var notificationChannelsEnsuredAt = 0L
+ 
++    /**
++     * 启动时就把三条通知通道建出来。
++     *
++     * 原来它们只在「要发通知之前」才创建，于是**全新安装 / 清数据后、第一条提醒发出之前**，
++     * 系统里根本不存在这些通道 —— 「提醒体检」会把"通道不存在"误判成"通道被停用"
++     *（实测会报"有 3 个通道被停用，对应提醒不会显示"，是假警报）。
++     * 启动时建好还顺带解决另一件事：用户能提前在系统设置里单独配置每条通道的响铃/震动。
++     */
++    fun ensureAllNotificationChannels(context: Context) {
++        runCatching {
++            ensureNotificationChannels(context)
++            ensureHolidayChannel(context)
++        }
++    }
++
+     private fun ensureNotificationChannels(context: Context) {
+         val now = android.os.SystemClock.elapsedRealtime()
+         if (now - notificationChannelsEnsuredAt < CHANNEL_ENSURE_INTERVAL_MS) return
+@@ -2877,7 +2911,7 @@ object CourseReminderHelper {
+             val islandHit = useIsland && hasIslandPreClassSentToday(context, dedupId11)
+             if (dedupHit || islandHit) continue
+             val startMillis = parseTimeToTodayMillis(startTime)
+-            val endMillis = parseTimeToTodayMillis(getCourseEndTime(course, repository))
++            val endMillis = endMillisFor(startMillis, getCourseEndTime(course, repository))
+             sendPreClassNotification(
+                 context, alarmManager, repository, course, startTime,
+                 useIsland, startMillis, endMillis
+-- 
+2.55.0
+

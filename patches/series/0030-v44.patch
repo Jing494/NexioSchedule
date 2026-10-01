@@ -1,0 +1,95 @@
+From 195f9dc86b95e73d73ea1241a4462f355bc7c775 Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Thu, 1 Oct 2026 09:57:40 +0800
+Subject: [PATCH 30/31] =?UTF-8?q?v44=EF=BC=9A=E6=80=BB=E5=BC=80=E5=85=B3?=
+ =?UTF-8?q?=E8=81=94=E5=8A=A8=E6=94=B9=E4=B8=BA=E5=8F=AF=E9=80=86=EF=BC=88?=
+ =?UTF-8?q?=E5=88=AB=E5=86=8D=E9=9D=99=E9=BB=98=E5=85=B3=E6=8E=89=E7=94=A8?=
+ =?UTF-8?q?=E6=88=B7=E6=B2=A1=E5=8A=A8=E8=BF=87=E7=9A=84=E5=AD=90=E5=BC=80?=
+ =?UTF-8?q?=E5=85=B3=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+实测反馈的困惑来源：把「课程提醒」总开关关掉时，App 会强制把
+「上课勿扰」与「课中提醒」置为 false，但**总开关再打开时不会恢复**。
+于是用户会发现自己从没动过的「课中提醒」是关的 —— 表现就是
+"上课提醒了，却没有课中进度卡/岛"（正是本轮排查的那条）。
+
+改法：
+- 联动关掉时，只对"当时确实是开着"的子开关打上待恢复标记
+  （pending_restore_class_dnd / pending_restore_in_class，存 course_reminder_prefs）；
+- 总开关（以及通知权限回调里那条等价路径）重新打开时，
+  按标记把这两个子开关恢复原状并清掉标记；
+- 用户自己关掉的不会被翻回来（没有标记）。
+
+门禁加第 34 条：必须存在 restoreMasterDependentSwitches 且在打开路径被调用。
+
+(cherry picked from commit fea4ffa6e6e2deda7b76686bf5f8a835e0ed4075)
+---
+ .../ui/activities/CourseReminderScreen.kt     | 25 +++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
+index b9a8572c..97ef8dfc 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
+@@ -153,10 +153,29 @@ fun CourseReminderScreen(
+     val masterEnabled = preClassReminder || nextDayReminder
+     // 总开关关闭时联动关掉子开关：勿扰 + 课中提醒（与下节课/次日提醒置 false 同一策略）
+     val disableMasterDependentSwitches = {
++        // 先记住「这次是被总开关联动关掉的」，总开关再打开时按原样恢复。
++        // 否则用户会发现自己**从没动过**的「课中提醒 / 上课勿扰」被静默关掉，
++        // 表现就是「上课提醒了却没有课中进度」（实测反馈过就是这个）。
++        if (classDndEnabled) reminderPrefs.edit { putBoolean(PENDING_RESTORE_DND, true) }
++        if (inClassEnabled) reminderPrefs.edit { putBoolean(PENDING_RESTORE_IN_CLASS, true) }
+         settingsViewModel.setClassDndEnabled(false)
+         inClassEnabled = false
+         reminderPrefs.edit { putBoolean(CourseReminderHelper.KEY_IN_CLASS, false) }
+     }
++    val restoreMasterDependentSwitches = {
++        // 只恢复「确实是被联动关掉的」那些；用户自己关的不会被翻回来
++        if (reminderPrefs.getBoolean(PENDING_RESTORE_DND, false)) {
++            settingsViewModel.setClassDndEnabled(true)
++            reminderPrefs.edit { remove(PENDING_RESTORE_DND) }
++        }
++        if (reminderPrefs.getBoolean(PENDING_RESTORE_IN_CLASS, false)) {
++            inClassEnabled = true
++            reminderPrefs.edit {
++                putBoolean(CourseReminderHelper.KEY_IN_CLASS, true)
++                remove(PENDING_RESTORE_IN_CLASS)
++            }
++        }
++    }
+     var permissionRefreshKey by remember { mutableIntStateOf(0) }
+     val batteryOptLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+         contract = ActivityResultContracts.StartActivityForResult()
+@@ -263,6 +282,7 @@ fun CourseReminderScreen(
+                     disableMasterDependentSwitches()
+                 }
+                 if (enable) {
++                    restoreMasterDependentSwitches()
+                     CourseReminderHelper.startReminderService(context)
+                     rlog("reminder_service", "start_after_notif_grant")
+                 } else {
+@@ -348,6 +368,7 @@ fun CourseReminderScreen(
+                                         disableMasterDependentSwitches()
+                                     }
+                                     if (it) {
++                                        restoreMasterDependentSwitches()
+                                         CourseReminderHelper.startReminderService(context)
+                                         rlog("reminder_service", "start")
+                                     } else {
+@@ -1313,6 +1334,10 @@ fun CourseReminderScreen(
+     }
+ }
+ 
++/** 总开关联动关掉的子开关：记住「是我们关的」，总开关再打开时按原样恢复（别再静默丢用户的设置） */
++private const val PENDING_RESTORE_DND = "pending_restore_class_dnd"
++private const val PENDING_RESTORE_IN_CLASS = "pending_restore_in_class"
++
+ // ===================== 提醒体检 =====================
+ 
+ /** 体检的一条结果。fix 非空时点一下跳到对应系统设置页。 */
+-- 
+2.55.0
+

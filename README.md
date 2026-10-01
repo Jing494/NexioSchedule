@@ -1,3 +1,16 @@
+<!-- 本 fork 的说明放在最前面；下面的上游 README 原文完整保留、未做任何改动 -->
+
+> ### 🔧 这是 [Jing494](https://github.com/Jing494) 的定制分支（基于上游 [HaoZai000/NexioSchedule](https://github.com/HaoZai000/NexioSchedule)）
+>
+> - **⬇️ 下载最新版：[Releases](https://github.com/Jing494/NexioSchedule/releases/latest)**（每个包都带 `.sha256` 校验；同时会同步发到 Gitee）
+> - **构建全程在 GitHub Actions**：`master` 就是发布分支（= 上游 + 本 fork 的定制提交）→ 发现上游有新提交就自动 `git merge` → 编译 → **用本 fork 自己的 keystore 签名** → 发 Release。本地不参与编译。
+> - **与上游原版的差异**：见每个 Release 的说明与仓库里的 `LOCAL-CHANGES.md`（岛的修复、拖拽几何、提醒可靠性、流畅度、诊断工具等）。
+> - **安装注意**：本 fork 签名与上游原版不同 —— 从上游切过来需先卸载（会丢 App 内数据，建议先做 WebDAV 备份）；**同一 fork 系列可直接覆盖升级**。
+> - 三道自动守卫（质量门禁 35 条不变量 / 「故意分歧」清单 / APK 契约核验）不过就不会发版；**合并冲突时不推 master、不发版**，只开 Issue 等人工处理。流水线思路参考 [xiaoxun007/NexioSchedule](https://github.com/xiaoxun007/NexioSchedule)。
+> - 上游项目、许可、全部基础功能均归上游作者；**下面即上游 README 原文**。
+
+---
+
 <div align="center">
 
 # Nexio课程表
@@ -160,5 +173,3 @@ app/src/main/java/com/haooz/chedule/
 | [warehouse](https://github.com/XingHeYuZhuan/shiguang_warehouse) | XingHeYuZhuan |
 | [Shizuku](https://github.com/RikkaApps/Shizuku) | RikkaApps |
 | [Backdrop](https://github.com/Kyant0/AndroidLiquidGlass) | Kyant0 |
-
-

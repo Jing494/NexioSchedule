@@ -1,0 +1,41 @@
+From 508004c1394e97c2b0c21b4bd5a0404365e4c7af Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Wed, 30 Sep 2026 20:04:26 +0800
+Subject: [PATCH 26/31] =?UTF-8?q?fix(base):=20=E6=B5=8B=E8=AF=95=E8=B7=AF?=
+ =?UTF-8?q?=E5=BE=84=E5=8E=BB=E6=8E=89=20classroom=20=E5=BD=A2=E5=8F=82=20?=
+ =?UTF-8?q?=E2=80=94=E2=80=94=20=E4=B8=8A=E6=B8=B8=E5=B7=B2=E6=94=B9=20sho?=
+ =?UTF-8?q?wStartedLiveNotification=20=E7=AD=BE=E5=90=8D?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+CI dry-run 抓到：上游 1.6.0.2 的 showStartedLiveNotification(context, courseName,
+startTime, testMode) 不再带 classroom（真实路径也不传），而我 v32/v33 加的测试路径还传着
+classroom = classroom → No parameter with name 'classroom' found。
+测试路径与真实路径保持一致（都交给函数内部拼正文），否则两条路观感又会不一样。
+
+(cherry picked from commit 9e362d55f56995b9a1adf6cd50973646f897f195)
+---
+ .../java/com/haooz/chedule/reminder/CourseReminderHelper.kt    | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+index 6cd995af..1d792efe 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+@@ -2364,10 +2364,11 @@ object CourseReminderHelper {
+         // 测试课也要走「上课自动开启、下课自动关闭」，否则勿扰链路在测试里跑不到
+         ClassDndHelper.syncTestClassDndAlarms(context)
+         if (phase == ReminderTestPhase.STARTED) {
++            // 上游的 showStartedLiveNotification 已不带 classroom（真实路径也不传，正文改为
++            // 由函数内部拼；测试路径保持一致，否则两边的观感就不一样了）
+             showStartedLiveNotification(
+                 context = context,
+                 courseName = courseName,
+-                classroom = classroom,
+                 startTime = startTime,
+                 testMode = true
+             )
+-- 
+2.55.0
+

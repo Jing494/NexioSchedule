@@ -317,3 +317,55 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
    提交根本没生成（推送显示 Everything up-to-date）→ 之后一律写**消息文件**（`-F`）。
 2. **上游 Gitee 镜像是滞后的**：判断"上游有没有新提交"要以 **GitHub 上游**为准
    （这轮 Gitee 还停在 beta30，GitHub 已经 beta33）。
+
+---
+
+## 十一、CI 改为「合并式 fork」（B+C 方案）
+
+**改了什么**：`.github/workflows/sync-upstream-build-release.yml` 不再"钉死上游基准 + 逐个 `git am` 重放补丁"，
+改成 `master` 就是发布分支（= 上游 + 本 fork 的定制提交），CI 直接构建它：
+
+- 定时（每 6h）/ 手动触发 → 上游有新提交就先 `git merge upstream/master`；
+- 合并干净且未命中「分歧清单」→ 构建 → 门禁 35 条 + APK 契约核验全绿 → **才**推 master、才发版；
+- 合并冲突 → `merge --abort`，**远端一个字节都不动**，另开 Issue 等人工。
+
+**为什么**：31 个补丁每次升基准都要整体重放，上游一动就可能"半合半不合"地留下孤儿引用。
+本次 beta33 正是这么炸的：上游删掉卡片倒计时，v28 的 hunk 却还在原地引用那几个已不存在的局部变量
+（`newMinutes` 等），本地不编译 → 一路到 CI 才报 11 条 `Unresolved reference`。
+合并式只在两边真的改到同一处时才需要人工介入。
+
+**安全设计**（都不依赖人的记性）：
+
+1. **推 master 放在最后**：构建、门禁、契约、签名核验全过了才推 —— 远端 master 永远不会指向"构建不过"的树。
+2. **分歧清单** `tools/divergence-watch.txt`：列的是**故意**与上游不同的文件（备份语义、毛玻璃系数、
+   分钟节拍、岛 B 区联动 …）。合并碰到就**只验证不发版**并开 Issue 请人工过一眼 ——
+   "能编译 + 门禁能过"并不等于语义没被翻回去。
+3. **冲突即停**：abort 后远端不变；另有"失败时开 Issue"兜底。
+4. **dry_run 预演**：可以拿任意分支 ref 先跑整条流水线（`{"ref":"<分支>","inputs":{"dry_run":"true"}}`）。
+
+**验证方式**：
+
+- 离线：在被测仓库里**原样执行** workflow 的 `check` / `merge` / `watch` 三个 `run` 块
+  （只替换 `${{ }}` 表达式与本机不可写的 `/tmp`），四条路径全绿：
+  无更新→不合并；干净→合并；命中清单→`blocked=true`；冲突→abort 且 HEAD 不动、无 `MERGE_HEAD` 残留。
+- 真跑：先推 `ci-merge-test` 分支，用 `workflow_dispatch(ref=ci-merge-test, dry_run=true)` 跑通整条链路，再落 master。
+
+**回滚**：旧形态的 master（`4e61976f`：钉基准 + 补丁）仍在历史里，
+`git push --force origin 4e61976f:master` 即回到旧流水线（旧的 workflow 文件就在该提交内）。
+
+**留档**：`patches/series/*.patch`（31 个）与 `tools/check_patches.py` 保留但不再参与构建；
+`local-audit-v21` 分支是"发布栈"（与 `patches/` 精确对应）。
+
+### 十一·附：落地与验证结果（同一天完成）
+
+- **beta33 升基准的编译问题**：先修 v45，再跑 `dry_run` —— 门禁 35 条全过、`BUILD SUCCESSFUL`、
+  算出 `1.6.0.2.12-gh12`；随后正式发版 **gh12**：GitHub + Gitee 双平台都挂上了 APK + `.sha256`，
+  签名指纹 `a7fdc7b7…ac938` 一致、`versionCode 15812` 单调（序号 12 > 历史 11）。
+- **新（合并式）CI 的真实验证**：先把它推成 `ci-merge-test` 分支，用
+  `workflow_dispatch(ref=ci-merge-test, dry_run=true)` 跑通整条链路（合并判定、门禁、签名、版本核验全绿，
+  dry_run 故不发版），**确认无误后才落到 master**。
+- **预演抓到的一个真事故**：我把原来 `env:`（只有一个 `UPSTREAM_BASE`）整段退役时，只剩注释没删键 ——
+  PyYAML 认为 `env: null` 合法，**GitHub 直接判 `Invalid workflow file: (Line: 37, Col: 5): Unexpected value ''`**：
+  `workflow_dispatch` 返回 422，而且推分支还会因此产生一条 `startup_failure` 运行（像是"CI 挂了"）。
+  现已新增 `tools/check_workflow.py` 做本地预检（空值键 / 触发条件 / 步骤完整性 / run 语法 /
+  `steps.<id>` 引用是否存在），并做过反向对照：拿"没修的那版"跑它会精准复现 GitHub 那条报错。

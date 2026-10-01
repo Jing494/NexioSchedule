@@ -1,0 +1,32 @@
+From bc0fea557712bc453bdb98812577b45d978c74e7 Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Mon, 28 Sep 2026 21:36:55 +0800
+Subject: [PATCH 24/31] =?UTF-8?q?fix(v39):=20=E8=A1=A5=E5=9B=9E=20timePick?=
+ =?UTF-8?q?erDialog=20=E7=9A=84=20@Composable=20=E6=B3=A8=E8=A7=A3?=
+ =?UTF-8?q?=EF=BC=88=E4=B8=8A=E4=B8=80=E6=AD=A5=E5=88=A0=E6=AD=BB=E5=8A=A9?=
+ =?UTF-8?q?=E6=89=8B=E6=97=B6=E8=BE=B9=E7=95=8C=E5=90=83=E6=8E=89=E4=BA=86?=
+ =?UTF-8?q?=E5=AE=83=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+(cherry picked from commit 171f2055a0b4d54a022c2c1ee17000d514903b37)
+---
+ .../com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt     | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
+index 102e1321..155f6ea3 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
+@@ -2036,6 +2036,7 @@ private fun pickerTextStyle() = MiuixTheme.textStyles.body1.copy(
+ 
+ // ===================== 返校提醒（周末 / 节假日最后一天） =====================
+ 
++@Composable
+ private fun timePickerDialog(
+         title: String,
+         show: Boolean,
+-- 
+2.55.0
+

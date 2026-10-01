@@ -1,0 +1,30 @@
+# 「故意与上游分歧」清单 —— 自动合并一旦碰到这些文件，就只验证、不自动发版
+#
+# 为什么需要它：本 fork 有几处是**故意**跟上游不一样的（都有取舍和踩坑史）。
+# 合并式同步是自动的，上游一改同一处代码，自动合并就可能把我们的取舍悄悄翻回去 ——
+# 而"能编译 + 门禁能过"并不足以发现语义被翻（典型：上游把某个默认值改回 false，
+# 我们当初正是把它改成 true 才修掉那个故障）。
+# 所以：命中本清单 → 本次只构建验证，不推 master、不发版，改为开 Issue 请人工过一眼。
+#
+# 维护方式：新增一处「故意不同」就加一行。只列**分歧所在**，不列"我曾经改过的所有文件"——
+# 否则天天命中，「自动跟」就形同虚设。
+# 格式：仓库根目录相对路径，一行一个，精确匹配（grep -xF）。
+#
+#   · data/CourseRepository.kt              备份/恢复语义：我们导出**全部**用户设置（上游只导一部分）
+#   · ui/utils/GlassPerf.kt                 毛玻璃降级系数（上游没有这个概念）
+#   · ui/utils/MinuteTick.kt                分钟节拍轮询（上游没有）
+#   · ui/components/CourseCard.kt           玻璃绘制降级点（系数只乘强度、折射宽度恒定）
+#   · ui/components/DayColumn.kt            同上（课表格子）
+#   · ui/screens/TodayScreen.kt             课程卡状态轮询的分钟节拍（v28 / v45）
+#   · reminder/CourseReminderHelper.kt       提醒口径 / 通道 / 精确闹钟 / 跨午夜下课（改得很深）
+#   · reminder/IslandNotificationHelper.kt   岛 B 区联动（改得很深）
+#   · ui/activities/CourseReminderScreen.kt  提醒体检（上游没有）
+app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
+app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
+app/src/main/java/com/haooz/chedule/ui/utils/MinuteTick.kt
+app/src/main/java/com/haooz/chedule/ui/components/CourseCard.kt
+app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
+app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
+app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
+app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt

@@ -1,0 +1,207 @@
+From 27655e28c55625ed0441ef46bca4a365fb57dd9b Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Wed, 30 Sep 2026 20:04:27 +0800
+Subject: [PATCH 27/31] =?UTF-8?q?v42=EF=BC=9A=E5=A4=87=E4=BB=BD/=E4=BA=91?=
+ =?UTF-8?q?=E5=90=8C=E6=AD=A5=E8=A6=86=E7=9B=96=E5=85=A8=E9=83=A8=E7=94=A8?=
+ =?UTF-8?q?=E6=88=B7=E8=AE=BE=E7=BD=AE=E6=96=87=E4=BB=B6=EF=BC=88=E5=8E=9F?=
+ =?UTF-8?q?=E5=85=88=209=20=E4=B8=AA=20SharedPreferences=20=E5=8F=AA?=
+ =?UTF-8?q?=E8=A6=86=E7=9B=96=E4=BA=86=201=20=E4=B8=AA=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+审计发现的缺口（与 v40 同类、范围更大）：本地全量备份与 WebDAV 云同步共用
+exportAllPreferences()，而它只导出 course_schedule_prefs（+ 节假日那份），于是：
+- app_preferences：触感反馈 / **应用材质等级** / 预测返回 / 隐藏背景
+- app_theme_prefs：主题模式
+- course_reminder_prefs：课中提醒 / 岛 B 区模式 / 展开光效
+- update_settings：更新通道 / 下载源
+- edu_import_prefs：教育导入仓库地址
+这些换设备或重装后恢复备份时都会**静默回到默认值**。
+
+做法：新增 BACKUP_EXTRA_PREFS 白名单 + 命名空间前缀 `prefs@<文件>@<键>`，
+导出时并入同一份载荷（键撞名也不会互相覆盖），恢复时按白名单分派回各自的
+SharedPreferences，并按目标键原有类型落库（getInt/getLong 对类型敏感，写错会
+ClassCastException）。刻意排除：countdown_state（瞬时状态）、weather_prefs（缓存）、
+stats_prefs（计数）、webdav_config（含凭据，绝不进备份文件）。
+恢复后补一次 AppMaterialSettings.load()，否则材质等级的内存态还是旧档位。
+
+门禁加第 28/29 条不变量：备份必须覆盖这几个文件、跨文件还原必须走白名单（均做了反向对照）。
+
+(cherry picked from commit 4f585f1fc584d8159eabfa5303848d377c8683a7)
+---
+ .../haooz/chedule/data/CourseRepository.kt    | 94 ++++++++++++++++++-
+ .../com/haooz/chedule/data/WebDavManager.kt   |  2 +
+ .../ui/activities/LocalBackupScreen.kt        |  3 +
+ 3 files changed, 96 insertions(+), 3 deletions(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
+index 1adfb079..3de74625 100644
+--- a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
++++ b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
+@@ -226,6 +226,30 @@ class CourseRepository private constructor(context: Context) {
+         const val MAX_TOTAL_WEEKS = 30
+ 
+         private const val PREFS_NAME = "course_schedule_prefs"
++
++        /**
++         * 备份里"其它偏好文件"的键前缀：`prefs@<文件名>@<原键>`。
++         * 那些文件同样是用户设置，但与 [PREFS_NAME] 是不同的 SharedPreferences，
++         * 直接混进同一个 Map 会撞名（例如两边都有 current_week 这种键），所以加命名空间。
++         */
++        private const val BACKUP_PREFS_TAG = "prefs@"
++
++        /**
++         * 除 [PREFS_NAME] 外**也要进备份**的用户设置文件。
++         *
++         * 刻意不含这几个：
++         * - `countdown_state`：当前通知/倒计时的瞬时状态
++         * - `weather_prefs`：天气缓存
++         * - `stats_prefs`：上报计数
++         * - `webdav_config`：含 WebDAV 凭据，绝不写进备份文件
++         */
++        private val BACKUP_EXTRA_PREFS = listOf(
++            "app_preferences",       // 触感反馈 / 应用材质等级 / 预测返回 / 隐藏背景
++            "app_theme_prefs",       // 主题模式（浅色 / 深色 / 跟随系统）
++            "course_reminder_prefs", // 课中提醒 / 岛 B 区模式 / 展开光效
++            "update_settings",       // 更新通道 / 下载源
++            "edu_import_prefs",      // 教育导入仓库地址
++        )
+         private const val KEY_COURSES = "courses"
+         private const val KEY_CURRENT_WEEK = "current_week"
+         private const val KEY_TOTAL_WEEKS = "total_weeks"
+@@ -2594,7 +2618,9 @@ class CourseRepository private constructor(context: Context) {
+      *   （其新增的 isCombinationBackupKey / isAppFeatureBackupKey 就是干这个的）。
+      *   本 fork 选择**带上全部用户设置** —— 换设备或重装后，课前提醒 / 超级岛开关 / 勿扰 /
+      *   假期余额 / 返校准备清单 / 小部件档位 / 搭配外观 / 教学周重组规则 不会静默回到默认值。
+-     *   要改回上游语义：删掉下面的 excludedKeys，改用上游那两个 helper 即可。
++     *   要改回上游语义：删掉下面的 excludedKeys、改用上游那两个 helper，
++     *   并在恢复侧加回它的那条跳过守卫（`if (isCombinationBackupKey(key) || isAppFeatureBackupKey(key)
++     *   || key == KEY_REMINDER_PREFS) continue`）—— 上游是"导出不写 + 恢复不覆盖"两侧成对的。
+      *
+      * ★ 另外这里必须是**黑名单**，不能退回白名单。
+      *   原实现只导"带 schedule_/time_config_ 前缀的键 + 8 个全局键"，
+@@ -2622,6 +2648,26 @@ class CourseRepository private constructor(context: Context) {
+                 }
+             }
+         }
++        // 其它用户设置文件一并导出（加命名空间，键撞名也不会互相覆盖）。
++        // 这些文件里的设置以前完全不进备份 —— 换设备/重装后触感、材质等级、主题、
++        // 课中提醒、岛 B 区模式、更新通道等都会悄悄回到默认值。
++        for (fileName in BACKUP_EXTRA_PREFS) {
++            val extra = appContext.getSharedPreferences(fileName, Context.MODE_PRIVATE)
++            for ((key, value) in extra.all) {
++                val tagged = "$BACKUP_PREFS_TAG$fileName@$key"
++                when (value) {
++                    is String -> result[tagged] = value
++                    is Int -> result[tagged] = value
++                    is Boolean -> result[tagged] = value
++                    is Float -> result[tagged] = value
++                    is Long -> result[tagged] = value
++                    is Set<*> -> {
++                        @Suppress("UNCHECKED_CAST")
++                        result[tagged] = (value as Set<String>).toList()
++                    }
++                }
++            }
++        }
+         if (KEY_SCHEDULE_NAMES !in result) {
+             result[KEY_SCHEDULE_NAMES] = gson.toJson(getScheduleNames())
+         }
+@@ -2646,6 +2692,46 @@ class CourseRepository private constructor(context: Context) {
+         }
+     }
+ 
++    /**
++     * 还原 `prefs@<文件>@<键>` 形式的键。
++     *
++     * 只写到 [BACKUP_EXTRA_PREFS] 白名单里的文件 —— 备份文件可能来自别处/被改过，
++     * 不能让它决定我们要写哪个 SharedPreferences。数值按目标键原有的类型落库
++     * （SharedPreferences 的 getInt/getLong 对类型敏感，写错会 ClassCastException）。
++     */
++    private fun restoreExtraPreference(taggedKey: String, value: Any) {
++        val rest = taggedKey.removePrefix(BACKUP_PREFS_TAG)
++        val sep = rest.indexOf('@')
++        if (sep <= 0) return
++        val fileName = rest.substring(0, sep)
++        val originalKey = rest.substring(sep + 1)
++        if (fileName !in BACKUP_EXTRA_PREFS || originalKey.isEmpty()) return
++        val target = appContext.getSharedPreferences(fileName, Context.MODE_PRIVATE)
++        val current = target.all[originalKey]
++        target.edit {
++            when (value) {
++                is Boolean -> putBoolean(originalKey, value)
++                is String -> putString(originalKey, value)
++                is Number -> {
++                    val d = value.toDouble()
++                    when {
++                        current is Long -> putLong(originalKey, d.toLong())
++                        current is Float -> putFloat(originalKey, d.toFloat())
++                        d == d.toLong().toDouble() -> putInt(originalKey, d.toInt())
++                        else -> putFloat(originalKey, d.toFloat())
++                    }
++                }
++                is List<*> -> {
++                    if (current is Set<*>) {
++                        putStringSet(originalKey, value.filterIsInstance<String>().toSet())
++                    } else {
++                        putString(originalKey, gson.toJson(value))
++                    }
++                }
++            }
++        }
++    }
++
+     private fun restoreAllPreferences(
+         data: Map<String, Any>,
+         holidayBackup: HolidayManager.BackupData,
+@@ -2674,8 +2760,10 @@ class CourseRepository private constructor(context: Context) {
+                 if (key == HolidayManager.BACKUP_KEY ||
+                     key == HolidayManager.BACKUP_EXCLUSION_KEY
+                 ) continue
+-                // 搭配、提醒等应用功能设置不进备份，恢复时也不覆盖设备上的对应配置
+-                if (isCombinationBackupKey(key) || isAppFeatureBackupKey(key) || key == KEY_REMINDER_PREFS) continue
++                if (key.startsWith(BACKUP_PREFS_TAG)) {
++                    restoreExtraPreference(key, value)
++                    continue
++                }
+                 when (value) {
+                     is String -> putString(key, value)
+                     is Boolean -> putBoolean(key, value)
+diff --git a/app/src/main/java/com/haooz/chedule/data/WebDavManager.kt b/app/src/main/java/com/haooz/chedule/data/WebDavManager.kt
+index f1ce3927..b4fc7a88 100644
+--- a/app/src/main/java/com/haooz/chedule/data/WebDavManager.kt
++++ b/app/src/main/java/com/haooz/chedule/data/WebDavManager.kt
+@@ -208,6 +208,8 @@ class WebDavManager(private val context: Context) {
+ 
+                         repository.importAllPreferences(data)
+                         com.haooz.chedule.reminder.CourseReminderHelper.onHolidayDataChanged(context)
++                        // 恢复后把「应用材质等级」这类全局内存态重新载入，否则界面还是旧档位
++                        com.haooz.chedule.ui.utils.AppMaterialSettings.load(context)
+                         lastSyncTime = System.currentTimeMillis()
+                         Log.d(TAG, "Restore succeeded from ${latest.backupTime}")
+                         RestoreResult.Success(latest.backupTime)
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/LocalBackupScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/LocalBackupScreen.kt
+index 64f49104..07d3fec9 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/LocalBackupScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/LocalBackupScreen.kt
+@@ -64,6 +64,7 @@ import com.haooz.chedule.ui.basic.OverlayDropdownMenu
+ import com.haooz.chedule.ui.basic.SharedScrollBehavior
+ import com.haooz.chedule.ui.basic.collapsibleTopInset
+ import com.haooz.chedule.ui.utils.courseToShareMap
++import com.haooz.chedule.ui.utils.AppMaterialSettings
+ import com.haooz.chedule.ui.utils.isAppDarkTheme
+ import com.haooz.chedule.ui.utils.overScrollVertical
+ import com.haooz.chedule.viewmodel.CourseViewModel
+@@ -485,6 +486,8 @@ fun LocalBackupScreen(
+                         is BackupPayload.Full -> {
+                             repository.importAllPreferences(payload.data)
+                             CourseReminderHelper.onHolidayDataChanged(context)
++                            // 恢复后把「应用材质等级」这类全局内存态重新载入，否则界面还是旧档位
++                            AppMaterialSettings.load(context)
+                         }
+                     }
+                     // 等加载完成再提示成功，否则会先弹 Toast 再刷出数据
+-- 
+2.55.0
+
