@@ -1,0 +1,143 @@
+From a99129d9c3839d4bf99a80f7df1e1444a9174f9b Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Sun, 27 Sep 2026 23:04:12 +0800
+Subject: [PATCH 19/30] =?UTF-8?q?v37=EF=BC=9A=E4=BF=AE=E3=80=8C=E4=B8=A4?=
+ =?UTF-8?q?=E4=B8=AA=E4=B8=8B=E8=BD=BD=E6=BA=90=E9=83=BD=E6=8A=A5=E6=9C=AA?=
+ =?UTF-8?q?=E6=89=BE=E5=88=B0=E4=B8=8B=E8=BD=BD=E9=93=BE=E6=8E=A5=E3=80=8D?=
+ =?UTF-8?q?=E2=80=94=E2=80=94=20=E5=8F=AA=E8=AE=A4=E5=B8=A6=20APK=20?=
+ =?UTF-8?q?=E7=9A=84=E7=89=88=E6=9C=AC=20+=20=E5=88=87=E4=B8=8B=E8=BD=BD?=
+ =?UTF-8?q?=E6=BA=90=E8=A6=81=E9=87=8D=E6=9F=A5?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+现象：设置→更新→检查更新→开始下载，Gitee 与 GitHub 两个下载源都只弹「未找到下载链接」。
+
+根因（两条，互相独立）：
+1) UpdateChecker 选出「最新 release」后只看它有没有 .apk 附件：没有就把下载地址留空，
+   不会退回上一个带包的版本。而 Gitee 建 release 时会自动挂源码 zip，APK 是 CI 过一会儿
+   才 attach 上去的（实测 gh5 相差 8 分钟），这段窗口里「最新」正好是没有安装包的那条。
+2) 界面只在「更新通道」变化时清缓存，切「下载源」(Gitee/GitHub) 既不失效也不重查；
+   且 hasUpdate=true 时点「检查更新」是直接开下载对话框、不再重查 —— 坏结果会一直粘着
+   （还会写进 SharedPreferences），所以两个源看起来一样坏。
+
+修复：
+- UpdateChecker：抽 apkUrlOf()，循环里跳过没有 .apk 附件的 release，只保留
+  「最新的、且带包的」版本；顺带修正过期的通道注释（stable 只跳过 prerelease）。
+- UpdateSettingsScreen：LaunchedEffect 的 key 加上 effectiveDownloadSource；
+  「检查更新」在缓存下载地址为空时改为强制重查，而不是直接开对话框。
+
+(cherry picked from commit f9c0764f84c87d11e01f780290b65bc1f6ee4b4e)
+---
+ .../ui/activities/UpdateSettingsScreen.kt     | 12 ++++--
+ .../haooz/chedule/ui/utils/UpdateChecker.kt   | 38 ++++++++++++-------
+ 2 files changed, 33 insertions(+), 17 deletions(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/UpdateSettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/UpdateSettingsScreen.kt
+index 2423dcf0..19425209 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/UpdateSettingsScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/UpdateSettingsScreen.kt
+@@ -193,8 +193,11 @@ fun UpdateSettingsScreen(
+         }
+     }
+ 
+-    // 切换更新通道时清除缓存，下次自动检查重新拉取
+-    LaunchedEffect(updateChannel) {
++    // 切换更新通道 / 下载源时清除缓存，下次自动检查重新拉取。
++    // 下载源也必须算进来：Gitee 与 GitHub 的发布时间、附件状态都不同，
++    // 只按通道清缓存的话，换源后拿到的还是上一个源的结果
++    //（实测"两个下载源都报未找到下载链接"就是这么来的）。
++    LaunchedEffect(effectiveDownloadSource, updateChannel) {
+         hasUpdate = false
+         latestRelease = null
+         prefs.edit {
+@@ -315,7 +318,10 @@ fun UpdateSettingsScreen(
+                                 },
+                                 onClick = {
+                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
+-                                    if (hasUpdate && latestRelease != null) {
++                                    // 只有"确实拿到了下载地址"才直接开对话框。
++                                    // 缓存里地址为空（撞上 Gitee 附件还没传完的窗口期，或被旧版本写坏过）
++                                    // 时必须重查，否则点「开始下载」只会弹一句「未找到下载链接」。
++                                    if (hasUpdate && latestRelease != null && latestRelease!!.apkUrl.isNotBlank()) {
+                                         val tag = latestRelease!!.tagName
+                                         if (UpdateInstaller.hasValidApk(context, tag)) {
+                                             downloadedFile = UpdateInstaller.apkFile(context, tag)
+diff --git a/app/src/main/java/com/haooz/chedule/ui/utils/UpdateChecker.kt b/app/src/main/java/com/haooz/chedule/ui/utils/UpdateChecker.kt
+index ce803b38..504690f9 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/utils/UpdateChecker.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/utils/UpdateChecker.kt
+@@ -64,9 +64,21 @@ internal object UpdateChecker {
+         return false
+     }
+ 
++    /** 取该 release 里第一个 .apk 附件的下载地址；没有 .apk 附件则返回空串 */
++    private fun apkUrlOf(release: com.google.gson.JsonObject): String {
++        val assets = release.getAsJsonArray("assets") ?: return ""
++        for (i in 0 until assets.size()) {
++            val a = assets[i].asJsonObject
++            val assetName = a.get("name")?.asString ?: ""
++            if (assetName.endsWith(".apk")) return a.get("browser_download_url")?.asString ?: ""
++        }
++        return ""
++    }
++
+     // 需在 IO 线程调用。
+-    // stable: 正式通道，跳过 prerelease 与 beta 版本（含第4段版本号）
++    // stable: 正式通道，只跳过显式预发布（prerelease）
+     // beta: 可检测正式版 + beta 版
++    // 两个通道都额外要求：release 必须带 .apk 附件（见循环里的说明）
+     fun checkForUpdate(context: Context, source: String = "gitee", channel: String = "stable"): Pair<Boolean, GiteeRelease?> {
+         return try {
+             val client = okhttp3.OkHttpClient.Builder()
+@@ -99,6 +111,7 @@ internal object UpdateChecker {
+             val arr = com.google.gson.JsonParser.parseString(responseBody).asJsonArray
+             var best: com.google.gson.JsonObject? = null
+             var bestVer = ""
++            var bestApkUrl = ""
+             for (i in 0 until arr.size()) {
+                 val release = arr[i].asJsonObject
+                 val tag = release.get("tag_name")?.asString ?: continue
+@@ -116,9 +129,18 @@ internal object UpdateChecker {
+                 }
+                 // beta 通道：正式 + beta 均可；stable 通道已在上方过滤
+ 
++                // ★ 只认「带安装包」的版本。
++                //   Gitee 建 release 时会**自动挂上源码 zip**，而 APK 是 CI 过一会儿才
++                //   attach 上去的（实测 gh5 差了 8 分钟）。这段窗口里"最新 release"没有 .apk，
++                //   一旦选中它，下载地址就是空的 —— 点「开始下载」只会弹「未找到下载链接」。
++                //   所以没有 .apk 的版本直接跳过，继续找「最新的、且带包的」。
++                val apk = apkUrlOf(release)
++                if (apk.isBlank()) continue
++
+                 if (best == null || isNewerVersion(ver, bestVer)) {
+                     best = release
+                     bestVer = ver
++                    bestApkUrl = apk
+                 }
+             }
+             val json = best
+@@ -128,19 +150,7 @@ internal object UpdateChecker {
+             val body = json.get("body")?.asString ?: ""
+             val htmlUrl = json.get("html_url")?.asString ?: ""
+             val createdAt = json.get("created_at")?.asString ?: ""
+-
+-            val assets = json.getAsJsonArray("assets")
+-            var apkUrl = ""
+-            if (assets != null) {
+-                for (i in 0 until assets.size()) {
+-                    val a = assets[i].asJsonObject
+-                    val assetName = a.get("name")?.asString ?: ""
+-                    if (assetName.endsWith(".apk")) {
+-                        apkUrl = a.get("browser_download_url")?.asString ?: ""
+-                        break
+-                    }
+-                }
+-            }
++            val apkUrl = bestApkUrl
+ 
+             val currentVersion = try {
+                 context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
+-- 
+2.55.0
+

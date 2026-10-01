@@ -1,0 +1,33 @@
+From 24c47c44d37110deda06e719fbc7fc6dc2908a0e Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Sun, 27 Sep 2026 23:34:59 +0800
+Subject: [PATCH 22/30] =?UTF-8?q?fix(v38):=20=E4=BF=AE=20UI=20=E7=BB=93?=
+ =?UTF-8?q?=E6=9E=84=E9=87=8D=E7=BB=84=E6=97=B6=E5=A4=9A=E5=B8=A6=E7=9A=84?=
+ =?UTF-8?q?=E4=B8=80=E4=B8=AA=E5=8F=B3=E8=8A=B1=E6=8B=AC=E5=8F=B7=EF=BC=88?=
+ =?UTF-8?q?=E6=8A=8A=20item=20=E7=9A=84=E9=97=AD=E5=90=88=E4=B9=9F?=
+ =?UTF-8?q?=E7=AE=97=E8=BF=9B=E4=BA=86=E8=A7=84=E5=88=99=E5=9D=97=E5=88=87?=
+ =?UTF-8?q?=E7=89=87=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+(cherry picked from commit af17800e033c0c8901b503f7d9f9bed6ff973fa4)
+---
+ .../com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt     | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
+index fd17109c..da1ef55d 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
+@@ -608,7 +608,6 @@ fun HolidaySettingsScreen(
+                     )
+                 }
+             }
+-            }
+ 
+             item {
+                 SectionTitleRow(
+-- 
+2.55.0
+

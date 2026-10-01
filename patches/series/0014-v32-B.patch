@@ -1,0 +1,475 @@
+From 386b7d35c122eed89f6a905eb4e2b86ce672d742 Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Sun, 27 Sep 2026 13:39:57 +0800
+Subject: [PATCH 14/30] =?UTF-8?q?v32:=20=E4=BF=AE=E8=AF=BE=E4=B8=AD?=
+ =?UTF-8?q?=E5=80=92=E8=AE=A1=E6=97=B6"=E9=A3=9E=E4=BA=86"=E7=9A=84?=
+ =?UTF-8?q?=E6=A0=B9=E5=9B=A0=EF=BC=88B=20=E5=8C=BA=E5=BC=80=E5=85=B3?=
+ =?UTF-8?q?=E4=B8=8D=E8=81=94=E5=8A=A8=EF=BC=89+=20=E6=96=B0=E5=A2=9E?=
+ =?UTF-8?q?=E6=B5=8B=E8=AF=95=E5=9C=BA=E6=99=AF=E6=9D=BF=E5=9D=97?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+用户反馈："点测试上课倒计时没问题，下课倒计时飞了"。
+追问到的现象："岛出现了，但原本和上课倒计时一样的区域显示上课中，过了一会岛自动消失"。
+
+拆成两半，**只有一半是 bug**：
+
+1) 同一块区域上课后变静态文案 ← bug
+   课前与课中用的是**同一个缩略态区域的 B 区**，但历史上是两个互不相干的下拉：
+   - 课前 island_right_mode（0 课程名 / 1 上课地点 / 2 距上课倒计时）
+   - 课中 island_in_class_right_mode（0 正在上课 / 1 倒计时），**默认 0**
+   课前选了倒计时、课中那块仍是默认静态 → 看起来就是倒计时没了。
+   修复：课中 B 区"未显式设置时跟随课前 B 区"（哨兵 -1）：
+   课前选 2 → 课中给"距下课倒计时"；显式选过 0/1 则听用户的；
+   都没设过且课前不是倒计时 → 与旧行为完全一致（不惊扰现有用户）。
+   判定只有一份：IslandNotificationHelper.effectiveInClassRightMode(prefs)，
+   发送端与设置页都调它（避免"两处各读各的"老坑）。
+
+2) 过了一会岛自动消失 ← 正常
+   测试课只写死 70 秒倒计时 + 120 秒课时，到下课点就该精确收岛，不是掉线。
+
+新增「超级岛 / 实时动态 测试」独立板块（我的 → 提醒设置，紧跟提醒体检）：
+   场景1 课前倒计时 → 到点切课中（70 秒倒计时，课时 3 分钟）← 一次点击看完整切换
+   场景2 已上课（静态，约 15 秒收起）
+   场景3 课中 · 距下课倒计时（课时 3 分钟）
+   场景4 课中 · 长课 20 分钟（验证不中途收岛）
+设计：每个场景都调**主路径那几支发送函数**，只换时序，不复制发送逻辑；
+通道按当前设置自动判定并在卡片上显示；STARTED/IN_CLASS 两场景**绕过用户开关**直接落状态
+（测试工具的意义就是把某条分支单独验出来）；老悬浮按钮与其默认参数（70s+120s）未改动。
+
+验证：verify_islandtest_v32.py 25 项全过（5 组模式判定 + 5 项"只有一份判定" +
+14 项场景板约束，含"老按钮与默认参数未被改动""UI 不自己拼发送逻辑"）；
+assembleRelease 通过；签名与 sha256 通过；dex 内新符号全部 FOUND。
+
+(cherry picked from commit f534c55b2f492bb357a0add46373b1a4c2707d18)
+---
+ .../chedule/reminder/CourseReminderHelper.kt  | 87 ++++++++++++++++--
+ .../reminder/IslandNotificationHelper.kt      | 70 +++++++++++++--
+ .../chedule/reminder/ReminderTestScenario.kt  | 90 +++++++++++++++++++
+ .../ui/activities/CourseReminderScreen.kt     | 73 ++++++++++++++-
+ 4 files changed, 306 insertions(+), 14 deletions(-)
+ create mode 100644 app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
+
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+index 238f3812..d836ca46 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/CourseReminderHelper.kt
+@@ -2263,15 +2263,41 @@ object CourseReminderHelper {
+      * 测试实时活动：与超级岛测试同一套固定课程，不依赖真实课表。
+      * 课前 70 秒倒计时 + 课中 120 秒，便于验证倒计时 / 已上课 / 课中进度全链路。
+      */
+-    fun sendTestLiveNotification(context: Context) {
++    fun sendTestLiveNotification(
++        context: Context,
++        /** 距"上课"还有多久（0 = 已经上课了） */
++        startDelayMs: Long = 70_000L,
++        /** 课时长度 */
++        durationMs: Long = 120_000L,
++        /** 直接落到哪个状态；COUNTDOWN 走完整时序 */
++        phase: ReminderTestPhase = ReminderTestPhase.COUNTDOWN,
++    ) {
+         val courseName = "大学英语Ⅱ"
+         val classroom = "博A201"
+         val section = "第3~4节"
+-        val startMillis = System.currentTimeMillis() + 70_000L
+-        val endMillis = startMillis + 120_000L
+-        val startTime = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+-            .format(java.util.Date(startMillis))
+-        showPreClassCountdownNotification(
++        val startMillis = System.currentTimeMillis() + startDelayMs
++        val endMillis = startMillis + durationMs
++        val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
++        val startTime = fmt.format(java.util.Date(startMillis))
++        val endTime = fmt.format(java.util.Date(endMillis))
++
++        if (phase == ReminderTestPhase.COUNTDOWN) {
++            showPreClassCountdownNotification(
++                context = context,
++                courseName = courseName,
++                classroom = classroom,
++                section = section,
++                startTime = startTime,
++                startMillis = startMillis,
++                endMillis = endMillis,
++                testMode = true
++            )
++            return
++        }
++
++        // 「已上课 / 课中」两态都读 countdown_state（对账、下课收起、进度都靠它），
++        // 所以先落一份与主路径同构的状态，再直接进对应状态（绕过用户开关）。
++        writeTestCountdownState(
+             context = context,
+             courseName = courseName,
+             classroom = classroom,
+@@ -2279,10 +2305,57 @@ object CourseReminderHelper {
+             startTime = startTime,
+             startMillis = startMillis,
+             endMillis = endMillis,
+-            testMode = true
+         )
+         // 测试课也要走「上课自动开启、下课自动关闭」，否则勿扰链路在测试里跑不到
+         ClassDndHelper.syncTestClassDndAlarms(context)
++        if (phase == ReminderTestPhase.STARTED) {
++            showStartedLiveNotification(
++                context = context,
++                courseName = courseName,
++                classroom = classroom,
++                startTime = startTime,
++                testMode = true
++            )
++        } else {
++            showOrUpdateInClassLiveNotification(
++                context = context,
++                courseName = courseName,
++                classroom = classroom,
++                endTime = endTime,
++                startMillis = startMillis,
++                endMillis = endMillis,
++                countdownNotificationId = liveCountdownId(true),
++                testMode = true,
++            )
++        }
++    }
++
++    /** 测试用：写与 showPreClassCountdownNotification 同构的倒计时状态（键名必须一致） */
++    private fun writeTestCountdownState(
++        context: Context,
++        courseName: String,
++        classroom: String,
++        section: String,
++        startTime: String,
++        startMillis: Long,
++        endMillis: Long,
++    ) {
++        context.getSharedPreferences("countdown_state", Context.MODE_PRIVATE).edit {
++            putBoolean("active", true)
++                .putBoolean("test_mode", true)
++                .putBoolean("in_class_active", false)
++                .putString("courseName", courseName)
++                .putString("classroom", classroom)
++                .putString("section", section)
++                .putString("startTime", startTime)
++                .putLong("startMillis", startMillis)
++                .putLong("endMillis", endMillis)
++                .putInt("notificationId", liveCountdownId(true))
++                .remove("last_displayed_minutes")
++                .remove("last_in_class_minutes")
++                .remove("last_in_class_progress")
++                .remove("started_shown")
++        }
+     }
+ 
+     // 每分钟由 WidgetRefreshReceiver 驱动；同 notifyId 重复 notify 无痕更新
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
+index aba68b44..5f1bc4de 100644
+--- a/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
++++ b/app/src/main/java/com/haooz/chedule/reminder/IslandNotificationHelper.kt
+@@ -396,6 +396,26 @@ object IslandNotificationHelper {
+     }
+ 
+     // 测试岛含倒计时/已上课/课中三个 ID
++    // 课中岛缩略态 B 区：0=正在上课（静态文案），1=距下课倒计时，-1=**未设置**
++    private const val KEY_IN_CLASS_RIGHT_MODE = "island_in_class_right_mode"
++
++    /**
++     * 课中岛缩略态 B 区**实际生效**的模式。
++     *
++     * 课前与课中用的是同一个缩略态区域的 B 区，但历史上是两个互不相干的下拉，
++     * 而课中那个默认值是 0（静态「正在上课」）。后果就是实测反馈的那句
++     * 「点测试：上课倒计时没问题，下课倒计时飞了」—— 上课前那块区域在跳秒，
++     * 上课后同一块区域突然变成静态文案，看着就像倒计时没了。
++     *
++     * 规则：用户显式选过（0/1）就听他的；没选过（哨兵 -1）则跟随课前 B 区 ——
++     * 课前选了「距上课倒计时」，课中同一区域就给「距下课倒计时」。
++     */
++    fun effectiveInClassRightMode(prefs: android.content.SharedPreferences): Int {
++        val explicit = prefs.getInt(KEY_IN_CLASS_RIGHT_MODE, -1)
++        if (explicit >= 0) return explicit
++        return if (prefs.getInt("island_right_mode", 1) == 2) 1 else 0
++    }
++
+     fun isIslandTestId(notificationId: Int): Boolean =
+         notificationId == ISLAND_TEST_NOTIFICATION_ID ||
+             notificationId == ISLAND_STARTED_TEST_NOTIFICATION_ID ||
+@@ -701,8 +721,8 @@ object IslandNotificationHelper {
+         val prefs = context.getSharedPreferences("course_reminder_prefs", Context.MODE_PRIVATE)
+         val expandGlowEnabled = prefs.getBoolean(KEY_ISLAND_EXPAND_GLOW_ENABLED, true)
+         val aodMode = prefs.getInt("island_aod_mode", 0)
+-        // 课中岛缩略态 B 区：0=正在上课（静态文案），1=距下课倒计时
+-        val inClassRightMode = prefs.getInt("island_in_class_right_mode", 0)
++        // 课中岛缩略态 B 区：0=正在上课（静态文案），1=距下课倒计时；未设置则跟随课前 B 区
++        val inClassRightMode = effectiveInClassRightMode(prefs)
+ 
+         val now = System.currentTimeMillis()
+         val counting = courseEndMillis > now
+@@ -1108,7 +1128,15 @@ object IslandNotificationHelper {
+         )
+     }
+ 
+-    fun sendTestIslandNotification(context: Context) {
++    fun sendTestIslandNotification(
++        context: Context,
++        /** 距"上课"还有多久发这条倒计时（0 = 已经上课了） */
++        startDelayMs: Long = 70_000L,
++        /** 课时长度 */
++        durationMs: Long = 120_000L,
++        /** 直接落到哪个状态；COUNTDOWN 走完整时序（到点由对账/闹钟自动切换） */
++        phase: ReminderTestPhase = ReminderTestPhase.COUNTDOWN,
++    ) {
+         if (!isIslandSupported(context)) {
+             Log.w(TAG, "Island not supported on this device")
+             return
+@@ -1122,9 +1150,9 @@ object IslandNotificationHelper {
+         val testNotificationId = ISLAND_TEST_NOTIFICATION_ID
+ 
+         // 时间串也由这两个时间戳派生，否则岛上显示与倒计时对不上，无法判断是否正确
+-        // 测试课：课前 1 分 10 秒倒计时 + 课中 2 分钟
+-        val courseStartTimestamp = System.currentTimeMillis() + 70_000L
+-        val courseEndTimestamp = courseStartTimestamp + 120_000L
++        // 测试课：默认课前 1 分 10 秒倒计时 + 课中 2 分钟；场景可覆盖
++        val courseStartTimestamp = System.currentTimeMillis() + startDelayMs
++        val courseEndTimestamp = courseStartTimestamp + durationMs
+         val startTime = formatClock(courseStartTimestamp)
+         val endTime = formatClock(courseEndTimestamp)
+ 
+@@ -1149,6 +1177,36 @@ object IslandNotificationHelper {
+         // 测试课也要走「上课自动开启、下课自动关闭」，否则勿扰链路在测试里跑不到
+         ClassDndHelper.syncTestClassDndAlarms(context)
+ 
++        // 场景要直接落到「已上课」/「课中」：走主路径那两支函数本身，
++        // 只是**绕过用户开关**（测试工具的意义就是把某一条分支单独验出来）。
++        // 倒计时场景不在这里发：它留给到点后的对账/闹钟自动切换，才是真实时序。
++        if (phase != ReminderTestPhase.COUNTDOWN) {
++            if (phase == ReminderTestPhase.STARTED) {
++                sendClassStartedNotification(
++                    context = context,
++                    courseName = courseName,
++                    classroom = classroom,
++                    section = section,
++                    startTime = startTime,
++                    endTime = endTime,
++                    notificationId = testNotificationId,
++                    testMode = true,
++                )
++            } else {
++                sendInClassIslandNotification(
++                    context = context,
++                    courseName = courseName,
++                    classroom = classroom,
++                    section = section,
++                    startTime = startTime,
++                    endTime = endTime,
++                    notificationId = testNotificationId,
++                    testMode = true,
++                )
++            }
++            return
++        }
++
+         val contentIntent = Intent(context, MainActivity::class.java).apply {
+             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+         }
+diff --git a/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt b/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
+new file mode 100644
+index 00000000..8f4190cb
+--- /dev/null
++++ b/app/src/main/java/com/haooz/chedule/reminder/ReminderTestScenario.kt
+@@ -0,0 +1,90 @@
++package com.haooz.chedule.reminder
++
++import android.content.Context
++import com.haooz.chedule.data.CourseRepository
++
++/** 测试要直接落到哪个状态（用于单独验证某一条分支） */
++enum class ReminderTestPhase { COUNTDOWN, STARTED, IN_CLASS }
++
++/**
++ * 「超级岛 / 实时动态」测试场景。
++ *
++ * 存在的理由：原来全项目只有一个测试按钮、只有一种时序（课前 70 秒 + 课中 2 分钟），
++ * 覆盖不到「到点自动切课中」「课中距下课倒计时」「长课不中途收岛」这些真实分支 ——
++ * 于是"上课倒计时正常、下课倒计时没了"这类问题只能靠碰运气发现。
++ *
++ * 本文件只是**场景表 + 分发**，不复制任何发送逻辑：真正发送仍然走主路径那几支函数，
++ * 通道判定也与主路径完全一致（岛开着且设备支持 → 走岛，否则走原生实时动态），
++ * 避免"测的那套"和"跑的那套"分叉。
++ */
++enum class ReminderTestScenario(
++    val label: String,
++    val detail: String,
++    val startDelayMs: Long,
++    val durationMs: Long,
++    val phase: ReminderTestPhase,
++) {
++    /** 关键场景：一次点击就能看到「课前倒计时 → 到点自动切课中」的完整切换 */
++    FULL_TIMELINE(
++        label = "课前倒计时 → 到点切课中",
++        detail = "70 秒倒计时，到点自动切课中卡（课时 3 分钟）",
++        startDelayMs = 70_000L,
++        durationMs = 180_000L,
++        phase = ReminderTestPhase.COUNTDOWN,
++    ),
++
++    /** 静态「已上课」：15 秒后收起，用来验证收起时序 */
++    STARTED(
++        label = "已上课（静态）",
++        detail = "强制发静态「已上课」，约 15 秒后自动收起",
++        startDelayMs = 0L,
++        durationMs = 60_000L,
++        phase = ReminderTestPhase.STARTED,
++    ),
++
++    /** 课中卡：绕过「课中提醒」总开关，直接验 B 区（距下课倒计时 / 静态文案） */
++    IN_CLASS(
++        label = "课中 · 距下课倒计时",
++        detail = "直接进课中卡（课时 3 分钟），B 区按你的设置显示倒计时或静态文案",
++        startDelayMs = 0L,
++        durationMs = 180_000L,
++        phase = ReminderTestPhase.IN_CLASS,
++    ),
++
++    /** 长课：晚自习两节连排那种时长，验证不会在中途被系统收岛 */
++    IN_CLASS_LONG(
++        label = "课中 · 长课（20 分钟）",
++        detail = "验证长时间不会中途收岛，长课时也不该在 60 分钟处自己消失",
++        startDelayMs = 0L,
++        durationMs = 1_200_000L,
++        phase = ReminderTestPhase.IN_CLASS,
++    );
++
++    companion object {
++        /** 当前实际会走哪条通道 —— 与主路径同一套判定 */
++        fun islandActive(context: Context): Boolean =
++            CourseRepository(context).getIslandNotification() &&
++                IslandNotificationHelper.isIslandSupported(context)
++
++        fun channelLabel(context: Context): String =
++            if (islandActive(context)) "小米超级岛" else "原生实时动态"
++
++        fun send(context: Context, scenario: ReminderTestScenario) {
++            if (islandActive(context)) {
++                IslandNotificationHelper.sendTestIslandNotification(
++                    context = context,
++                    startDelayMs = scenario.startDelayMs,
++                    durationMs = scenario.durationMs,
++                    phase = scenario.phase,
++                )
++            } else {
++                CourseReminderHelper.sendTestLiveNotification(
++                    context = context,
++                    startDelayMs = scenario.startDelayMs,
++                    durationMs = scenario.durationMs,
++                    phase = scenario.phase,
++                )
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
+index 26ce90ca..8eccedd2 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
+@@ -57,6 +57,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
+ import com.haooz.chedule.reminder.ClassDndHelper
+ import com.haooz.chedule.reminder.CourseReminderHelper
+ import com.haooz.chedule.reminder.IslandNotificationHelper
++import com.haooz.chedule.reminder.ReminderTestScenario
+ import com.haooz.chedule.shizuku.ShizukuManager
+ import com.haooz.chedule.ui.basic.CollapsibleTopAppBarDefaults
+ import com.haooz.chedule.ui.basic.OverlayDropdownMenu
+@@ -130,8 +131,10 @@ fun CourseReminderScreen(
+     // 超级岛息屏显示：0=课程名称，1=上课地点
+     var islandAodMode by remember { mutableIntStateOf(reminderPrefs.getInt("island_aod_mode", 0)) }
+     // 课中岛缩略态右侧：0=正在上课，1=距下课倒计时（仅超级岛生效）
++    // 用 effectiveInClassRightMode 而不是裸读 prefs：没显式选过时它跟随课前 B 区，
++    // 否则会出现"上课前同一块区域在跳秒、上课后变成静态文案"（实测反馈的那条）
+     var islandInClassRightMode by remember {
+-        mutableIntStateOf(reminderPrefs.getInt("island_in_class_right_mode", 0))
++        mutableIntStateOf(IslandNotificationHelper.effectiveInClassRightMode(reminderPrefs))
+     }
+     // 课中提醒：超级岛 / 原生实况共用同一开关
+     var inClassEnabled by remember {
+@@ -321,6 +324,9 @@ fun CourseReminderScreen(
+                     // 提醒体检：把"设了却收不到"的常见系统原因直接摆出来
+                     item { ReminderHealthCard() }
+ 
++                    // 超级岛 / 实时动态 测试：单独一块，不动原有板块
++                    item { ReminderTestCard() }
++
+                     // 开启提醒
+                     item {
+                         Card(
+@@ -1508,3 +1514,68 @@ private fun ReminderHealthCard() {
+         }
+     }
+ }
++
++/**
++ * 「超级岛 / 实时动态」测试板块 —— **单独一块，原有板块一行没动**。
++ *
++ * 原来全项目只有一个悬浮按钮、只有一种时序（课前 70 秒 + 课中 2 分钟），
++ * 覆盖不到「到点自动切课中」「课中距下课倒计时」「长课不中途收岛」这些真实分支，
++ * 所以像"上课倒计时正常、下课倒计时没了"这种问题只能靠碰。
++ *
++ * 这里每个场景都调用**主路径那几支发送函数**，只换时序，不复制发送逻辑 ——
++ * 避免"测的那套"和"跑的那套"分叉（本项目已经踩过文案分叉的坑）。
++ */
++@Composable
++private fun ReminderTestCard() {
++    val context = LocalContext.current
++    var channel by remember { mutableStateOf(ReminderTestScenario.channelLabel(context)) }
++
++    Card(
++        cornerRadius = 20.dp,
++        modifier = Modifier.fillMaxWidth(),
++        insideMargin = PaddingValues(0.dp),
++    ) {
++        Column(modifier = Modifier.fillMaxWidth()) {
++            Row(
++                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
++                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
++            ) {
++                Text(
++                    text = "超级岛 / 实时动态 测试",
++                    style = MiuixTheme.textStyles.body1.copy(
++                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
++                    ),
++                    color = MiuixTheme.colorScheme.onSurface,
++                )
++                Spacer(modifier = Modifier.weight(1f))
++                Text(
++                    text = "当前通道：$channel",
++                    style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
++                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
++                )
++            }
++            Text(
++                text = "每个场景都按当前通道发（岛开着走岛，关掉走原生实时动态），" +
++                    "并留足时间让你看着它走完。点一下即可，不写去重键、不影响真实提醒。",
++                style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
++                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
++                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
++            )
++            ReminderTestScenario.entries.forEach { scenario ->
++                ArrowPreference(
++                    title = scenario.label,
++                    summary = scenario.detail,
++                    onClick = {
++                        ReminderTestScenario.send(context, scenario)
++                        Toast.makeText(context, "已发送：${scenario.label}", Toast.LENGTH_SHORT).show()
++                    },
++                )
++            }
++            TextButton(
++                "重新读取通道",
++                { channel = ReminderTestScenario.channelLabel(context) },
++                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
++            )
++        }
++    }
++}
+-- 
+2.55.0
+

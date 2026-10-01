@@ -1,0 +1,96 @@
+From f99d8979b6800f512f593872eb98e29352f47d5a Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Sun, 27 Sep 2026 23:27:14 +0800
+Subject: [PATCH 21/30] =?UTF-8?q?v38:=20=E6=B8=85=E7=90=86=E5=8D=87?=
+ =?UTF-8?q?=E5=9F=BA=E5=87=86=E5=90=8E=E7=9A=84=E9=87=8D=E5=A4=8D=E5=85=A5?=
+ =?UTF-8?q?=E5=8F=A3=20=E2=80=94=E2=80=94=20=E8=B1=81=E5=85=8D=E8=AE=BE?=
+ =?UTF-8?q?=E7=BD=AE=E7=BB=9F=E4=B8=80=E7=94=A8=E4=B8=8A=E6=B8=B8=E9=82=A3?=
+ =?UTF-8?q?=E5=A5=97?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+rebase 到上游后，假期设置页里同时存在两套「假期末日豁免」入口：
+我原来的「返校节次豁免」行，以及上游自带的「节假日末期课程排除」（开关 + 节次范围 +
+saveEndCourseExclusion + 刷新）。同一个功能两个入口必然分叉，已统一到上游那套：
+
+- 删掉我的「返校节次豁免」SectionTitleRow（以及它下面被错误缝合过来的教学周重组规则列表，
+  该列表已挪回「教学周重组」那一项里，之前挂在豁免行下面属于排版错位）；
+- 提醒层的「已开启」门槛改为：上游 HolidayEndCourseExclusion.enabled 或本 fork 早期开关，
+  任一开着都算开启 —— 否则用户在上游设置项里打开了排除，返校提醒却不跟；
+- 设置页现在的三条入口：教学周重组 / 假期余额提醒（本 fork 独有）/ 节假日末期课程排除（上游）。
+
+(cherry picked from commit 89c74c45881b0f00a0d466827e675635b6f6282b)
+---
+ .../haooz/chedule/data/ReturnDayReminder.kt   |  8 +++++-
+ .../ui/activities/HolidaySettingsScreen.kt    | 28 ++++++++-----------
+ 2 files changed, 18 insertions(+), 18 deletions(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
+index b1028c21..a4f40910 100644
+--- a/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
++++ b/app/src/main/java/com/haooz/chedule/data/ReturnDayReminder.kt
+@@ -49,7 +49,13 @@ object ReturnDayReminder {
+         context: Context,
+         repository: CourseRepository,
+         date: LocalDate,
+-    ): Boolean = repository.getReturnDayReminder() && isReturnDay(context, date)
++    ): Boolean {
++        // 「已开启」以上游设置页为准（节假日末期课程排除 HolidayEndCourseExclusion.enabled），
++        // 同时兼容本 fork 早期的自有开关 —— 两处任一开着都算开启。
++        // 否则用户在上游那个设置项里打开了排除，返校提醒却因为读的是旧偏好而不跟。
++        val upstreamEnabled = HolidayManager.loadEndCourseExclusion(context).enabled
++        return (upstreamEnabled || repository.getReturnDayReminder()) && isReturnDay(context, date)
++    }
+ 
+     /**
+      * 返校日当天不被假期清空的节次。
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
+index acff2588..fd17109c 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
+@@ -560,23 +560,6 @@ fun HolidaySettingsScreen(
+                     description = "• 长假可能带来教学周的重组，并引发后续教学周的顺延更改\n• 可在此进行教学周重组，后续教学周将重新分配计算",
+                     liquidGlassBackdrop = liquidGlassBackdrop,
+                 )
+-                SectionTitleRow(
+-                    text = "假期余额提醒",
+-                    description = "• 假期期间每天一条，含假期最后一天（不占超级岛/实时动态的位置）\n" +
+-                        "• 独立开关：不再挂在「返校节次豁免」下面 —— 关掉豁免不会连带关掉余额提醒",
+-                    liquidGlassBackdrop = liquidGlassBackdrop,
+-                )
+-                HolidayBalanceCard()
+-            }
+-
+-            item {
+-                SectionTitleRow(
+-                    text = "返校节次豁免",
+-                    description = "• 假期最后一天整天算假期、默认空课不提醒；这里把指定节次豁免出来\n" +
+-                        "• 豁免的是课表里当天的真实课程，点开详情正常，不会出现空白页\n" +
+-                        "• 只在学期内、且「次日是上课日」的日子生效（假期最后一天、周日）",
+-                    liquidGlassBackdrop = liquidGlassBackdrop,
+-                )
+                 if (teachingWeekReorganizations.isNotEmpty()) {
+                     Card(
+                         cornerRadius = 20.dp,
+@@ -625,6 +608,17 @@ fun HolidaySettingsScreen(
+                     )
+                 }
+             }
++            }
++
++            item {
++                SectionTitleRow(
++                    text = "假期余额提醒",
++                    description = "• 假期期间每天一条，含假期最后一天（不占超级岛/实时动态的位置）\n" +
++                        "• 独立开关：不再挂在「返校节次豁免」下面 —— 关掉豁免不会连带关掉余额提醒",
++                    liquidGlassBackdrop = liquidGlassBackdrop,
++                )
++                HolidayBalanceCard()
++            }
+ 
+             item {
+                 SectionTitleRow(
+-- 
+2.55.0
+

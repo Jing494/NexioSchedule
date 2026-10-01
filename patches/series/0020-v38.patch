@@ -1,0 +1,164 @@
+From f357247b049b195b4e6ee8e6e59662508ea15583 Mon Sep 17 00:00:00 2001
+From: dsh-mobile <local@dsh>
+Date: Sun, 27 Sep 2026 23:24:50 +0800
+Subject: [PATCH 20/30] =?UTF-8?q?v38=EF=BC=9A=E5=8D=87=E5=9F=BA=E5=87=86?=
+ =?UTF-8?q?=E5=90=8E=E7=9A=84=E7=BC=96=E8=AF=91=E4=BF=AE=E5=A4=8D=20+=20?=
+ =?UTF-8?q?=E7=BB=9F=E4=B8=80=E5=81=87=E6=9C=9F=E8=B1=81=E5=85=8D=E5=88=A4?=
+ =?UTF-8?q?=E5=AE=9A?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+rebase 到上游 f2c4ab6 后，CI dry-run 报 11 个编译错误，逐个修好：
+- HolidaySettingsScreen：重复 import（RoundedCornerShape）；「教学周重组」与「假期余额提醒」
+  两行被拼进了同一次 SectionTitleRow 调用（text/description 重复传参）→ 拆成两条；
+- CustomizeScheduleScreen：「退出/应用」按钮的 shadow/layerBlock/onDrawSurface 仍引用我
+  v28 的 remember 变量，但结构已换成上游的内联实现 → 改回上游写法；
+- MainScheduleScreen：上游的 DayColumn 不接 exemptSections 参数 → 去掉该实参；
+- DayColumn：原来同时存在两套「是否假期」判定（我的 ReturnDayReminder.isExempt(exemptSections)
+  与上游的 holidayExemptCourseIds），会让同一门豁免课在课程卡路径与格子路径上一个打「假」标、
+  一个不打 → 统一用上游那套（HolidayCourseExclusion 算出的 id 集合），删掉我的 exemptSections 参数。
+
+(cherry picked from commit 955ccea415b1b4bbe894cf6c26cc78b66732719e)
+---
+ .../ui/activities/HolidaySettingsScreen.kt    |  4 +-
+ .../haooz/chedule/ui/components/DayColumn.kt  | 10 ++---
+ .../ui/screens/CustomizeScheduleScreen.kt     | 38 ++++++++++++++++---
+ .../chedule/ui/screens/MainScheduleScreen.kt  |  1 -
+ 4 files changed, 40 insertions(+), 13 deletions(-)
+
+diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
+index 4566d34b..acff2588 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt
+@@ -29,7 +29,6 @@ import androidx.compose.foundation.lazy.LazyColumn
+ import androidx.compose.foundation.lazy.rememberLazyListState
+ import androidx.compose.foundation.rememberScrollState
+ import androidx.compose.foundation.shape.CircleShape
+-import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.foundation.verticalScroll
+ import androidx.compose.material3.Icon
+ import androidx.compose.runtime.Composable
+@@ -559,6 +558,9 @@ fun HolidaySettingsScreen(
+                 SectionTitleRow(
+                     text = "教学周重组",
+                     description = "• 长假可能带来教学周的重组，并引发后续教学周的顺延更改\n• 可在此进行教学周重组，后续教学周将重新分配计算",
++                    liquidGlassBackdrop = liquidGlassBackdrop,
++                )
++                SectionTitleRow(
+                     text = "假期余额提醒",
+                     description = "• 假期期间每天一条，含假期最后一天（不占超级岛/实时动态的位置）\n" +
+                         "• 独立开关：不再挂在「返校节次豁免」下面 —— 关掉豁免不会连带关掉余额提醒",
+diff --git a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
+index ec0a1162..ddbe6f98 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/components/DayColumn.kt
+@@ -90,7 +90,6 @@ fun DayColumn(
+     holidayExemptCourseIds: Set<String> = emptySet(),
+     isWorkSwap: Boolean = false,
+     /** 返校日豁免节次：这些节次的课不算假期，按正常课渲染（不变灰、不打「假」标） */
+-    exemptSections: Set<Int> = emptySet(),
+     pendingDay: Int = -1,
+     pendingSection: Int = -1,
+     onPendingChange: (day: Int, section: Int) -> Unit = { _, _ -> },
+@@ -260,7 +259,6 @@ fun DayColumn(
+                 isHoliday = isHoliday,
+                 holidayExemptCourseIds = holidayExemptCourseIds,
+                 isWorkSwap = isWorkSwap,
+-                exemptSections = exemptSections,
+                 showBreakDividers = showBreakDividers,
+                 morningSections = morningSections,
+                 afternoonSections = afternoonSections,
+@@ -304,7 +302,6 @@ private fun CourseCardsLayer(
+     holidayExemptCourseIds: Set<String>,
+     isWorkSwap: Boolean,
+     /** 返校日豁免节次：这些节次的课按正常课渲染（不变灰、不打「假」标） */
+-    exemptSections: Set<Int> = emptySet(),
+     showBreakDividers: Boolean,
+     morningSections: Int,
+     afternoonSections: Int,
+@@ -396,8 +393,11 @@ private fun CourseCardsLayer(
+         val course = renderData.course
+         val isCurrentWeekCourse = renderData.isCurrentWeekCourse
+         val isDragging = course.id in draggingCourseIds && isCurrentWeekCourse
+-        // 返校日豁免：落在豁免节次的课不算假期，按正常课渲染（恢复课程色、不打「假」标）
+-        val courseIsHoliday = isHoliday && !ReturnDayReminder.isExempt(course, exemptSections)
++        // 假期末日豁免：落在豁免节次的课不算假期，按正常课渲染（恢复课程色、不打「假」标）。
++        // 判定统一用上游的 holidayExemptCourseIds（由 HolidayCourseExclusion 算出），
++        // 不再另走一套 ReturnDayReminder.exemptSections —— 两套判定并存时，
++        // 同一张卡在"课程卡路径"与"格子路径"上会一个打假标、一个不打。
++        val courseIsHoliday = isHoliday && course.id !in holidayExemptCourseIds
+ 
+         // 自定义时间课按时间轴插值定位/定高，不按节次分段
+         if (course.hasValidCustomTime()) {
+diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt
+index fed0605f..f6e40b25 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/screens/CustomizeScheduleScreen.kt
+@@ -985,9 +985,22 @@ fun CustomizeScheduleScreen(
+                                         vibrancy()
+                                     },
+                                     highlight = null,
+-                                    shadow = exitShadow,
+-                                    layerBlock = exitLayerBlock,
+-                                    onDrawSurface = onExitSurface
++                                    shadow = { Shadow(alpha = 0.3f) },
++                                    layerBlock = {
++                                        val progress = exitHighlight.pressProgress
++                                        val scale = 1f + 2f.dp.toPx() / 40.dp.toPx() * progress
++                                        scaleX = scale
++                                        scaleY = scale
++                                        val offset = exitHighlight.offset
++                                        translationX =
++                                            size.minDimension * 0.05f * offset.x / size.maxDimension
++                                        translationY =
++                                            size.minDimension * 0.05f * offset.y / size.maxDimension
++                                    },
++                                    onDrawSurface = {
++                                        drawRect(exitContainerColor)
++                                        drawRect(Color.Black.copy(alpha = 0.03f * exitHighlight.pressProgress))
++                                    }
+                                 )
+                                 .edgeLight(
+                                     shape = ContinuousCapsule(),
+@@ -1104,9 +1117,22 @@ fun CustomizeScheduleScreen(
+                                         vibrancy()
+                                     },
+                                     highlight = null,
+-                                    shadow = applyShadow,
+-                                    layerBlock = applyLayerBlock,
+-                                    onDrawSurface = onApplySurface
++                                    shadow = { Shadow(alpha = 0.3f) },
++                                    layerBlock = {
++                                        val progress = applyHighlight.pressProgress
++                                        val scale = 1f + 2f.dp.toPx() / 40.dp.toPx() * progress
++                                        scaleX = scale
++                                        scaleY = scale
++                                        val offset = applyHighlight.offset
++                                        translationX =
++                                            size.minDimension * 0.05f * offset.x / size.maxDimension
++                                        translationY =
++                                            size.minDimension * 0.05f * offset.y / size.maxDimension
++                                    },
++                                    onDrawSurface = {
++                                        drawRect(primaryColor.copy(0.8f))
++                                        drawRect(Color.Black.copy(alpha = 0.03f * applyHighlight.pressProgress))
++                                    }
+                                 )
+                                 .edgeLight(
+                                     shape = ContinuousCapsule(),
+diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
+index 3b4b477b..f5bae4e8 100644
+--- a/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
++++ b/app/src/main/java/com/haooz/chedule/ui/screens/MainScheduleScreen.kt
+@@ -998,7 +998,6 @@ fun MainScheduleScreen(
+                                 isHoliday = isHoliday,
+                                 holidayExemptCourseIds = holidayExemptCourseIds,
+                                 isWorkSwap = isWorkSwap,
+-                                exemptSections = dayFlags.exemptSections,
+                                 pendingDay = pendingDay,
+                                 pendingSection = pendingSection,
+                                 onPendingChange = onPendingChange,
+-- 
+2.55.0
+
