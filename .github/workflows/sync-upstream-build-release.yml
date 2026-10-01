@@ -162,6 +162,38 @@ jobs:
             "platforms;android-37.0" "build-tools;37.0.0" > /dev/null
           echo "SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
+      - name: 准备签名材料（上游新版 build.gradle.kts 在**构建期**就要 keystore）
+        # 上游 9ea4e54d 起，app/build.gradle.kts 加了 signingConfigs.release：
+        #   storeFile 默认 ../keystore/nexio-release.jks（相对 app 模块 = 仓库根 keystore/），
+        #   并把 debug / release 两个 buildType 都挂上了它。缺文件时 :app:validateSigningRelease
+        #   会让 assembleRelease 直接失败（我们就是这么红了一次 —— 代码本身没问题）。
+        # 所以：**构建之前**就把本 fork 的 keystore 放好，并用 keystore.properties
+        #   （上游用 rootProject.file 读它，且已在 .gitignore 忽略）覆盖路径/口令，
+        #   让 AGP 直接签出正式包 —— 证书仍是本 fork 的，覆盖安装不受影响。
+        if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ]; then
+            echo "::error::缺少 secrets.KEYSTORE_BASE64 —— 请按 README「自动构建」一节配置 4 个 secrets 后再运行"
+            exit 1
+          fi
+          mkdir -p signing
+          printf '%s' "$KS_B64" | base64 -d > signing/fork.jks
+          chmod 600 signing/fork.jks
+          # 值里若含反斜杠会被 java.util.Properties 当转义符 —— 先转义再写
+          esc() { printf '%s' "$1" | sed 's/\\/\\\\/g'; }
+          {
+            echo "storeFile=../signing/fork.jks"
+            echo "storePassword=$(esc "$KS_PASS")"
+            echo "keyAlias=$(esc "$KEY_ALIAS")"
+            echo "keyPassword=$(esc "$KEY_PASS")"
+          } > keystore.properties
+          echo "keystore.properties 已写入（storeFile=../signing/fork.jks，别名 ${KEY_ALIAS:-?}；口令不回显）"
+
       - name: 计算 fork 版本号并构建
         id: build
         if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
@@ -195,30 +227,34 @@ jobs:
           chmod +x gradlew
           ./gradlew :app:assembleRelease --no-daemon
 
-      - name: 用 fork keystore 签名
+      - name: 整理产物（AGP 已用 fork keystore 签好；上游若没有 signingConfig 则回退本地签名）
         if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
         env:
-          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
           KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASS: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -z "$KS_B64" ]; then
-            echo "::error::缺少 secrets.KEYSTORE_BASE64 —— 请按 README「自动构建」一节配置 4 个 secrets 后再运行"
-            exit 1
-          fi
-          mkdir -p signing
-          printf '%s' "$KS_B64" | base64 -d > signing/fork.jks
-          chmod 600 signing/fork.jks
           BT="$SDK_ROOT/build-tools/37.0.0"
           mkdir -p app/build/outputs/final
           APK_NAME="Nexio.v${{ steps.build.outputs.FORK_VER }}.apk"
-          "$BT/zipalign" -f 4 app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/final/aligned.apk
-          "$BT/apksigner" sign --ks signing/fork.jks --ks-key-alias "$KEY_ALIAS" \
-            --ks-pass env:KS_PASS --key-pass env:KEY_PASS \
-            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
-            --out "app/build/outputs/final/$APK_NAME" app/build/outputs/final/aligned.apk
-          "$BT/apksigner" verify --print-certs "app/build/outputs/final/$APK_NAME" | head -6
+          OUT="app/build/outputs/final/$APK_NAME"
+          SRC="app/build/outputs/apk/release/app-release.apk"
+          if [ -f "$SRC" ]; then
+            echo "✅ 构建期已签名（上游 signingConfigs.release + 本 fork 的 keystore）"
+          else
+            SRC="app/build/outputs/apk/release/app-release-unsigned.apk"
+            echo "::warning::上游没有 release signingConfig —— 回退到本地 zipalign + apksigner"
+            "$BT/zipalign" -f 4 "$SRC" app/build/outputs/final/aligned.apk
+            "$BT/apksigner" sign --ks signing/fork.jks --ks-key-alias "$KEY_ALIAS" \
+              --ks-pass env:KS_PASS --key-pass env:KEY_PASS \
+              --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+              --out "$OUT" app/build/outputs/final/aligned.apk
+            SRC="$OUT"
+          fi
+          # ★ 只做对齐检查，绝不 zipalign 已签名的包（签完再对齐会破坏 v2/v3 签名）
+          "$BT/zipalign" -c 4 "$SRC" || echo "::warning::zipalign -c 未通过（AGP/上游产物默认已对齐，仅提示）"
+          "$BT/apksigner" verify --print-certs "$SRC" | head -6
+          cp -f "$SRC" "$OUT"
           ( cd app/build/outputs/final && sha256sum "$APK_NAME" > "$APK_NAME.sha256" && cat "$APK_NAME.sha256" )
           ls -lh app/build/outputs/final/
 
