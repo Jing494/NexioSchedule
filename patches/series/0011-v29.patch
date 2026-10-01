@@ -1,4 +1,4 @@
-From 62615b598c20dead4e7fcb27101f6464c0088140 Mon Sep 17 00:00:00 2001
+From dc352a9ee691609c7b81a38bdcf9615d54169921 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 11:27:44 +0800
 Subject: [PATCH 11/30] =?UTF-8?q?v29:=20=E6=AF=9B=E7=8E=BB=E7=92=83?=
@@ -36,7 +36,7 @@ Content-Transfer-Encoding: 8bit
 assembleRelease BUILD SUCCESSFUL；apksigner + sha256 + badging 通过；
 dex 独立佐证 glassPerfFactor FOUND、glassBlurEnabled MISSING。
 
-(cherry picked from commit 3d29b76e0d9c2a645a1b5e0676e57648771810c2)
+(cherry picked from commit bd2564ddde03229c143aab854b3823f61a022ce5)
 ---
  .../chedule/ui/activities/MainActivity.kt     | 19 ++++---
  .../haooz/chedule/ui/components/CourseCard.kt | 12 +++--
@@ -187,7 +187,7 @@ index e2dbb30f..5829d189 100644
              translate(-1f, -1f) {
                  drawLayer(edgeLightLayer)
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-index 1889bb1d..b87fc192 100644
+index 9ae5eea7..09cae6a5 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 @@ -67,7 +67,7 @@ import com.haooz.chedule.ui.basic.collapsibleTopInset
@@ -225,7 +225,7 @@ index 1889bb1d..b87fc192 100644
                          }
                      }
                  }
-@@ -1739,13 +1746,20 @@ private fun CourseSectionTitle(
+@@ -1715,13 +1722,20 @@ private fun CourseSectionTitle(
          val titleEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
              remember(refraction, blurPx) {
                  {

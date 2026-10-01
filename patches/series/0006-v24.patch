@@ -1,4 +1,4 @@
-From 589a15d322900cda91fc107427d2742e3b66742a Mon Sep 17 00:00:00 2001
+From 903655ffb5b2502c8a513fb215ca08cf4e2a4554 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 08:21:53 +0800
 Subject: [PATCH 06/30] =?UTF-8?q?v24=EF=BC=9A=E4=BF=AE=E8=AF=BE=E8=A1=A8?=
@@ -33,7 +33,7 @@ computeDropTarget 改成用 sectionTop 反查（与 DayColumn 空白格点击的
 - 课中实况 ProgressStyle 分支：BigTextStyle 随后被 ProgressStyle 覆盖，
   expandedText（含教室）被整个丢掉，降级路径却有教室；用 setSubText 把教室补回来
 
-(cherry picked from commit 87f77d53adbe60a33b463563c63ef7df1ae1fd15)
+(cherry picked from commit 8055ce56bcf836025c9dd22b695c3e0926c55f18)
 ---
  .../haooz/chedule/reminder/AlarmReceiver.kt   | 27 ++++++++--------
  .../chedule/reminder/CourseReminderHelper.kt  |  4 +++

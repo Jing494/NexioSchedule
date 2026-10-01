@@ -1,4 +1,4 @@
-From a0f39d0efb6e32a65d4b8342aab2d010caea846e Mon Sep 17 00:00:00 2001
+From 8bde5375ffb7f8f281147d2c2fcee8880898985d Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 09:57:57 +0800
 Subject: [PATCH 08/30] =?UTF-8?q?v26=EF=BC=9A=E4=BF=AE=E3=80=8C=E5=81=87?=
@@ -27,7 +27,7 @@ Content-Transfer-Encoding: 8bit
 所有闹钟 exactAllowReason=policy_permission、receiver 能被唤醒（广播历史可见）、
 crash 缓冲区无本包记录。所以问题在应用逻辑，不在系统。
 
-(cherry picked from commit 62429499783f1eb53102c65619d84a755b3eb77c)
+(cherry picked from commit 3f4be9dd28ab03e9603ee577ce6678849ff86441)
 ---
  .../chedule/reminder/CourseReminderHelper.kt      | 15 +++++++++++----
  1 file changed, 11 insertions(+), 4 deletions(-)

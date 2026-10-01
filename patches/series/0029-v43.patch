@@ -1,4 +1,4 @@
-From 465884290c092dde18ff11287e5fc7aeeedfac79 Mon Sep 17 00:00:00 2001
+From 02df25f8aad68ba4be6e83768224e61796f993e6 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Thu, 1 Oct 2026 09:49:44 +0800
 Subject: [PATCH 29/30] =?UTF-8?q?v43=EF=BC=9A=E4=BF=AE=E3=80=8C=E6=8F=90?=
@@ -24,14 +24,14 @@ Content-Transfer-Encoding: 8bit
 体检项现在 6 条：通知权限 / 后台不受限 / 精确闹钟 / 后台自启动 / 提醒通道 / 系统勿扰。
 门禁加第 31–33 条：通道必须在启动时创建（两处）+ 体检必须区分未创建与被停用。
 
-(cherry picked from commit 31ebe455554a2a6c1be3ec91ee63b6536dba7619)
+(cherry picked from commit ef25939de69370f9216adc212664827ab1bbd8b9)
 ---
  .../com/haooz/chedule/NexioApplication.kt     |  2 +
  .../ui/activities/CourseReminderScreen.kt     | 37 +++++++++++++++----
  2 files changed, 32 insertions(+), 7 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/NexioApplication.kt b/app/src/main/java/com/haooz/chedule/NexioApplication.kt
-index bdb4a39c..9e82b263 100644
+index ec20d25c..d5c231e0 100644
 --- a/app/src/main/java/com/haooz/chedule/NexioApplication.kt
 +++ b/app/src/main/java/com/haooz/chedule/NexioApplication.kt
 @@ -28,6 +28,8 @@ class NexioApplication : Application() {
@@ -42,7 +42,7 @@ index bdb4a39c..9e82b263 100644
 +        com.haooz.chedule.reminder.CourseReminderHelper.ensureAllNotificationChannels(this)
          warmUpSharedPreferences()
          cleanupTransientFiles()
-     }
+         initWearableSync()
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt
 index 38866814..b9a8572c 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/CourseReminderScreen.kt

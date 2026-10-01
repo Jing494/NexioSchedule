@@ -1,4 +1,4 @@
-From fa63533c3f9799a02b34d126540f4136aac00596 Mon Sep 17 00:00:00 2001
+From 38949fc087ed97012e8a06f83d85571ef311e555 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Wed, 30 Sep 2026 20:04:26 +0800
 Subject: [PATCH 26/30] =?UTF-8?q?fix(base):=20=E6=B5=8B=E8=AF=95=E8=B7=AF?=
@@ -14,7 +14,7 @@ startTime, testMode) 不再带 classroom（真实路径也不传），而我 v32
 classroom = classroom → No parameter with name 'classroom' found。
 测试路径与真实路径保持一致（都交给函数内部拼正文），否则两条路观感又会不一样。
 
-(cherry picked from commit 9b4fd4d9e556d3a676c1bbfb4a7a073b2753ee3c)
+(cherry picked from commit 9e362d55f56995b9a1adf6cd50973646f897f195)
 ---
  .../java/com/haooz/chedule/reminder/CourseReminderHelper.kt    | 3 ++-
  1 file changed, 2 insertions(+), 1 deletion(-)

@@ -1,4 +1,4 @@
-From b70fea8946a5a51f9af06c34b2973753fe7ae18c Mon Sep 17 00:00:00 2001
+From ce9371153bf12418f87a82b68a5a4eb7e91e4d39 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 08:31:41 +0800
 Subject: [PATCH 07/30] =?UTF-8?q?v25=EF=BC=9A=E6=8B=96=E6=8B=BD=E7=AC=AC?=
@@ -31,7 +31,7 @@ sectionTopPx() 同样是**均匀模型**（没有特殊块偏移），而它是�
 离线复算（dist-v25/verify_droptarget.py）新增"吸附位置"一节：
   第 1~6 节 old==new；第 7~12 节 old 固定偏 -1.50 格（向上），new 全部正确。
 
-(cherry picked from commit 3e93987558f0330dc50c3c16060546666b091be0)
+(cherry picked from commit af659520b51729cbba7f0013ece60777c71776e6)
 ---
  .../chedule/ui/activities/MainActivity.kt     | 44 ++++++++++++++++---
  1 file changed, 38 insertions(+), 6 deletions(-)

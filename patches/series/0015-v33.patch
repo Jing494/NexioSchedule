@@ -1,4 +1,4 @@
-From 2342f7bd267342c04c679bc2938e90f4be91d740 Mon Sep 17 00:00:00 2001
+From 2b5802ad94da186df2b969a4730ff7260b3a9ba9 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 14:04:18 +0800
 Subject: [PATCH 15/30] =?UTF-8?q?v33:=20=E6=B5=8B=E8=AF=95=E7=8B=AC?=
@@ -46,7 +46,7 @@ Kotlin 守护进程 →1536m；实测 BUILD SUCCESSFUL 11m34s（比 4G/双 worke
 验证：verify_testpage_v33.py 22 项全过（覆盖矩阵 / 独立成页 / 体检卡折叠与位置用下标比较 /
 次日文案只有一份实现）；编译、签名、sha256、badging、APK 内编译后 Manifest 均核验通过。
 
-(cherry picked from commit a1946ea16b2e1b03e5f9e07ae8567998e9ceff39)
+(cherry picked from commit 79724244ee4081aa9beca9bcf8ee6a65defd8cdd)
 ---
  app/src/main/AndroidManifest.xml              |   7 +
  .../haooz/chedule/reminder/AlarmReceiver.kt   |  30 +-
@@ -61,10 +61,10 @@ Kotlin 守护进程 →1536m；实测 BUILD SUCCESSFUL 11m34s（比 4G/双 worke
  create mode 100644 app/src/main/java/com/haooz/chedule/ui/screens/ReminderTestScreen.kt
 
 diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
-index 3ec6b08f..ecce5baf 100644
+index b44e2695..f2b2437e 100644
 --- a/app/src/main/AndroidManifest.xml
 +++ b/app/src/main/AndroidManifest.xml
-@@ -114,6 +114,13 @@
+@@ -115,6 +115,13 @@
              android:label="课程提醒"
              android:theme="@style/Theme.课程表"
              android:windowSoftInputMode="adjustResize" />
@@ -949,7 +949,7 @@ index 00000000..e78ee324
 +    )
 +}
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt
-index f63d22d3..c0735b00 100644
+index cbd6d82f..7a9176d3 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/SettingsScreen.kt
 @@ -49,6 +49,7 @@ import com.haooz.chedule.data.TeachingWeekReorganization

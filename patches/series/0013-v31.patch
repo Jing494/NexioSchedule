@@ -1,4 +1,4 @@
-From 5a7e60c5a53a5331fb82e3cc813e974f44f222bf Mon Sep 17 00:00:00 2001
+From 000828d897ae4b2e06ed5cf138e035c42a90c5b2 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 13:11:13 +0800
 Subject: [PATCH 13/30] =?UTF-8?q?v31:=20=E4=BF=AE=E3=80=8C=E8=BF=94?=
@@ -44,7 +44,7 @@ Content-Transfer-Encoding: 8bit
 标题·兜底·短文本都用 verb / 三个调用点都传 targetDate / 16:00 口径互补）+
 1 项前提核对（isReturnDay 公式）。assembleRelease 通过；签名与 sha256 通过。
 
-(cherry picked from commit d4b89352fe760acd75c9445e8cefdce304719254)
+(cherry picked from commit 1acf0cab6297a79fff2670158fc1572fab9c6818)
 ---
  .../haooz/chedule/reminder/AlarmReceiver.kt   |  4 ++
  .../chedule/reminder/CourseReminderHelper.kt  | 42 +++++++++++++++++--

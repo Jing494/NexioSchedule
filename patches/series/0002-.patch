@@ -1,4 +1,4 @@
-From bc9f3f490aa955c489d49e5227e6e0ed6441ffe0 Mon Sep 17 00:00:00 2001
+From b093a1fc2cf1c411b9b7eece8ac26cdd77f9b672 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sat, 26 Sep 2026 21:58:58 +0800
 Subject: [PATCH 02/30] =?UTF-8?q?=E4=BD=99=E9=A2=9D/=E6=B8=85=E5=8D=95?=
@@ -13,7 +13,7 @@ Content-Transfer-Encoding: 8bit
 - 自续：精确闹钟触发后走同一套判定发送，并顺手把明天的闹钟排上
 - 设置关闭时取消对应闹钟；刷新链那套保留作兜底（闹钟丢失/Doze 延迟仍能补发）
 
-(cherry picked from commit fcc696867e50d70eb93d06111cfb6d017aa6c9d0)
+(cherry picked from commit d261eca552a1a80b3c8f758ef64aefd3615d627f)
 ---
  .../haooz/chedule/reminder/AlarmReceiver.kt   |  7 ++
  .../chedule/reminder/CourseReminderHelper.kt  | 75 +++++++++++++++++++

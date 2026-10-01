@@ -1,4 +1,4 @@
-From 3eb8fd456db967cb93568d5351d9df18bc821bc6 Mon Sep 17 00:00:00 2001
+From 0ef63082c12582f0d8882f295b56ac13ef7083b7 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Mon, 28 Sep 2026 21:31:46 +0800
 Subject: [PATCH 23/30] =?UTF-8?q?v39=EF=BC=9A=E4=BF=AE=E5=8D=87=E5=9F=BA?=
@@ -31,7 +31,7 @@ Content-Transfer-Encoding: 8bit
 排查方式（可复跑）：把仓库里所有 get/set 配对扫一遍，找"有读没有写"（UI 上永远动不了）
 与"有写没有读"（死配置）的项 —— 当前全仓库 0 个。
 
-(cherry picked from commit fe26d56b6b2f9e67d814841397b85b5045d7143f)
+(cherry picked from commit 0c341a2bdaf67a7d9b3cb53c6ee9e989e6739123)
 ---
  .../haooz/chedule/data/CourseRepository.kt    |  68 -----
  .../com/haooz/chedule/data/HolidayManager.kt  |   2 +-
@@ -43,7 +43,7 @@ Content-Transfer-Encoding: 8bit
  7 files changed, 47 insertions(+), 417 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
-index b02d689a..e79bc40c 100644
+index e5854986..d31a83e9 100644
 --- a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
 +++ b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
 @@ -253,10 +253,6 @@ class CourseRepository private constructor(context: Context) {
@@ -57,7 +57,7 @@ index b02d689a..e79bc40c 100644
          private const val KEY_LIVE_PROGRESS_STYLE = "live_progress_style"
          private const val KEY_RETURN_DAY_BALANCE_ENABLED = "return_day_balance_enabled"
          private const val KEY_RETURN_DAY_BALANCE_HOUR = "return_day_balance_hour"
-@@ -1203,58 +1199,6 @@ class CourseRepository private constructor(context: Context) {
+@@ -1205,58 +1201,6 @@ class CourseRepository private constructor(context: Context) {
          prefs.edit { putInt(KEY_NEXT_DAY_REMINDER_MINUTE, minute) }
      }
  
@@ -116,7 +116,7 @@ index b02d689a..e79bc40c 100644
      /**
       * 实时动态是否使用 API 36 的 ProgressStyle（带 tracker 图标的进度组件）。
       * 默认开；部分机型（如本机 HyperOS）该分支不激活、会落成普通通知，此时可关掉降级。
-@@ -1333,18 +1277,6 @@ class CourseRepository private constructor(context: Context) {
+@@ -1335,18 +1279,6 @@ class CourseRepository private constructor(context: Context) {
          }
      }
  

@@ -1,4 +1,4 @@
-From c38ef382c09673f2fbfc4ac9ce6c7f6f708a4988 Mon Sep 17 00:00:00 2001
+From 432bb9e44fdcacf6a6320b886e4e6079f3d33b6a Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sat, 26 Sep 2026 23:40:58 +0800
 Subject: [PATCH 03/30] =?UTF-8?q?=E5=AE=A1=E8=AE=A1=E4=BF=AE=E5=A4=8D=20+?=
@@ -36,7 +36,7 @@ Content-Transfer-Encoding: 8bit
 - EdgeLightElement 值重载按值比较（原来每次重组都失效 outline 缓存）
 - AlarmReceiver 去掉每次闹钟都跑的 SimpleDateFormat 调试日志；6 处裸 Log.d 改走门控 logD
 
-(cherry picked from commit 5133cf086055574ae830919b41a973b54d155838)
+(cherry picked from commit 90740f7b62f7de0f7da57e6130bc0ef2c937f147)
 ---
  .../com/haooz/chedule/data/HolidayManager.kt  |  11 ++
  .../haooz/chedule/data/ReturnDayReminder.kt   |  58 ++++--
@@ -1070,7 +1070,7 @@ index f6e40b25..fed0605f 100644
                                  .edgeLight(
                                      shape = ContinuousCapsule(),
 diff --git a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
-index adce9331..4a7f62e6 100644
+index f9512053..e170080a 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/screens/TodayScreen.kt
 @@ -147,6 +147,7 @@ fun BlurCard(
@@ -1081,7 +1081,7 @@ index adce9331..4a7f62e6 100644
          Box(
              modifier = modifier
                  .clip(shape)
-@@ -650,12 +651,20 @@ fun TodayScreen(
+@@ -622,12 +623,20 @@ fun TodayScreen(
                          )
                      }
                  }

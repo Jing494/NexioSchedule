@@ -1,4 +1,4 @@
-From 26b8db594a7676b0f94a6ff747348fb7a2d33204 Mon Sep 17 00:00:00 2001
+From 6b972e05279241f93879f5c581d09d32d1567874 Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 07:34:06 +0800
 Subject: [PATCH 04/30] =?UTF-8?q?v22=EF=BC=9A=E4=BF=AE=E6=A4=AD=E5=9C=86?=
@@ -33,7 +33,7 @@ Content-Transfer-Encoding: 8bit
 【其他】
 - ensureNotificationChannels 改为 10 分钟心跳复核（原一次性布尔会让'通道被用户删掉'后不再重建）
 
-(cherry picked from commit abd4824dcb906c70ed078026d726867fdc098404)
+(cherry picked from commit a08bc793222cc313944c269cfccf818ff3784285)
 ---
  .../haooz/chedule/data/ReturnDayReminder.kt   | 56 ++++++++++----
  .../chedule/reminder/CourseReminderHelper.kt  | 40 ++++++++--

@@ -1,4 +1,4 @@
-From 386b7d35c122eed89f6a905eb4e2b86ce672d742 Mon Sep 17 00:00:00 2001
+From 02cd6138d14bba5e350278329dea6701e8fcc9ee Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 13:39:57 +0800
 Subject: [PATCH 14/30] =?UTF-8?q?v32:=20=E4=BF=AE=E8=AF=BE=E4=B8=AD?=
@@ -42,7 +42,7 @@ Content-Transfer-Encoding: 8bit
 14 项场景板约束，含"老按钮与默认参数未被改动""UI 不自己拼发送逻辑"）；
 assembleRelease 通过；签名与 sha256 通过；dex 内新符号全部 FOUND。
 
-(cherry picked from commit f534c55b2f492bb357a0add46373b1a4c2707d18)
+(cherry picked from commit f424e3856d0edcd9109308be72e8fbb5a939d98e)
 ---
  .../chedule/reminder/CourseReminderHelper.kt  | 87 ++++++++++++++++--
  .../reminder/IslandNotificationHelper.kt      | 70 +++++++++++++--

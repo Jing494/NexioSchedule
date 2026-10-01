@@ -1,4 +1,4 @@
-From f99d8979b6800f512f593872eb98e29352f47d5a Mon Sep 17 00:00:00 2001
+From ae14057b3e4f1a8ead273f3ff3cb0af6356ec73b Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 23:27:14 +0800
 Subject: [PATCH 21/30] =?UTF-8?q?v38:=20=E6=B8=85=E7=90=86=E5=8D=87?=
@@ -20,7 +20,7 @@ saveEndCourseExclusion + 刷新）。同一个功能两个入口必然分叉，�
   任一开着都算开启 —— 否则用户在上游设置项里打开了排除，返校提醒却不跟；
 - 设置页现在的三条入口：教学周重组 / 假期余额提醒（本 fork 独有）/ 节假日末期课程排除（上游）。
 
-(cherry picked from commit 89c74c45881b0f00a0d466827e675635b6f6282b)
+(cherry picked from commit 61a3caa69faa9991f041fa6bb0ae0ee97dad88ca)
 ---
  .../haooz/chedule/data/ReturnDayReminder.kt   |  8 +++++-
  .../ui/activities/HolidaySettingsScreen.kt    | 28 ++++++++-----------

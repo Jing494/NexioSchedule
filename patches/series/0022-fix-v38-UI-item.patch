@@ -1,4 +1,4 @@
-From 24c47c44d37110deda06e719fbc7fc6dc2908a0e Mon Sep 17 00:00:00 2001
+From fd1db1c2ed3f79dcedbc056673a9dcb93c47f045 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 23:34:59 +0800
 Subject: [PATCH 22/30] =?UTF-8?q?fix(v38):=20=E4=BF=AE=20UI=20=E7=BB=93?=
@@ -11,7 +11,7 @@ MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-(cherry picked from commit af17800e033c0c8901b503f7d9f9bed6ff973fa4)
+(cherry picked from commit 9f22b6ae9dc5df2f6ccc2459ed40801b28495ae7)
 ---
  .../com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt     | 1 -
  1 file changed, 1 deletion(-)

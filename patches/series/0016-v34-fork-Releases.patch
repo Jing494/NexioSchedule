@@ -1,4 +1,4 @@
-From afd70365f08fd88294822072527fa197977210c3 Mon Sep 17 00:00:00 2001
+From ee151af679646f5992e454a2266b38a120c55cad Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 17:19:28 +0800
 Subject: [PATCH 16/30] =?UTF-8?q?v34:=20=E5=BA=94=E7=94=A8=E5=86=85?=
@@ -21,7 +21,7 @@ https://github.com/Jing494/NexioSchedule/releases/latest
 可直接覆盖安装的包。对应的自动构建在仓库 master 的
 .github/workflows/sync-upstream-build-release.yml（GitHub Actions 全程构建 + fork keystore 签名）。
 
-(cherry picked from commit 52a49d8a717a0b61c39b6032b7d3727f51c1a66d)
+(cherry picked from commit 11347cd81b66349059c7d29c1a4d42945c41c807)
 ---
  .../chedule/ui/components/UpdateDialog.kt     | 30 +++++++++++++++++++
  1 file changed, 30 insertions(+)

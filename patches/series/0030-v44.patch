@@ -1,4 +1,4 @@
-From 13322df8e12df126744d5be8cc95e9bf46be4c21 Mon Sep 17 00:00:00 2001
+From ea415f95834c4ac81fba8c1b25faf37667854b02 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Thu, 1 Oct 2026 09:57:40 +0800
 Subject: [PATCH 30/30] =?UTF-8?q?v44=EF=BC=9A=E6=80=BB=E5=BC=80=E5=85=B3?=
@@ -24,7 +24,7 @@ Content-Transfer-Encoding: 8bit
 
 门禁加第 34 条：必须存在 restoreMasterDependentSwitches 且在打开路径被调用。
 
-(cherry picked from commit ca66425e20e1f6dd488a917ddabf71ead94a9787)
+(cherry picked from commit fea4ffa6e6e2deda7b76686bf5f8a835e0ed4075)
 ---
  .../ui/activities/CourseReminderScreen.kt     | 25 +++++++++++++++++++
  1 file changed, 25 insertions(+)

@@ -34,7 +34,7 @@ env:
   #   固定基准 → 补丁永远能干净应用、每次都能出包（本仓库要的是"随时能拿到我的定制版"）；
   #   上游有新提交时不再盲目追最新，只开 Issue 提醒"该 rebase 了"（见最后一步）。
   #   想升级：rebase 定制栈到新上游 → 重新生成 patches/series/ → 改这一行。
-  UPSTREAM_BASE: 291e8b9b57c8f331d8f189c52553f41dfd0ce017
+  UPSTREAM_BASE: fbb16aa3679bbfc3dfa5a993858cadb2e3ff19dd
 
 jobs:
   sync-and-build:

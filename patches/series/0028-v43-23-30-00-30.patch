@@ -1,4 +1,4 @@
-From ff9d30dbdf4ad4abc6d2d74f24252ec104945d76 Mon Sep 17 00:00:00 2001
+From b0443f222cb78fe2def5329fae0199a2a1614d5e Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Thu, 1 Oct 2026 09:49:43 +0800
 Subject: [PATCH 28/30] =?UTF-8?q?v43=EF=BC=9A=E4=BF=AE=E8=B7=A8=E9=9B=B6?=
@@ -25,7 +25,7 @@ ClassDndHelper 早就有同样的处理（注释写着"跨零点的课（如 23:
 离线复算过 5 组（23:30–00:30 / 22:00–01:00 / 普通课 / 数据错误 / 18:30–19:30）。
 门禁第 30 条：禁止再直接用 parseTimeToTodayMillis 算结束。
 
-(cherry picked from commit 5064d155af783ba079013030d17c7fb82606e921)
+(cherry picked from commit 969c98303bcc8c321133107714d450949be7e19d)
 ---
  .../haooz/chedule/reminder/AlarmReceiver.kt   |  3 +-
  .../haooz/chedule/reminder/ClassDndHelper.kt  | 11 +++---

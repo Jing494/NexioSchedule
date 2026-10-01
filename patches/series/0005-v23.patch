@@ -1,4 +1,4 @@
-From 1f01e9beb56b1a10c54e63e2309678a1d384abf7 Mon Sep 17 00:00:00 2001
+From 5b988ff068af5d7ef37cceff21023c373513a75c Mon Sep 17 00:00:00 2001
 From: dsh-local <dsh@local>
 Date: Sun, 27 Sep 2026 08:00:24 +0800
 Subject: [PATCH 05/30] =?UTF-8?q?v23=EF=BC=9A=E4=BF=AE=E8=B6=85=E7=BA=A7?=
@@ -46,7 +46,7 @@ Content-Transfer-Encoding: 8bit
 - islandTimeout 写死 3600s（岛消失时间，单位 s）→ 晚自习这种 >60 分钟的课会中途收岛。
   现在同样按时间线给（距上课/下课秒数 + 120），明天返校放宽到 12 小时。
 
-(cherry picked from commit bb5a0f358611778efd32cb54cd5819830f08617f)
+(cherry picked from commit a322dc41068a2e7c24e6449da0839423836ce1a7)
 ---
  .../chedule/reminder/CourseReminderHelper.kt  |  11 +-
  .../reminder/IslandNotificationHelper.kt      | 263 +++++++++++++-----

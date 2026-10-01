@@ -1,4 +1,4 @@
-From 8ffa6fd36778691f91eae68881016a8557b1ee98 Mon Sep 17 00:00:00 2001
+From 5cb2578696fdca1ae836ec9ebb6ed118b02e9d25 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Mon, 28 Sep 2026 21:36:55 +0800
 Subject: [PATCH 24/30] =?UTF-8?q?fix(v39):=20=E8=A1=A5=E5=9B=9E=20timePick?=
@@ -10,7 +10,7 @@ MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-(cherry picked from commit 9b4ef6a5dea117770c422eca5883202642fb11d6)
+(cherry picked from commit 171f2055a0b4d54a022c2c1ee17000d514903b37)
 ---
  .../com/haooz/chedule/ui/activities/HolidaySettingsScreen.kt     | 1 +
  1 file changed, 1 insertion(+)

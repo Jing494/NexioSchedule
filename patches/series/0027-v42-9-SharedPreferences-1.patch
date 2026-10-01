@@ -1,4 +1,4 @@
-From 69eba3995e1d5fcbc1667ad088e42bcd81c37ad5 Mon Sep 17 00:00:00 2001
+From 0dcb60e9f6209c051084745390294c74e92c765c Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Wed, 30 Sep 2026 20:04:27 +0800
 Subject: [PATCH 27/30] =?UTF-8?q?v42=EF=BC=9A=E5=A4=87=E4=BB=BD/=E4=BA=91?=
@@ -28,15 +28,15 @@ stats_prefs（计数）、webdav_config（含凭据，绝不进备份文件）�
 
 门禁加第 28/29 条不变量：备份必须覆盖这几个文件、跨文件还原必须走白名单（均做了反向对照）。
 
-(cherry picked from commit 8765fceda8a32558691e7fa359fd7993e40144dd)
+(cherry picked from commit 4f585f1fc584d8159eabfa5303848d377c8683a7)
 ---
- .../haooz/chedule/data/CourseRepository.kt    | 88 +++++++++++++++++++
+ .../haooz/chedule/data/CourseRepository.kt    | 94 ++++++++++++++++++-
  .../com/haooz/chedule/data/WebDavManager.kt   |  2 +
  .../ui/activities/LocalBackupScreen.kt        |  3 +
- 3 files changed, 93 insertions(+)
+ 3 files changed, 96 insertions(+), 3 deletions(-)
 
 diff --git a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
-index 3809286e..7c7a14d6 100644
+index 1adfb079..3de74625 100644
 --- a/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
 +++ b/app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
 @@ -226,6 +226,30 @@ class CourseRepository private constructor(context: Context) {
@@ -70,7 +70,18 @@ index 3809286e..7c7a14d6 100644
          private const val KEY_COURSES = "courses"
          private const val KEY_CURRENT_WEEK = "current_week"
          private const val KEY_TOTAL_WEEKS = "total_weeks"
-@@ -2613,6 +2637,26 @@ class CourseRepository private constructor(context: Context) {
+@@ -2594,7 +2618,9 @@ class CourseRepository private constructor(context: Context) {
+      *   （其新增的 isCombinationBackupKey / isAppFeatureBackupKey 就是干这个的）。
+      *   本 fork 选择**带上全部用户设置** —— 换设备或重装后，课前提醒 / 超级岛开关 / 勿扰 /
+      *   假期余额 / 返校准备清单 / 小部件档位 / 搭配外观 / 教学周重组规则 不会静默回到默认值。
+-     *   要改回上游语义：删掉下面的 excludedKeys，改用上游那两个 helper 即可。
++     *   要改回上游语义：删掉下面的 excludedKeys、改用上游那两个 helper，
++     *   并在恢复侧加回它的那条跳过守卫（`if (isCombinationBackupKey(key) || isAppFeatureBackupKey(key)
++     *   || key == KEY_REMINDER_PREFS) continue`）—— 上游是"导出不写 + 恢复不覆盖"两侧成对的。
+      *
+      * ★ 另外这里必须是**黑名单**，不能退回白名单。
+      *   原实现只导"带 schedule_/time_config_ 前缀的键 + 8 个全局键"，
+@@ -2622,6 +2648,26 @@ class CourseRepository private constructor(context: Context) {
                  }
              }
          }
@@ -97,7 +108,7 @@ index 3809286e..7c7a14d6 100644
          if (KEY_SCHEDULE_NAMES !in result) {
              result[KEY_SCHEDULE_NAMES] = gson.toJson(getScheduleNames())
          }
-@@ -2637,6 +2681,46 @@ class CourseRepository private constructor(context: Context) {
+@@ -2646,6 +2692,46 @@ class CourseRepository private constructor(context: Context) {
          }
      }
  
@@ -144,10 +155,12 @@ index 3809286e..7c7a14d6 100644
      private fun restoreAllPreferences(
          data: Map<String, Any>,
          holidayBackup: HolidayManager.BackupData,
-@@ -2665,6 +2749,10 @@ class CourseRepository private constructor(context: Context) {
+@@ -2674,8 +2760,10 @@ class CourseRepository private constructor(context: Context) {
                  if (key == HolidayManager.BACKUP_KEY ||
                      key == HolidayManager.BACKUP_EXCLUSION_KEY
                  ) continue
+-                // 搭配、提醒等应用功能设置不进备份，恢复时也不覆盖设备上的对应配置
+-                if (isCombinationBackupKey(key) || isAppFeatureBackupKey(key) || key == KEY_REMINDER_PREFS) continue
 +                if (key.startsWith(BACKUP_PREFS_TAG)) {
 +                    restoreExtraPreference(key, value)
 +                    continue
@@ -169,18 +182,18 @@ index f1ce3927..b4fc7a88 100644
                          Log.d(TAG, "Restore succeeded from ${latest.backupTime}")
                          RestoreResult.Success(latest.backupTime)
 diff --git a/app/src/main/java/com/haooz/chedule/ui/activities/LocalBackupScreen.kt b/app/src/main/java/com/haooz/chedule/ui/activities/LocalBackupScreen.kt
-index bb47b08b..a9205033 100644
+index 64f49104..07d3fec9 100644
 --- a/app/src/main/java/com/haooz/chedule/ui/activities/LocalBackupScreen.kt
 +++ b/app/src/main/java/com/haooz/chedule/ui/activities/LocalBackupScreen.kt
-@@ -63,6 +63,7 @@ import com.haooz.chedule.ui.basic.CollapsibleTopAppBarDefaults
- import com.haooz.chedule.ui.basic.OverlayDropdownMenu
+@@ -64,6 +64,7 @@ import com.haooz.chedule.ui.basic.OverlayDropdownMenu
  import com.haooz.chedule.ui.basic.SharedScrollBehavior
  import com.haooz.chedule.ui.basic.collapsibleTopInset
+ import com.haooz.chedule.ui.utils.courseToShareMap
 +import com.haooz.chedule.ui.utils.AppMaterialSettings
  import com.haooz.chedule.ui.utils.isAppDarkTheme
  import com.haooz.chedule.ui.utils.overScrollVertical
  import com.haooz.chedule.viewmodel.CourseViewModel
-@@ -478,6 +479,8 @@ fun LocalBackupScreen(
+@@ -485,6 +486,8 @@ fun LocalBackupScreen(
                          is BackupPayload.Full -> {
                              repository.importAllPreferences(payload.data)
                              CourseReminderHelper.onHolidayDataChanged(context)

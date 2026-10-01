@@ -1,4 +1,4 @@
-From f357247b049b195b4e6ee8e6e59662508ea15583 Mon Sep 17 00:00:00 2001
+From 03327a8d8cc2d7d51ce8f29fe60dc8dae67fbc34 Mon Sep 17 00:00:00 2001
 From: dsh-mobile <local@dsh>
 Date: Sun, 27 Sep 2026 23:24:50 +0800
 Subject: [PATCH 20/30] =?UTF-8?q?v38=EF=BC=9A=E5=8D=87=E5=9F=BA=E5=87=86?=
@@ -19,7 +19,7 @@ rebase 到上游 f2c4ab6 后，CI dry-run 报 11 个编译错误，逐个修好�
   与上游的 holidayExemptCourseIds），会让同一门豁免课在课程卡路径与格子路径上一个打「假」标、
   一个不打 → 统一用上游那套（HolidayCourseExclusion 算出的 id 集合），删掉我的 exemptSections 参数。
 
-(cherry picked from commit 955ccea415b1b4bbe894cf6c26cc78b66732719e)
+(cherry picked from commit 461eee0e5221713800be83790dfb530171313efe)
 ---
  .../ui/activities/HolidaySettingsScreen.kt    |  4 +-
  .../haooz/chedule/ui/components/DayColumn.kt  | 10 ++---
