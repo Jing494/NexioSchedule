@@ -289,21 +289,20 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
                 }
                 else -> {
                     if (courseStatus != "进行中") courseStatus = "进行中"
-                    // 仅值变化时写入，避免每秒触发重组
-                    if (newMinutes != remainingMinutes) remainingMinutes = newMinutes
-                    // 秒数只在最后一分钟文案使用
-                    if (newMinutes <= 0 && newSeconds != remainingSeconds) remainingSeconds = newSeconds
-                    // 关键：下一次唤醒**从当前剩余秒数推**，不要从"下一个整分"推。
+                    // ★ 上游 v1.6.0beta31（5899c173）起，这张卡片不再显示「还剩 X 分钟」——
+                    //   倒计时整块挪进了今日助手（TodayAssistant.kt 的 ceilMinutesUntil /
+                    //   formatCountdownMinutes），卡片只标状态（下方 statusText 的注释）。
+                    //   于是本分支**没有可写的状态**了：循环里唯一还会变的，只剩
+                    //   「进行中 → 已结束」这一次翻转。
+                    //   所以直接睡到下课时刻即可（上限 60s，与未开始分支同一口径）。
+                    //   改造前固定 1s 时，一屏几十张卡片每秒各醒一次、却什么都不做。
                     //
-                    // 显示用的是 floor 语义（totalSeconds / 60），分钟值 v 的窗口是
-                    // (end-60(v+1), end-60v]，所以下一个跳变点距现在恰好 totalSeconds % 60 + 1 秒。
-                    // 而"睡到下一个整分"在**进入循环的瞬间恰好压在跳变点上**时会取到退化值：
-                    // 此时 floor(end-now) 还是旧的一档（例如开课那一刻算出来仍是 45，
-                    // 可 40ms 后就是 44），于是那一分钟（44）会被整个跳过，肉眼看到 45 → 43。
-                    // 未开始分支正好睡到 start（整分），必然踩到这个边界，所以必须这样推。
-                    // +1 秒是为了跨过跳变点那一瞬间本身；落在退化点上时下一轮会自愈。
-                    nextTickMs = if (newMinutes <= 0) 1_000L
-                    else ((totalSeconds % 60 + 1) * 1_000L)
+                    //   注：这里不能改成「从剩余秒数推下一个整分」那种写法 ——
+                    //   这行曾是 v28 的优化点，重基准到 beta33 后上游删掉了声明它们的
+                    //   代码块，只剩几行引用「上游已删掉的局部变量」的孤儿代码 ——
+                    //   本地不编译发现不了，直到 CI 编译才炸（见 LOCAL-CHANGES §十）。
+                    val untilEnd = java.time.Duration.between(now, endTime).toMillis()
+                    nextTickMs = untilEnd.coerceIn(1_000L, 60_000L)
                 }
             }
             delay(nextTickMs)
