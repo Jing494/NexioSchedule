@@ -321,6 +321,25 @@ object CourseReminderHelper {
         return todayMillis(hour, minute)
     }
 
+    /**
+     * 由「开始毫秒 + 结束时间字符串」算结束毫秒，**处理跨零点的课**。
+     *
+     * 例：晚自习 23:30–00:30。`parseTimeToTodayMillis("00:30")` 拿到的是**今天** 00:30，
+     * 比开始时刻早 23 小时，下游 `endMillis <= startMillis` 会一律判无效 →
+     * 课中卡 / 课中岛 / 进度永远不会出现，只闪一条「已上课」
+     * （用户视角就是"上课提醒了，但没有课中进度"）。
+     * ClassDndHelper 早就有同样的处理，但只覆盖了它自己那条链 —— 这里统一成一个入口。
+     *
+     * 判据：结束早于开始、且相差超过 12 小时 → 视为跨零点，补一天。
+     * 真正的数据错误（如 10:00–09:00 只差 1 小时）不会被误判成跨天。
+     */
+    fun endMillisFor(startMillis: Long, endTime: String?): Long {
+        val raw = parseTimeToTodayMillis(endTime)
+        if (raw <= 0L || startMillis <= 0L) return raw
+        val day = 24L * 60L * 60L * 1000L
+        return if (raw < startMillis && startMillis - raw > day / 2) raw + day else raw
+    }
+
     internal fun hasSameLocalMinute(time: String?, timestampMillis: Long): Boolean {
         if (time.isNullOrBlank()) return false
         val parts = time.trim().split(":")
@@ -775,7 +794,7 @@ object CourseReminderHelper {
                         (useIsland && hasIslandPreClassSentToday(context, dedupId))
                     if (!alreadySent) {
                         val startMillis = todayMillis(startHour, startMinute)
-                        val endMillis = parseTimeToTodayMillis(getCourseEndTime(course, repository))
+                        val endMillis = endMillisFor(startMillis, getCourseEndTime(course, repository))
                         sendPreClassNotification(
                             context, alarmManager, repository, course, startTime,
                             useIsland, startMillis, endMillis
@@ -2117,6 +2136,21 @@ object CourseReminderHelper {
     @Volatile
     private var notificationChannelsEnsuredAt = 0L
 
+    /**
+     * 启动时就把三条通知通道建出来。
+     *
+     * 原来它们只在「要发通知之前」才创建，于是**全新安装 / 清数据后、第一条提醒发出之前**，
+     * 系统里根本不存在这些通道 —— 「提醒体检」会把"通道不存在"误判成"通道被停用"
+     *（实测会报"有 3 个通道被停用，对应提醒不会显示"，是假警报）。
+     * 启动时建好还顺带解决另一件事：用户能提前在系统设置里单独配置每条通道的响铃/震动。
+     */
+    fun ensureAllNotificationChannels(context: Context) {
+        runCatching {
+            ensureNotificationChannels(context)
+            ensureHolidayChannel(context)
+        }
+    }
+
     private fun ensureNotificationChannels(context: Context) {
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - notificationChannelsEnsuredAt < CHANNEL_ENSURE_INTERVAL_MS) return
@@ -2877,7 +2911,7 @@ object CourseReminderHelper {
             val islandHit = useIsland && hasIslandPreClassSentToday(context, dedupId11)
             if (dedupHit || islandHit) continue
             val startMillis = parseTimeToTodayMillis(startTime)
-            val endMillis = parseTimeToTodayMillis(getCourseEndTime(course, repository))
+            val endMillis = endMillisFor(startMillis, getCourseEndTime(course, repository))
             sendPreClassNotification(
                 context, alarmManager, repository, course, startTime,
                 useIsland, startMillis, endMillis
