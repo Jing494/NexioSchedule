@@ -153,9 +153,28 @@ fun CourseReminderScreen(
     val masterEnabled = preClassReminder || nextDayReminder
     // 总开关关闭时联动关掉子开关：勿扰 + 课中提醒（与下节课/次日提醒置 false 同一策略）
     val disableMasterDependentSwitches = {
+        // 先记住「这次是被总开关联动关掉的」，总开关再打开时按原样恢复。
+        // 否则用户会发现自己**从没动过**的「课中提醒 / 上课勿扰」被静默关掉，
+        // 表现就是「上课提醒了却没有课中进度」（实测反馈过就是这个）。
+        if (classDndEnabled) reminderPrefs.edit { putBoolean(PENDING_RESTORE_DND, true) }
+        if (inClassEnabled) reminderPrefs.edit { putBoolean(PENDING_RESTORE_IN_CLASS, true) }
         settingsViewModel.setClassDndEnabled(false)
         inClassEnabled = false
         reminderPrefs.edit { putBoolean(CourseReminderHelper.KEY_IN_CLASS, false) }
+    }
+    val restoreMasterDependentSwitches = {
+        // 只恢复「确实是被联动关掉的」那些；用户自己关的不会被翻回来
+        if (reminderPrefs.getBoolean(PENDING_RESTORE_DND, false)) {
+            settingsViewModel.setClassDndEnabled(true)
+            reminderPrefs.edit { remove(PENDING_RESTORE_DND) }
+        }
+        if (reminderPrefs.getBoolean(PENDING_RESTORE_IN_CLASS, false)) {
+            inClassEnabled = true
+            reminderPrefs.edit {
+                putBoolean(CourseReminderHelper.KEY_IN_CLASS, true)
+                remove(PENDING_RESTORE_IN_CLASS)
+            }
+        }
     }
     var permissionRefreshKey by remember { mutableIntStateOf(0) }
     val batteryOptLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -263,6 +282,7 @@ fun CourseReminderScreen(
                     disableMasterDependentSwitches()
                 }
                 if (enable) {
+                    restoreMasterDependentSwitches()
                     CourseReminderHelper.startReminderService(context)
                     rlog("reminder_service", "start_after_notif_grant")
                 } else {
@@ -348,6 +368,7 @@ fun CourseReminderScreen(
                                         disableMasterDependentSwitches()
                                     }
                                     if (it) {
+                                        restoreMasterDependentSwitches()
                                         CourseReminderHelper.startReminderService(context)
                                         rlog("reminder_service", "start")
                                     } else {
@@ -1312,6 +1333,10 @@ fun CourseReminderScreen(
         }
     }
 }
+
+/** 总开关联动关掉的子开关：记住「是我们关的」，总开关再打开时按原样恢复（别再静默丢用户的设置） */
+private const val PENDING_RESTORE_DND = "pending_restore_class_dnd"
+private const val PENDING_RESTORE_IN_CLASS = "pending_restore_in_class"
 
 // ===================== 提醒体检 =====================
 
