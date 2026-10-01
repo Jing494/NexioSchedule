@@ -1405,19 +1405,42 @@ private fun buildReminderHealth(context: android.content.Context): List<Reminder
         com.haooz.chedule.reminder.CourseReminderHelper.CHANNEL_HOLIDAY_ID,
         com.haooz.chedule.reminder.CourseReminderHelper.CHANNEL_LIVE_ID,
     )
-    val blockedCount = channelIds.count { id ->
-        val ch = runCatching { nm.getNotificationChannel(id) }.getOrNull()
-        ch == null || ch.importance == android.app.NotificationManager.IMPORTANCE_NONE
+    val channelStates = channelIds.map { id ->
+        runCatching { nm.getNotificationChannel(id) }.getOrNull()
+    }
+    // ★「通道不存在」≠「通道被停用」：通道现在由 Application 启动时创建
+    //   （CourseReminderHelper.ensureAllNotificationChannels）。万一还没建出来也不能报成故障，
+    //   否则全新安装的用户一进设置就看到「3 个通道被停用」的假警报。
+    val missingCount = channelStates.count { it == null }
+    val blockedCount = channelStates.count {
+        it != null && it.importance == android.app.NotificationManager.IMPORTANCE_NONE
     }
     out += ReminderHealthItem(
         title = "提醒通道",
         ok = blockedCount == 0,
-        detail = if (blockedCount == 0) {
-            "课前提醒 / 假期与返校 / 实时动态 都开着"
-        } else {
-            "有 $blockedCount 个通道被停用，对应提醒不会显示"
+        detail = when {
+            blockedCount > 0 -> "有 $blockedCount 个通道被停用，对应提醒不会显示"
+            missingCount > 0 -> "尚未创建（发出第一条提醒后会自动建好）"
+            else -> "课前提醒 / 假期与返校 / 实时动态 都开着"
         },
         fix = appNotifSettings,
+    )
+
+    // ⑥ 系统勿扰 / 静音。与本 App 自己的「上课勿扰」是两回事：这里查系统级。
+    // 实时动态通道申请了绕过勿扰（ensureNotificationChannels 里的 setBypassDnd），
+    // 所以勿扰只会压住普通提醒 —— 文案按这个事实写，别吓人；读不到时按"通过"处理（与其它项一致）。
+    val systemDnd = runCatching {
+        nm.currentInterruptionFilter != android.app.NotificationManager.INTERRUPTION_FILTER_ALL
+    }.getOrDefault(false)
+    out += ReminderHealthItem(
+        title = "系统勿扰",
+        ok = !systemDnd,
+        detail = if (systemDnd) {
+            "系统当前处于勿扰/静音：普通提醒会被静音（实时动态通道已申请绕过勿扰）"
+        } else {
+            "未开启"
+        },
+        fix = null,
     )
     return out
 }
