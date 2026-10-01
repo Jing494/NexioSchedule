@@ -28,6 +28,8 @@ class NexioApplication : Application() {
         // 应用材质档位：按钮/低栏等 chrome 折射随档降级
         com.haooz.chedule.ui.utils.AppMaterialSettings.load(this)
         com.haooz.chedule.ui.utils.CrashLogHelper.install(this)
+        // 通知通道：启动就建好（否则体检会把"还没建"误报成"被停用"，用户也没法提前单独配置）
+        com.haooz.chedule.reminder.CourseReminderHelper.ensureAllNotificationChannels(this)
         warmUpSharedPreferences()
         cleanupTransientFiles()
         initWearableSync()
