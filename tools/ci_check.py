@@ -278,6 +278,12 @@ CHECKS = [
         [],
     ),
     (
+        "变体判定读不到自己签名时必须按「普通变体」处理（fail-safe：判成 wear 会让普通用户永远收不到更新）",
+        F_UPDCHECK,
+        [r"own\.isNotBlank\(\) && own != FORK_CERT_SHA256"],
+        [],
+    ),
+    (
         "挑更新包必须按变体过滤附件（wear 只认 -wear）",
         F_UPDCHECK,
         [r"isWearAsset != wear"],

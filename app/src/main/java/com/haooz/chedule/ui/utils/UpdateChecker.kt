@@ -42,8 +42,17 @@ internal object UpdateChecker {
     /** 本变体的附件名后缀：普通变体空串，wear 变体 "-wear" */
     fun variantSuffix(context: Context): String = if (isWearVariant(context)) "-wear" else ""
 
-    /** 当前安装是不是 wear 变体 —— **只看自己的签名**，不看文件名/版本号（那些都能被改） */
-    fun isWearVariant(context: Context): Boolean = ownSignerSha256(context) != FORK_CERT_SHA256
+    /**
+     * 当前安装是不是 wear 变体 —— **只看自己的签名**，不看文件名/版本号（那些都能被改）。
+     *
+     * ★ 取不到自己签名时按**普通变体**处理（fail-safe，宁可给普通包）：
+     *   万一判成 wear，普通用户会永远收不到更新；判成普通最坏只是"白下一趟" ——
+     *   因为安装前还有一道签名预检会把不匹配的包拦下（见 UpdateInstaller.signatureMatchesOwn）。
+     */
+    fun isWearVariant(context: Context): Boolean {
+        val own = ownSignerSha256(context)
+        return own.isNotBlank() && own != FORK_CERT_SHA256
+    }
 
     /** 本机当前安装包的签名证书 SHA-256（小写十六进制）；取不到返回空串（调用方按"不匹配"处理） */
     fun ownSignerSha256(context: Context): String {

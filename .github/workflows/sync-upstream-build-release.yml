@@ -270,6 +270,9 @@ jobs:
           ls -lh app/build/outputs/final/
 
       - name: 可选｜wear 变体签名（与手表 rpk 同证书；配了 WEAR_KEYSTORE_BASE64 才出）
+        # ★ 非致命：这一步失败**不影响普通包发布**（手机照常能收到更新），
+        #   下面契约核验会按"配了却没产出"给出明确告警。
+        continue-on-error: true
         # 为什么要有它：小米穿戴的 interconnect 在**商店签名包**那一套里要求
         #   手表 rpk 与手机 APK **同包名且同签名**（见 WearableScheduleSync 的注释）。
         #   本 fork 的普通包用自己的 keystore（为了能覆盖安装你现在手机上那版），
@@ -359,6 +362,8 @@ jobs:
               exit 1
             fi
             echo "✅ wear 变体：证书 $WCERT（与普通包不同 ✓）版本 $WBADGING/$WVCODE（与普通包一致 ✓）"
+          elif [ "${{ secrets.WEAR_KEYSTORE_BASE64 != '' }}" = "true" ]; then
+            echo "::warning::配置了 WEAR_KEYSTORE_BASE64 却没产出 wear 变体 —— 看上面「可选｜wear 变体签名」的日志（普通包已正常发出，不影响手机更新）"
           else
             echo "本次没有 wear 变体（未配置 WEAR_* secrets），跳过"
           fi
