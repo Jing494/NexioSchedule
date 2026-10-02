@@ -269,6 +269,42 @@ jobs:
           ( cd app/build/outputs/final && sha256sum "$APK_NAME" > "$APK_NAME.sha256" && cat "$APK_NAME.sha256" )
           ls -lh app/build/outputs/final/
 
+      - name: 可选｜wear 变体签名（与手表 rpk 同证书；配了 WEAR_KEYSTORE_BASE64 才出）
+        # 为什么要有它：小米穿戴的 interconnect 在**商店签名包**那一套里要求
+        #   手表 rpk 与手机 APK **同包名且同签名**（见 WearableScheduleSync 的注释）。
+        #   本 fork 的普通包用自己的 keystore（为了能覆盖安装你现在手机上那版），
+        #   证书与手表那把不一致 —— 于是同一个 Release 里再放一个 `...-wear.apk`：
+        #   **内容完全相同的同一次构建**，只用「与手表 rpk 同一把」keystore 重签。
+        # 没配 WEAR_* secrets 就跳过：流水线照常出普通包，不会因此变红。
+        # ★ 重签前必须先 zipalign（它会重写 zip、顺带去掉 AGP 的 v2/v3 签名块）；
+        #   签完再对齐会破坏签名，所以这里的顺序不能反。
+        if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
+        env:
+          WKS_B64: ${{ secrets.WEAR_KEYSTORE_BASE64 }}
+          WKS_PASS: ${{ secrets.WEAR_KEYSTORE_PASSWORD }}
+          WKEY_ALIAS: ${{ secrets.WEAR_KEY_ALIAS }}
+          WKEY_PASS: ${{ secrets.WEAR_KEY_PASSWORD }}
+        run: |
+          if [ -z "$WKS_B64" ]; then
+            echo "未配置 WEAR_KEYSTORE_BASE64 —— 本次只出普通变体（手表互联若需要 wear 变体，见 README）"
+            exit 0
+          fi
+          BT="$SDK_ROOT/build-tools/37.0.0"
+          mkdir -p signing app/build/outputs/final
+          printf '%s' "$WKS_B64" | base64 -d > signing/wear.jks
+          chmod 600 signing/wear.jks
+          SRC="app/build/outputs/apk/release/app-release.apk"
+          [ -f "$SRC" ] || SRC="app/build/outputs/apk/release/app-release-unsigned.apk"
+          WEAR="app/build/outputs/final/Nexio.v${{ steps.build.outputs.FORK_VER }}-wear.apk"
+          "$BT/zipalign" -f 4 "$SRC" app/build/outputs/final/wear-aligned.apk
+          "$BT/apksigner" sign --ks signing/wear.jks --ks-key-alias "$WKEY_ALIAS" \
+            --ks-pass env:WKS_PASS --key-pass env:WKEY_PASS \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out "$WEAR" app/build/outputs/final/wear-aligned.apk
+          "$BT/apksigner" verify --print-certs "$WEAR" | head -6
+          ( cd app/build/outputs/final && sha256sum "$(basename "$WEAR")" > "$(basename "$WEAR").sha256" && cat "$(basename "$WEAR").sha256" )
+          echo "✅ wear 变体已生成（与普通包同一次构建、同版本号，只换签名）"
+
       - name: 守卫｜APK 契约核验（签名指纹 / 版本号 / 单调递增）
         if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
         env:
@@ -305,6 +341,27 @@ jobs:
             exit 1
           fi
           echo "✅ versionCode 单调：本次 ${{ steps.build.outputs.FORK_CODE }}（序号 $N > 历史 $MAX）"
+
+          # ④ wear 变体（如果这次出了）：必须与普通包**同版本号**、但**不同证书**。
+          #    同证书 = 根本没换 keystore，变体就白做了；不同版本号 = 两个包不是同一次构建。
+          WEAR_APK="app/build/outputs/final/Nexio.v${{ steps.build.outputs.FORK_VER }}-wear.apk"
+          if [ -f "$WEAR_APK" ]; then
+            WCERT=$("$BT/apksigner" verify --print-certs "$WEAR_APK" | grep -m1 -i 'SHA-256 digest' | sed 's/.*digest: //')
+            if [ "$WCERT" = "$CERT" ]; then
+              echo "::error::wear 变体的证书与普通包相同 —— 说明没用 wear keystore 签，变体没意义"
+              exit 1
+            fi
+            WPKG=$("$BT/aapt2" dump badging "$WEAR_APK" | grep -m1 '^package:')
+            WBADGING=$(printf '%s' "$WPKG" | grep -o "versionName='[^']*'" | head -1 | cut -d"'" -f2)
+            WVCODE=$(printf '%s' "$WPKG" | grep -o "versionCode='[0-9]*'" | head -1 | cut -d"'" -f2)
+            if [ "$WBADGING" != "${{ steps.build.outputs.FORK_VER }}" ] || [ "$WVCODE" != "${{ steps.build.outputs.FORK_CODE }}" ]; then
+              echo "::error::wear 变体版本号与普通包不一致（$WBADGING / $WVCODE）—— 不是同一次构建"
+              exit 1
+            fi
+            echo "✅ wear 变体：证书 $WCERT（与普通包不同 ✓）版本 $WBADGING/$WVCODE（与普通包一致 ✓）"
+          else
+            echo "本次没有 wear 变体（未配置 WEAR_* secrets），跳过"
+          fi
 
       - name: 推送 master（只有"合并干净 + 未命中分歧清单 + 非 dry_run"才推）
         # ★ 顺序刻意如此：先合并 → 再构建与全部门禁/契约核验 → **最后才推 master**。
@@ -359,6 +416,12 @@ jobs:
           - 质量门禁 \`tools/ci_check.py\`：全部通过
           - 签名指纹与目标 keystore 一致、包内版本号与上述一致、序号单调递增
           - 已生成同名 \`.sha256\` 校验文件
+
+          ### 📱 两个变体，按需选一个
+          - **普通版** \`Nexio.v…-gh….apk\`：本 fork 自己的证书 —— 能**直接覆盖安装**你现在手机上的 fork 版；
+          - **wear 版** \`Nexio.v…-gh…-wear.apk\`（本次若提供）：与**手表 rpk 同一把**证书，用于小米穿戴互联。
+            它与普通版**不能互相覆盖安装**（签名不同），App 内更新会按自身签名自动只取对应变体。
+          - 两个变体是**同一次构建**（版本号完全相同），只是签名不同。
 
           ### ⚠️ 安装注意
           - 本 fork 用自己的 keystore 签名：**从上游原版切过来需要先卸载**（会丢 App 内数据，建议先做一次 WebDAV 备份）；
@@ -425,7 +488,10 @@ jobs:
             exit 0
           fi
           TAG="v${{ steps.build.outputs.FORK_VER }}"
-          APK="app/build/outputs/final/Nexio.v${{ steps.build.outputs.FORK_VER }}.apk"
+          # 附件 = 本地产出的**全部** APK（普通 + 可能的 wear 变体）
+          APKS=$(ls app/build/outputs/final/Nexio.v*.apk 2>/dev/null || true)
+          APK_N_LOCAL=$(printf '%s\n' "$APKS" | grep -c '\.apk$' || true)
+          echo "本地待上传 APK（$APK_N_LOCAL 个）："; printf '%s\n' "$APKS"
           API="https://gitee.com/api/v5/repos/$GITEE_REPO"
           echo "同步到 Gitee: $GITEE_REPO $TAG"
           # 建 release（已存在则取回 id）
@@ -461,11 +527,14 @@ jobs:
           echo "Gitee release id=$RID，上传附件…"
           ATTACHED=0
           for attempt in 1 2 3; do
-            curl -s -X POST "$API/releases/$RID/attach_files" \
-              -F "access_token=$GT" -F "file=@$APK" -o /tmp/attach.json || true
-            head -c 200 /tmp/attach.json; echo
+            for f in $APKS; do
+              curl -s -X POST "$API/releases/$RID/attach_files" \
+                -F "access_token=$GT" -F "file=@$f" -o /tmp/attach.json || true
+              head -c 120 /tmp/attach.json; echo
+            done
             APK_N=$(curl -s "$API/releases/$RID?access_token=$GT" | python3 -c "import json,sys;d=json.load(sys.stdin);print(sum(1 for a in (d.get('assets') or []) if str(a.get('name','')).endswith('.apk')) if isinstance(d,dict) else 0)" 2>/dev/null || echo 0)
-            if [ "${APK_N:-0}" != "0" ]; then ATTACHED=1; echo "  核验：该 release 已有 .apk 附件（第 $attempt 次）"; break; fi
+            # 核验：附件数必须**不少于本地产出数**（普通 + wear 都要挂上；Gitee 上传会抖，所以重试）
+            if [ "${APK_N:-0}" -ge "${APK_N_LOCAL:-1}" ]; then ATTACHED=1; echo "  核验：Gitee 上有 $APK_N 个 .apk 附件（本地 $APK_N_LOCAL 个，第 $attempt 次）"; break; fi
             echo "::warning::第 $attempt 次上传后仍看不到 .apk 附件，5 秒后重试…"
             sleep 5
           done

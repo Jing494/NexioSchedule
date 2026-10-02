@@ -34,6 +34,8 @@ F_MAINSCHED = f"{J}/ui/screens/MainScheduleScreen.kt"
 F_SETTINGS = f"{J}/ui/screens/SettingsScreen.kt"
 F_REMSCREEN = f"{J}/ui/activities/CourseReminderScreen.kt"
 F_UPDCHECK = f"{J}/ui/utils/UpdateChecker.kt"
+F_UPDINST = f"{J}/ui/utils/UpdateInstaller.kt"
+WF_REL = ".github/workflows/sync-upstream-build-release.yml"
 F_UPDSET = f"{J}/ui/activities/UpdateSettingsScreen.kt"
 F_MANIFEST = "app/src/main/AndroidManifest.xml"
 
@@ -267,6 +269,31 @@ CHECKS = [
         "检查更新在缓存里没有下载地址时强制重查（否则只弹「未找到下载链接」）",
         F_UPDSET,
         [r"latestRelease!!\.apkUrl\.isNotBlank\(\)"],
+        [],
+    ),
+    (
+        "更新按变体分流：普通/wear 两个变体签名不同，绝不能互相覆盖安装",
+        F_UPDCHECK,
+        [r'const val FORK_CERT_SHA256 = "a7fdc7b704db284774a0124fb13495b5e6ee4a05f6430547ad8ec21aba5ac938"'],
+        [],
+    ),
+    (
+        "挑更新包必须按变体过滤附件（wear 只认 -wear）",
+        F_UPDCHECK,
+        [r"isWearAsset != wear"],
+        [],
+    ),
+    (
+        "安装前必须做签名一致性预检（挡住另一变体的包/被替换的包）",
+        F_UPDINST,
+        [r"private fun signatureMatchesOwn\("],
+        [],
+    ),
+    (
+        "workflow 的 EXPECT_CERT 必须与 app 里的 FORK_CERT_SHA256 是同一把证书"
+        "（改了一处忘了另一处 = 更新分流会认错变体）",
+        WF_REL,
+        [r"EXPECT_CERT: a7fdc7b704db284774a0124fb13495b5e6ee4a05f6430547ad8ec21aba5ac938"],
         [],
     ),
 ]

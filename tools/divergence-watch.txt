@@ -19,6 +19,8 @@
 #   · reminder/CourseReminderHelper.kt       提醒口径 / 通道 / 精确闹钟 / 跨午夜下课（改得很深）
 #   · reminder/IslandNotificationHelper.kt   岛 B 区联动（改得很深）
 #   · ui/activities/CourseReminderScreen.kt  提醒体检（上游没有）
+#   · app/build.gradle.kts                 上游在这里加过签名/构建期要求（缺 keystore 就构建失败）
+app/build.gradle.kts
 app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
 app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
 app/src/main/java/com/haooz/chedule/ui/utils/MinuteTick.kt

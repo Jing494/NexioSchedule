@@ -25,6 +25,41 @@ internal object UpdateChecker {
     private const val PART_SUFFIX = ".part"
     private const val MIN_COMPLETE_APK_BYTES = 512L * 1024L
 
+    /**
+     * 本 fork **普通变体**的签名证书 SHA-256（公开信息）。
+     *
+     * 为什么需要它：同一个 Release 里会放两个变体的 APK ——
+     *   · 普通版：本 fork keystore 签的（能覆盖安装你现在手机上那版）；
+     *   · wear 版：与**手表 rpk 同一把** keystore 签的，文件名带 `-wear`
+     *     （小米穿戴 interconnect 要求手表 rpk 与 APK 同包名且同签名）。
+     * 两个变体签名不同 → Android 不允许互相覆盖安装 → 更新必须按变体分流。
+     * 分流依据就是**自己的签名**：等于下面的常量 = 普通变体；不等于 = wear/自签变体。
+     *
+     * ★ 必须与 .github/workflows 里的 EXPECT_CERT 一致（tools/ci_check.py 会钉住两边）
+     */
+    const val FORK_CERT_SHA256 = "a7fdc7b704db284774a0124fb13495b5e6ee4a05f6430547ad8ec21aba5ac938"
+
+    /** 本变体的附件名后缀：普通变体空串，wear 变体 "-wear" */
+    fun variantSuffix(context: Context): String = if (isWearVariant(context)) "-wear" else ""
+
+    /** 当前安装是不是 wear 变体 —— **只看自己的签名**，不看文件名/版本号（那些都能被改） */
+    fun isWearVariant(context: Context): Boolean = ownSignerSha256(context) != FORK_CERT_SHA256
+
+    /** 本机当前安装包的签名证书 SHA-256（小写十六进制）；取不到返回空串（调用方按"不匹配"处理） */
+    fun ownSignerSha256(context: Context): String {
+        return try {
+            val info = context.packageManager.getPackageInfo(
+                context.packageName,
+                android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES,
+            )
+            val signer = info.signingInfo?.apkContentsSigners?.firstOrNull() ?: return ""
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            md.digest(signer.toByteArray()).joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
     data class GiteeRelease(
         val tagName: String,
         val name: String,
@@ -64,13 +99,21 @@ internal object UpdateChecker {
         return false
     }
 
-    /** 取该 release 里第一个 .apk 附件的下载地址；没有 .apk 附件则返回空串 */
-    private fun apkUrlOf(release: com.google.gson.JsonObject): String {
+    /**
+     * 取该 release 里**本变体**的 .apk 附件下载地址；没有则返回空串。
+     *
+     * 普通变体不认带 `-wear` 的附件，wear 变体只认带 `-wear` 的 —— 两个变体签名不同，
+     * 拿错包要么装不上、要么逼用户卸载重装，所以在"挑包"这一层就分流。
+     */
+    private fun apkUrlOf(release: com.google.gson.JsonObject, wear: Boolean): String {
         val assets = release.getAsJsonArray("assets") ?: return ""
         for (i in 0 until assets.size()) {
             val a = assets[i].asJsonObject
             val assetName = a.get("name")?.asString ?: ""
-            if (assetName.endsWith(".apk")) return a.get("browser_download_url")?.asString ?: ""
+            if (!assetName.endsWith(".apk")) continue
+            val isWearAsset = assetName.substringBeforeLast(".apk").endsWith("-wear")
+            if (isWearAsset != wear) continue
+            return a.get("browser_download_url")?.asString ?: ""
         }
         return ""
     }
@@ -86,6 +129,8 @@ internal object UpdateChecker {
                 .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                 .build()
 
+            // 本变体（普通 / wear）：只认与**自己签名**匹配的那一类附件
+            val wearVariant = isWearVariant(context)
             // 更新源 = **本 fork 自己的两个仓库**（不再指向上游）：
             // 上游包与本 fork 签名不同，下载过去会装不上/要求卸载重装。
             // 国内优先 Gitee（默认 source=gitee），GitHub 作为备选。
@@ -129,12 +174,12 @@ internal object UpdateChecker {
                 }
                 // beta 通道：正式 + beta 均可；stable 通道已在上方过滤
 
-                // ★ 只认「带安装包」的版本。
+                // ★ 只认「带**本变体**安装包」的版本。
                 //   Gitee 建 release 时会**自动挂上源码 zip**，而 APK 是 CI 过一会儿才
                 //   attach 上去的（实测 gh5 差了 8 分钟）。这段窗口里"最新 release"没有 .apk，
                 //   一旦选中它，下载地址就是空的 —— 点「开始下载」只会弹「未找到下载链接」。
                 //   所以没有 .apk 的版本直接跳过，继续找「最新的、且带包的」。
-                val apk = apkUrlOf(release)
+                val apk = apkUrlOf(release, wearVariant)
                 if (apk.isBlank()) continue
 
                 if (best == null || isNewerVersion(ver, bestVer)) {
@@ -193,9 +238,14 @@ internal object UpdateChecker {
         }
     }
 
+    /**
+     * 从下载文件名取 tag：`update-<tag>.apk` 与 `update-<tag>-wear.apk` 都认。
+     * 变体后缀必须在这里剥掉，否则清理逻辑会把 wear 包当成"tag 对不上"删掉。
+     */
     fun apkTagOrNull(fileName: String): String? {
         if (!fileName.startsWith(APK_PREFIX) || !fileName.endsWith(APK_SUFFIX)) return null
-        return fileName.removePrefix(APK_PREFIX).removeSuffix(APK_SUFFIX)
+        val tag = fileName.removePrefix(APK_PREFIX).removeSuffix(APK_SUFFIX)
+        return tag.removeSuffix("-wear")
     }
 
     /**

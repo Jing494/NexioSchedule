@@ -20,11 +20,13 @@ internal object UpdateInstaller {
 
     private val installScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    // 本地文件名带变体后缀（普通 ""/wear "-wear"）：两个变体的缓存不会互相顶掉，
+    // 也让"日志里看到的包名"能直接反映出变体。
     fun apkFile(context: Context, tag: String): File =
-        File(context.filesDir, "update-$tag.apk")
+        File(context.filesDir, "update-$tag${UpdateChecker.variantSuffix(context)}.apk")
 
     private fun partFile(context: Context, tag: String): File =
-        File(context.filesDir, "update-$tag.apk.part")
+        File(context.filesDir, "update-$tag${UpdateChecker.variantSuffix(context)}.apk.part")
 
     fun hasValidApk(context: Context, tag: String): Boolean {
         return UpdateChecker.isLikelyCompleteApk(apkFile(context, tag))
@@ -97,6 +99,15 @@ internal object UpdateInstaller {
         onInstallingChanged: (Boolean) -> Unit,
         onFinished: (() -> Unit)? = null,
     ) {
+        // ★ 交给安装器之前的最后一道闸：包的签名必须等于**本机当前安装**的签名。
+        //   两个变体（普通 / wear）签的不是同一把钥匙，拿错包只会失败或逼用户卸载重装；
+        //   顺带挡住"下载被替换/半成品"这类事。校验不过就删掉，绝不交给安装器。
+        if (!signatureMatchesOwn(context, file)) {
+            file.delete()
+            Toast.makeText(context, "安装包与当前版本签名不一致（可能是另一个变体），已删除", Toast.LENGTH_LONG).show()
+            onFinished?.invoke()
+            return
+        }
         if (ShizukuManager.isShizukuRunning() && ShizukuManager.checkSelfPermission()) {
             onInstallingChanged(true)
             installScope.launch {
@@ -118,6 +129,23 @@ internal object UpdateInstaller {
             onInstallingChanged(true)
             launchSystemInstaller(context, file)
             onFinished?.invoke()
+        }
+    }
+
+    /** 该 APK 的签名证书 SHA-256 是否等于本机自己的；读不出来就当不匹配（宁可让人重下） */
+    private fun signatureMatchesOwn(context: Context, file: File): Boolean {
+        val own = UpdateChecker.ownSignerSha256(context)
+        if (own.isBlank()) return false
+        return try {
+            val info = context.packageManager.getPackageArchiveInfo(
+                file.absolutePath,
+                android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES,
+            ) ?: return false
+            val signer = info.signingInfo?.apkContentsSigners?.firstOrNull() ?: return false
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            md.digest(signer.toByteArray()).joinToString("") { "%02x".format(it) } == own
+        } catch (_: Exception) {
+            false
         }
     }
 

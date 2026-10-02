@@ -397,3 +397,32 @@ keystore.properties"这类结构问题；输出**只给类型与位置、命中�
 已做反向对照（种一个假 token 能被精准抓到且打码）。特意**不**把 `*.pem/*.key` 当文件名命中：
 公开证书是合法入库的，真正的私钥由内容头规则抓 —— 否则会误拦发布（已用真实合并树本地预跑验证）。
 另外失败 Issue 改为**去重**（同类未关就追加评论），不再按天堆一屏。
+
+### 十二、wear 变体（与手表 rpk 同证书的第二签名）
+
+**需求**：小米穿戴的 interconnect 在商店签名那一套里要求「手表 rpk 与手机 APK 同包名且同签名」
+（`WearableScheduleSync` 的注释），而本 fork 普通包用的是自己的 keystore（为了覆盖安装）。
+于是同一个 Release 里再放一个 `…-wear.apk`，用**与手表 rpk 同一把** keystore 重签 ——
+内容是同一次构建、版本号完全相同，只换签名。
+
+**实现**：
+- CI 新增「可选｜wear 变体签名」：读 `WEAR_KEYSTORE_BASE64/…PASSWORD/…ALIAS`，
+  先 `zipalign -f 4`（必须，它会重写 zip 并去掉 AGP 的 v2/v3 签名块）再用 apksigner 三方案重签，
+  产出 `…-wear.apk` + `.sha256`；**没配 secrets 就跳过**，流水线照常出普通包。
+- 契约核验追加：wear 变体必须**与普通包同版本号**、**与普通包不同证书**（同证书 = 白做，直接红）。
+- Gitee 附件改为上传 `final/` 下**全部** APK，并按本地数量核验（不再只挂一个）。
+- 更新逻辑（App 侧，两处）：
+  1. `UpdateChecker`：新增 `FORK_CERT_SHA256` 常量与 `ownSignerSha256()`/`isWearVariant()`；
+     挑附件时按变体过滤 —— 普通变体不认 `-wear`，wear 变体只认 `-wear`；
+     没有**本变体**包的版本直接跳过（原来只判断"有没有 .apk"，两个变体进来就会挑错）。
+  2. `UpdateInstaller`：本地缓存名带变体后缀；`installApk` 之前**校验下载包的签名 == 本机自己的签名**，
+     不一致就删掉并提示（挡住另一变体的包 / 被替换的包）。
+- 门禁新增 4 条：变体常量存在、挑包按变体过滤、安装前签名预检、
+  **workflow 的 EXPECT_CERT 与 app 里的 FORK_CERT_SHA256 必须同一把证书**（改一处忘另一处会认错变体）。
+- 分歧清单新增 `app/build.gradle.kts`：上游上次就是在这里加了"构建期要求 keystore"。
+
+**关于 rpk 的实测**：用户提供的 `Nexio 课程表（小米手环10Pro）.rpk`（v1.0.0/21，包名 `com.haooz.chedule`，
+声明了 `system.interconnect`）里 **`META-INF/CERT` 只是一份 SHA-256 摘要清单，没有任何证书**，
+`build.txt` 也是 `originType=undefined` / `component=true` 的开发者工具组件包 —— 也就是这份 rpk
+**没有可"同签名"的对象**，普通包很可能直接就能连。wear 变体作为**备好的一道门**存在：
+一旦确认手表期望的是哪把证书（商店签名 rpk / 或自己重签 rpk），把对应 keystore 填进 4 个 secrets 即可。
