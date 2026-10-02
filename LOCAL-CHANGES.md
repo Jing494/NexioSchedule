@@ -369,3 +369,31 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
   `workflow_dispatch` 返回 422，而且推分支还会因此产生一条 `startup_failure` 运行（像是"CI 挂了"）。
   现已新增 `tools/check_workflow.py` 做本地预检（空值键 / 触发条件 / 步骤完整性 / run 语法 /
   `steps.<id>` 引用是否存在），并做过反向对照：拿"没修的那版"跑它会精准复现 GitHub 那条报错。
+
+### 十一·附2：合并式 CI 的第一次真实自动跟（它挡住的两件事）
+
+上游 PR #57（`9ea4e54d`）进来后，定时任务自动合并 → 门禁 35 条通过 → **构建失败**，
+流水线按设计**没推 master** 并开了 Issue。原因不是我们的代码（Kotlin 编译全过）：
+
+```
+Execution failed for task ':app:validateSigningRelease'
+> Keystore file '.../keystore/nexio-release.jks' not found for signing config 'release'
+```
+
+上游这次给 `app/build.gradle.kts` 加了 `signingConfigs.release`（读仓库根的可选
+`keystore.properties`，storeFile 缺省 `../keystore/nexio-release.jks`），并挂到 debug/release
+两个 buildType 上 —— **构建期**就要求 keystore 存在；而本流水线原本是"先构建、后写 keystore 签名"。
+
+改法：新增「准备签名材料」步骤放在构建**之前**（解 `secrets.KEYSTORE_BASE64` → `signing/fork.jks`，
+写 `keystore.properties`，值里的反斜杠转义；该文件与 `*.jks` 上游已加进 `.gitignore`）；
+原签名步骤改为「整理产物」：优先用构建期已签名的 `app-release.apk`，上游哪天撤掉 signingConfig
+则自动回退旧的 `zipalign + apksigner`；对齐只做 `-c` 检查（签完再 zipalign 会破坏 v2/v3 签名）。
+验证：在 `ci-fix-keystore` 分支先跑 dry_run（真合并 `9ea4e54` + 真构建）通过后才落 master。
+
+**凭据纪律（新增，长期有效）**：`tools/check_secrets.py` 成为**每次都跑**的闸 ——
+扫工作区 / 跟踪文件 / 提交信息（本地可 `--objects` 扫全历史对象），判 GitHub PAT、
+`access_token=`/`oauth2:` 形态、云厂商 key、私钥头，以及"仓库跟踪了 keystore/.env/
+keystore.properties"这类结构问题；输出**只给类型与位置、命中一律打码**，绝不回显凭据本体。
+已做反向对照（种一个假 token 能被精准抓到且打码）。特意**不**把 `*.pem/*.key` 当文件名命中：
+公开证书是合法入库的，真正的私钥由内容头规则抓 —— 否则会误拦发布（已用真实合并树本地预跑验证）。
+另外失败 Issue 改为**去重**（同类未关就追加评论），不再按天堆一屏。
