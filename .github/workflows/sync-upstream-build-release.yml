@@ -141,6 +141,17 @@ jobs:
           echo "门禁脚本: $GATE"
           python3 "$GATE" . | tee /tmp/ci_check.log
 
+      - name: 守卫｜凭据外泄扫描（源码 / 提交信息里不该出现任何密钥）
+        # 本仓库的 CI 握着 keystore（base64）+ 两个口令 + alias + 一个 Gitee token，
+        # 一旦写进源码 / workflow / commit message / 日志，就等于把签名权和发布权交出去。
+        # 同一个脚本（tools/check_secrets.py）本地推之前也会跑；这里再挡一道，
+        # 防止"自动合并进来的东西"或以后的改动把凭据带进仓库。
+        # 只扫工作区 + 跟踪文件 + 提交信息（全历史对象扫描更慢，发布前本地用 --objects 跑）。
+        # 输出只给类型和位置、命中片段一律打码，不会把凭据本体写进日志。
+        if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
+        run: |
+          python3 tools/check_secrets.py --tree --tracked --messages
+
       - name: 设置 JDK 21
         if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
         uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
@@ -192,7 +203,7 @@ jobs:
             echo "keyAlias=$(esc "$KEY_ALIAS")"
             echo "keyPassword=$(esc "$KEY_PASS")"
           } > keystore.properties
-          echo "keystore.properties 已写入（storeFile=../signing/fork.jks，别名 ${KEY_ALIAS:-?}；口令不回显）"
+          echo "keystore.properties 已写入（storeFile=../signing/fork.jks；别名与口令一律不回显）"
 
       - name: 计算 fork 版本号并构建
         id: build
@@ -520,20 +531,32 @@ jobs:
             echo "$TAG 在 Gitee 上已带 .apk，保留"
           fi
 
-      - name: 失败时开 Issue 提醒（构建 / 门禁 / 契约失败）
+      - name: 失败时开 Issue 提醒（同一类失败只留一条，后续追加评论）
         continue-on-error: true
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh issue create --repo "$GITHUB_REPOSITORY" \
-            --title "自动构建失败：$(date +%F)" \
-            --body "本次 workflow 失败（多为**合并后的代码编译不过 / 门禁或契约核验不过**）。
+          # 为什么去重：按天开 Issue 的话，一次上游改动连红几轮就会堆一屏"自动构建失败"，
+          # 真正要看的那条反而被淹没（实测一天堆了 3 条）。改成：
+          # 已有同类未关 Issue 就追加一条评论（带本轮 run 链接），没有才新建。
+          EXIST=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "自动构建失败 in:title" --json number --jq '.[0].number' 2>/dev/null || echo "")
+          LINK="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          BODY="本次 workflow 失败（多为**合并后的代码编译不过 / 门禁或契约核验不过**）。
 
-          - 运行记录：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          - 排查顺序：先看失败步骤的日志。若是编译错误，重点看**最近一次上游合并带进来的改动**
-            是否把本 fork 还在用的符号删掉/改名了（合并"干净"不代表语义不冲突 ——
-            典型：上游删了一个功能块，我们的定制 hunk 还在原地引用它）。
+          - 运行记录：${LINK}
+          - 常见原因：① 上游删改了我们还在用的符号（合并"干净"不等于语义不冲突，
+            典型症状是编译期 Unresolved reference）；② 上游改了**构建期**要求
+            （例如新增 signingConfig，而 CI 里还没有 keystore）；
+            ③ 门禁 tools/ci_check.py 或 APK 契约核验不通过。
           - 修好后推上 master（或直接手动 Run 一次），**只需改文件，不用本地编译**。
-          - 远端 master 不受影响：本次失败不会推送任何东西。" \
-            || echo "开 Issue 失败（忽略）"
+          - 远端 master 不受影响：本次失败不会推送任何东西。"
+          if [ -n "$EXIST" ]; then
+            gh issue comment "$EXIST" --repo "$GITHUB_REPOSITORY" --body "又红了一轮：${LINK}" \
+              || echo "追加评论失败（忽略）"
+            echo "已在既有 Issue #$EXIST 追加评论，未新建"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "自动构建失败：$(date +%F)" --body "$BODY" || echo "开 Issue 失败（忽略）"
+          fi
