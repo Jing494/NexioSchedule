@@ -4,9 +4,11 @@ package com.haooz.chedule.widget
 
 import android.content.Context
 import android.content.res.Configuration
+import android.os.Build
 import android.util.TypedValue
 import android.widget.RemoteViews
 import com.haooz.chedule.R
+import java.util.Locale
 
 object WidgetTextSizes {
 
@@ -15,6 +17,18 @@ object WidgetTextSizes {
 
     /** 将 dp 按设备密度换算为 px */
     fun dpToPx(context: Context, dp: Float): Float = dp * deviceDensity(context)
+
+    /** HyperOS / 小米系（小米、红米、POCO）：小部件外观按 HyperOS 规范走（如圆角 24dp） */
+    val isXiaomi: Boolean by lazy {
+        val brands = setOf("xiaomi", "redmi", "poco")
+        Build.BRAND.lowercase(Locale.ROOT) in brands || Build.MANUFACTURER.lowercase(Locale.ROOT) in brands
+    }
+
+    /** ColorOS（OPPO/realme/OnePlus）：会按声明尺寸把小部件内容整体缩放，需按比例反补偿 */
+    val isColorOs: Boolean by lazy {
+        val brands = setOf("oppo", "realme", "oneplus")
+        Build.BRAND.lowercase(Locale.ROOT) in brands || Build.MANUFACTURER.lowercase(Locale.ROOT) in brands
+    }
 
     // ---- 主题相关：小组件位图背景需随深浅色选择不透明底色，避免透明像素被桌面渲染成灰色/白色框 ----
     /** 课程卡片（非进行中）底色：浅色=白 / 深色=#262626（对应 widget_card_background 两套） */
@@ -46,35 +60,66 @@ object WidgetTextSizes {
         }
     }
 
-    private fun setTextSize(views: RemoteViews, id: Int, dp: Int) {
-        views.setTextViewTextSize(id, TypedValue.COMPLEX_UNIT_DIP, dp.toFloat())
+    private fun setTextSize(views: RemoteViews, id: Int, dp: Float) {
+        views.setTextViewTextSize(id, TypedValue.COMPLEX_UNIT_DIP, dp)
     }
 
-    /** 课程表小组件（widget_course_reminder_standard） */
-    fun applyCourseReminder(views: RemoteViews) {
-        setTextSize(views, R.id.widget_title, 14)
-        setTextSize(views, R.id.widget_week, 14)
-        setTextSize(views, R.id.widget_time_start1, 12)
-        setTextSize(views, R.id.widget_time_end1, 12)
-        setTextSize(views, R.id.widget_name1, 14)
-        setTextSize(views, R.id.widget_info1, 12)
-        setTextSize(views, R.id.widget_now1, 14)
-        setTextSize(views, R.id.widget_time_start2, 12)
-        setTextSize(views, R.id.widget_time_end2, 12)
-        setTextSize(views, R.id.widget_name2, 14)
-        setTextSize(views, R.id.widget_info2, 12)
-        setTextSize(views, R.id.widget_now2, 14)
-        setTextSize(views, R.id.widget_empty_text, 14)
+    /** 课程表小组件各文本的基准字号（dp） */
+    private val COURSE_REMINDER_TEXTS = listOf(
+        R.id.widget_title to 14f,
+        R.id.widget_week to 14f,
+        R.id.widget_time_start1 to 12f,
+        R.id.widget_time_end1 to 12f,
+        R.id.widget_name1 to 14f,
+        R.id.widget_info1 to 12f,
+        R.id.widget_now1 to 14f,
+        R.id.widget_time_start2 to 12f,
+        R.id.widget_time_end2 to 12f,
+        R.id.widget_name2 to 14f,
+        R.id.widget_info2 to 12f,
+        R.id.widget_now2 to 14f,
+        R.id.widget_time_start3 to 12f,
+        R.id.widget_time_end3 to 12f,
+        R.id.widget_name3 to 14f,
+        R.id.widget_info3 to 12f,
+        R.id.widget_now3 to 14f,
+        R.id.widget_time_start4 to 12f,
+        R.id.widget_time_end4 to 12f,
+        R.id.widget_name4 to 14f,
+        R.id.widget_info4 to 12f,
+        R.id.widget_now4 to 14f,
+        R.id.widget_time_start5 to 12f,
+        R.id.widget_time_end5 to 12f,
+        R.id.widget_name5 to 14f,
+        R.id.widget_info5 to 12f,
+        R.id.widget_now5 to 14f,
+        R.id.widget_empty_text to 14f,
+    )
+
+    /**
+     * 课程表小组件（widget_course_reminder_standard）。
+     * @param scale 字号整体倍率，供 ColorOS 拉伸后反补偿用（默认 1 倍）
+     */
+    fun applyCourseReminder(views: RemoteViews, scale: Float = 1f) {
+        COURSE_REMINDER_TEXTS.forEach { (id, dp) -> setTextSize(views, id, dp * scale) }
     }
 
-    /** 今日课程小组件（widget_today_course_standard） */
-    fun applyTodayCourse(views: RemoteViews) {
-        setTextSize(views, R.id.widget_title, 14)
-        setTextSize(views, R.id.widget_week, 14)
-        setTextSize(views, R.id.widget_course_name, 17)
-        setTextSize(views, R.id.widget_course_time, 14)
-        setTextSize(views, R.id.widget_course_location, 14)
-        setTextSize(views, R.id.widget_remaining_text, 12)
-        setTextSize(views, R.id.widget_empty_text, 14)
+    /** 今日课程小组件各文本的基准字号（dp） */
+    private val TODAY_COURSE_TEXTS = listOf(
+        R.id.widget_title to 14f,
+        R.id.widget_week to 14f,
+        R.id.widget_course_name to 17f,
+        R.id.widget_course_time to 14f,
+        R.id.widget_course_location to 14f,
+        R.id.widget_remaining_text to 12f,
+        R.id.widget_empty_text to 14f,
+    )
+
+    /**
+     * 今日课程小组件（widget_today_course_standard）。
+     * @param scale 字号整体倍率，供 ColorOS 体型偏大时的反补偿用（默认 1 倍）
+     */
+    fun applyTodayCourse(views: RemoteViews, scale: Float = 1f) {
+        TODAY_COURSE_TEXTS.forEach { (id, dp) -> setTextSize(views, id, dp * scale) }
     }
 }

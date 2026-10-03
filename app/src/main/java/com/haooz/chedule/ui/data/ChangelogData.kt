@@ -7,15 +7,18 @@ data class ChangelogEntry(
 )
 val changelogData = listOf(
     ChangelogEntry(
-        version = "v1.6.0-0924",
-        date = "2026-09-24",
+        version = "v1.6.1-1002",
+        date = "2026-10-02",
         changes = listOf(
+            "新增Vela端能力支持（手环版App），来自PR提供者 @Alittlejelly",
             "新增支持添加教学周重组规则，来自PR提供者 @yulimfish",
             "新增支持节假日末期课程排除，来自PR提供者 @yulimfish",
             "新增假期开始/结束提醒，来自PR提供者 @yulimfish",
+            "底部导航栏支持自适应高度，来自PR提供者 @leset0ng",
             "重新设计Pad端布局，更简单易用",
             "重新设计切换课表功能，支持文件夹分类",
             "课表外观可切换页面预览编辑效果",
+            "优化小组件显示效果，并支持拖动改变大小，感谢 @xiaomanjun233",
             "优化左右上下滑动页面手感",
             "优化实况通知样式，适配ColorOS",
             "优化上课勿扰状态对账逻辑",
@@ -23,6 +26,7 @@ val changelogData = listOf(
             "修复测试通知「上课勿扰」按钮不生效",
             "测试通知也支持上课自动开启勿扰",
             "修复未授予勿扰权限时静音档不生效",
+            "修复课程表页面，浮层错位、多指误触"
         )
     ),
     ChangelogEntry(

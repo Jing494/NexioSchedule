@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -116,7 +117,7 @@ fun DayColumn(
     // 当前列需高亮的节次范围（含起止）
     dropHighlightSections: IntRange? = null,
     // 非 state：滑动中跳过逐帧坐标计算
-    gridScrollFlag: com.haooz.chedule.ui.screens.GridScrollFlag? = null,
+    touchState: com.haooz.chedule.ui.screens.ScheduleTouchState? = null,
     // 页面层统一读取，避免每列挂 prefs 监听
     isDark: Boolean = false,
     @SuppressLint("ModifierParameter") modifier: Modifier = Modifier
@@ -174,12 +175,25 @@ fun DayColumn(
 
             // 单节点承载所有空节次点击/长按；落点高亮已提升到 MainScheduleScreen 动画遮罩
             val emptyLayerBounds = remember { FloatArray(4) }
+            // 滑动中 onGloballyPositioned 跳过计算会留下过期/零点，长按瞬间按需重算一次
+            val emptyLayerCoords = remember { arrayOfNulls<LayoutCoordinates>(1) }
+            val refreshEmptyLayerBounds = {
+                val c = emptyLayerCoords[0]
+                if (c != null && c.isAttached) {
+                    val pos = c.localToRoot(Offset.Zero)
+                    emptyLayerBounds[0] = pos.x
+                    emptyLayerBounds[1] = pos.y
+                    emptyLayerBounds[2] = c.size.width.toFloat()
+                    emptyLayerBounds[3] = c.size.height.toFloat()
+                }
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight()
                     .onGloballyPositioned { coordinates ->
-                        if (gridScrollFlag?.scrolling != true) {
+                        emptyLayerCoords[0] = coordinates
+                        if (touchState?.scrolling != true) {
                             val pos = coordinates.localToRoot(Offset.Zero)
                             emptyLayerBounds[0] = pos.x
                             emptyLayerBounds[1] = pos.y
@@ -218,6 +232,7 @@ fun DayColumn(
                                 }
                                 if (section in 1..totalSectionsGrid && section !in occupiedSections) {
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    refreshEmptyLayerBounds()
                                     val cellTopPx = with(density) { (grid.sectionTop[section] ?: 0f).dp.toPx() }
                                     onEmptyLongPress(
                                         section,
@@ -279,7 +294,7 @@ fun DayColumn(
                 wallpaperBackdrop = wallpaperBackdrop,
                 cardBlurRadius = cardBlurRadius,
                 draggingCourseIds = draggingCourseIds,
-                gridScrollFlag = gridScrollFlag,
+                touchState = touchState,
                 isDark = isDark,
 
                 onCourseClick = onCourseClick,
@@ -322,7 +337,7 @@ private fun CourseCardsLayer(
     wallpaperBackdrop: Backdrop?,
     cardBlurRadius: Float,
     draggingCourseIds: Set<String>,
-    gridScrollFlag: com.haooz.chedule.ui.screens.GridScrollFlag? = null,
+    touchState: com.haooz.chedule.ui.screens.ScheduleTouchState? = null,
     isDark: Boolean,
     viewportTopDp: Float = 0f,
     viewportBottomDp: Float = Float.MAX_VALUE,
@@ -426,7 +441,7 @@ private fun CourseCardsLayer(
                 ) {
                     CourseCard(
                         course = course,
-                        gridScrollFlag = gridScrollFlag,
+                        touchState = touchState,
                         isDark = isDark,
                         isCurrentWeek = isCurrentWeekCourse,
                         isHoliday = isHoliday && course.id !in holidayExemptCourseIds,
@@ -472,7 +487,7 @@ private fun CourseCardsLayer(
                 ) {
                     CourseCard(
                         course = displayCourse,
-                        gridScrollFlag = gridScrollFlag,
+                        touchState = touchState,
                         isDark = isDark,
                         isCurrentWeek = isCurrentWeekCourse,
                         isHoliday = isHoliday && course.id !in holidayExemptCourseIds,
@@ -565,7 +580,7 @@ private fun PendingSectionBox(
                             viewport = com.kyant.backdrop.LocalBackdropViewport.current,
                             onDrawSurface = pendingOnSurface
                         )
-                        .edgeLight(shape = edgeLightShape, edgeLight = rememberCourseCardEdgeLight())
+                        .edgeLight(shape = edgeLightShape, edgeLight = rememberCourseCardEdgeLight(baseColor = surfaceColor))
                 ) {
                     Card(
                         modifier = Modifier.fillMaxSize(),
@@ -812,7 +827,7 @@ fun SpecialBandOverlay(
                             style = outlineStroke
                         )
                     }
-                    .edgeLight(shape = edgeLightShape, edgeLight = rememberCourseCardEdgeLight())
+                    .edgeLight(shape = edgeLightShape, edgeLight = rememberCourseCardEdgeLight(baseColor = bgColor))
             ) {
                 SpecialBandBody(
                     name = shownName,
