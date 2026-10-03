@@ -155,7 +155,11 @@ fun HolidaySettingsScreen(
     val endCourseExclusion = remember(context, holidayDataRevision) {
         HolidayManager.loadEndCourseExclusion(context)
     }
+    val beforeCourseExclusion = remember(context, holidayDataRevision) {
+        HolidayManager.loadBeforeCourseExclusion(context)
+    }
     var showSectionRangeDialog by remember { mutableStateOf(false) }
+    var editingBeforeCourseExclusion by remember { mutableStateOf(false) }
     var pendingStartSection by remember { mutableIntStateOf(1) }
     var pendingEndSection by remember { mutableIntStateOf(1) }
     // 编辑弹窗
@@ -613,16 +617,17 @@ fun HolidaySettingsScreen(
                 SectionTitleRow(
                     text = "假期余额提醒",
                     description = "• 假期期间每天一条，含假期最后一天（不占超级岛/实时动态的位置）\n" +
-                        "• 独立开关：不再挂在「节假日末期课程排除」下面 —— 关掉豁免不会连带关掉余额提醒",
+                        "• 独立开关：不再挂在「节假日首末课程排除」下面 —— 关掉豁免不会连带关掉余额提醒",
                     liquidGlassBackdrop = liquidGlassBackdrop,
                 )
                 HolidayBalanceCard()
             }
-
             item {
                 SectionTitleRow(
-                    text = "节假日末期课程排除",
-                    description = "• 假期最后一天的某几节课可能需要正常上课\n• 可以将节假日最后一天的某几节课程排除在休假情况以外",
+                    text = "节假日首末课程排除",
+                    description = "• 假期前一天的某几节课可能不用上\n" +
+                        "• 假期最后一天的某几节课可能需要正常上课\n" +
+                        "• 可以将节假日最后一天或前一天的某几节课进行相应操作",
                     liquidGlassBackdrop = liquidGlassBackdrop,
                 )
                 Card(
@@ -631,7 +636,41 @@ fun HolidaySettingsScreen(
                     insideMargin = PaddingValues(0.dp),
                 ) {
                     SwitchPreference(
-                        title = "开启节次排除",
+                        title = "开启假期前日课程排除",
+                        checked = beforeCourseExclusion.enabled,
+                        onCheckedChange = { enabled ->
+                            val updated = beforeCourseExclusion.copy(enabled = enabled)
+                            if (HolidayManager.saveBeforeCourseExclusion(context, updated)) {
+                                CourseReminderHelper.onHolidayDataChanged(context)
+                            }
+                        },
+                    )
+                    ArrowPreference(
+                        title = "节次范围",
+                        summary = "第${beforeCourseExclusion.startSection}–${beforeCourseExclusion.endSection}节",
+                        onClick = {
+                            if (configuredSectionCount <= 0) {
+                                Toast.makeText(context, "当前课表尚未配置节次", Toast.LENGTH_SHORT).show()
+                            } else {
+                                editingBeforeCourseExclusion = true
+                                val maxSection = configuredSectionCount
+                                pendingStartSection = beforeCourseExclusion.startSection
+                                    .coerceIn(1, maxSection)
+                                pendingEndSection = beforeCourseExclusion.endSection
+                                    .coerceIn(pendingStartSection, maxSection)
+                                showSectionRangeDialog = true
+                            }
+                        },
+                    )
+                }
+                Spacer(modifier = Modifier.fillMaxWidth().height(12.dp))
+                Card(
+                    cornerRadius = 20.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                    insideMargin = PaddingValues(0.dp),
+                ) {
+                    SwitchPreference(
+                        title = "开启假期末天课程排除",
                         checked = endCourseExclusion.enabled,
                         onCheckedChange = { enabled ->
                             val updated = endCourseExclusion.copy(enabled = enabled)
@@ -647,6 +686,7 @@ fun HolidaySettingsScreen(
                             if (configuredSectionCount <= 0) {
                                 Toast.makeText(context, "当前课表尚未配置节次", Toast.LENGTH_SHORT).show()
                             } else {
+                                editingBeforeCourseExclusion = false
                                 val maxSection = configuredSectionCount
                                 pendingStartSection = endCourseExclusion.startSection.coerceIn(1, maxSection)
                                 pendingEndSection = endCourseExclusion.endSection
@@ -662,7 +702,7 @@ fun HolidaySettingsScreen(
                 SectionTitleRow(
                     text = "返校准备清单",
                     description = "• 返校日到点推一条普通通知，内容自己写\n" +
-                        "• 独立开关：不依赖「节假日末期课程排除」，关掉豁免它照样会响",
+                        "• 独立开关：不依赖「节假日首末课程排除」，关掉豁免它照样会响",
                     liquidGlassBackdrop = liquidGlassBackdrop,
                 )
                 ReturnDayPrepCard()
@@ -767,11 +807,24 @@ fun HolidaySettingsScreen(
             val rangeFitsCurrentSchedule = configuredSectionCount > 0 &&
                 pendingStartSection in 1..configuredSectionCount &&
                 pendingEndSection in pendingStartSection..configuredSectionCount
-            val updated = endCourseExclusion.copy(
-                startSection = pendingStartSection,
-                endSection = pendingEndSection,
-            )
-            if (rangeFitsCurrentSchedule && HolidayManager.saveEndCourseExclusion(context, updated)) {
+            val saved = rangeFitsCurrentSchedule && if (editingBeforeCourseExclusion) {
+                HolidayManager.saveBeforeCourseExclusion(
+                    context,
+                    beforeCourseExclusion.copy(
+                        startSection = pendingStartSection,
+                        endSection = pendingEndSection,
+                    ),
+                )
+            } else {
+                HolidayManager.saveEndCourseExclusion(
+                    context,
+                    endCourseExclusion.copy(
+                        startSection = pendingStartSection,
+                        endSection = pendingEndSection,
+                    ),
+                )
+            }
+            if (saved) {
                 CourseReminderHelper.onHolidayDataChanged(context)
                 showSectionRangeDialog = false
             } else {
@@ -2092,7 +2145,7 @@ private fun timePickerDialog(
 /**
  * 「返校准备清单」独立成卡。
  *
- * 原来它在「节假日末期课程排除」卡的 `if (enabled)` 里面，但它的触发只依赖自己的开关
+ * 原来它在「节假日首末课程排除」卡的 `if (enabled)` 里面，但它的触发只依赖自己的开关
  * （`getReturnDayPrepEnabled() && isReturnDay(今天)`）—— 豁免关掉它照样会在周日/假期最后一天响。
  * "配置被藏起来、功能却还在跑"是同一类毛病，所以一并抬出来自己一张卡。
  */
@@ -2147,7 +2200,7 @@ private fun ReturnDayPrepCard() {
             }
             Text(
                 "• 触发条件：当天休息 且 次日要上课（普通周日、假期最后一天）\n" +
-                    "• 独立开关：不依赖「节假日末期课程排除」，关掉豁免它照样会响",
+                    "• 独立开关：不依赖「节假日首末课程排除」，关掉豁免它照样会响",
                 style = MiuixTheme.textStyles.body1.copy(
                     fontSize = 13.sp,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
@@ -2216,7 +2269,7 @@ private fun ReturnDayPrepCard() {
 /**
  * 「假期余额提醒」独立成卡。
  *
- * 原来它被放在「节假日末期课程排除」卡的 `if (enabled)` 里面 —— 关掉豁免，余额提醒就凭空消失了，
+ * 原来它被放在「节假日首末课程排除」卡的 `if (enabled)` 里面 —— 关掉豁免，余额提醒就凭空消失了，
  * 而两者其实没有从属关系（余额是"假期还剩几天"，豁免是"返校那天上哪几节"）。
  * 现在单独一张卡，开关/时间/开始提醒/测试都在这里。
  */
@@ -2273,7 +2326,7 @@ private fun HolidayBalanceCard() {
             }
             Text(
                 "• 假期期间每天都发一条，含假期最后一天（以前最后一天会漏掉）\n" +
-                    "• 文案跟着「节假日末期课程排除」走：开着，最后一天说「收拾一下准备返校」；" +
+                    "• 文案跟着「节假日首末课程排除」走：开着，最后一天说「收拾一下准备返校」；" +
                     "关着只说「好好休息」\n" +
                     "• 不占超级岛/实时动态的位置，只是普通通知",
                 style = MiuixTheme.textStyles.body1.copy(

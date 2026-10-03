@@ -2758,7 +2758,8 @@ class CourseRepository private constructor(context: Context) {
 
             for ((key, value) in data) {
                 if (key == HolidayManager.BACKUP_KEY ||
-                    key == HolidayManager.BACKUP_EXCLUSION_KEY
+                    key == HolidayManager.BACKUP_EXCLUSION_KEY ||
+                    key == HolidayManager.BACKUP_BEFORE_EXCLUSION_KEY
                 ) continue
                 if (key.startsWith(BACKUP_PREFS_TAG)) {
                     restoreExtraPreference(key, value)
