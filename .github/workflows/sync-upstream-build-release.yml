@@ -265,7 +265,10 @@ jobs:
           # ★ 只做对齐检查，绝不 zipalign 已签名的包（签完再对齐会破坏 v2/v3 签名）
           "$BT/zipalign" -c 4 "$SRC" || echo "::warning::zipalign -c 未通过（AGP/上游产物默认已对齐，仅提示）"
           "$BT/apksigner" verify --print-certs "$SRC" | head -6
-          cp -f "$SRC" "$OUT"
+          # ★ 回退路径下 SRC 已经就是 $OUT，再 cp 就成了自己复制自己 → cp 退出码 1 →
+          #   GitHub 默认 shell 是 `bash -e`，整步直接失败（2026-10-02 真踩：上游撤掉 signingConfig
+          #   之后第一次走回退路径，就红在这一行）。所以只在两者不同时才复制。
+          if [ "$SRC" != "$OUT" ]; then cp -f "$SRC" "$OUT"; fi
           ( cd app/build/outputs/final && sha256sum "$APK_NAME" > "$APK_NAME.sha256" && cat "$APK_NAME.sha256" )
           ls -lh app/build/outputs/final/
 

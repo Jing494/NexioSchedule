@@ -426,3 +426,23 @@ keystore.properties"这类结构问题；输出**只给类型与位置、命中�
 `build.txt` 也是 `originType=undefined` / `component=true` 的开发者工具组件包 —— 也就是这份 rpk
 **没有可"同签名"的对象**，普通包很可能直接就能连。wear 变体作为**备好的一道门**存在：
 一旦确认手表期望的是哪把证书（商店签名 rpk / 或自己重签 rpk），把对应 keystore 填进 4 个 secrets 即可。
+
+### 十三、上游 v1.6.1beta2 合并 + 两个"只有真跑才暴露"的坑
+
+**1) 冲突不是最危险的，静默丢语义才是。** 上游把课表网格几何的内联构造重构成了
+`buildGridGeometry()`，而本 fork 给 `ScheduleGridGeometry` 加过两个字段
+（`sectionTopDp` / `specialBandRangesDp`，修"拖拽落点整体偏下"）。这两个字段**有默认值**，
+所以上游那份只传 6 个参数的构造**照样能编译** —— 直接"取上游那边"就会静默抹掉这个修复。
+解法是两边都要：采用上游的重构，同时把两个字段补进 helper。
+门禁 ci_check.py 的「节的 Y 坐标单一真源：落点判定优先用渲染实际用的 sectionTopDp」
+正是为这种"能编译但语义变错"准备的。
+
+**2) `cp X X` 在 `bash -e` 下会直接判失败（真踩）。** 上游这轮把"强制正式签名"撤掉了
+（`a6d2d2d0` / `6bc863e0`），于是产物变成未签名，我们第一次真正走「整理产物」的回退路径：
+`SRC` 已被设为 `$OUT`，最后又 `cp -f "$SRC" "$OUT"` → `cp: ... are the same file` → 退出码 1 →
+GitHub 默认 shell `bash -e` 让整步失败（日志红在"整理产物"）。修法是只在两者不同时才复制。
+
+**教训（写给我的下一次）**：用桩工具复现 workflow 步骤时，**必须用 `bash -e`**
+（GitHub 的默认 shell 是 `bash -e {0}`）。我先前那版桩测试用的是 `bash`（没有 `-e`），
+所以 `cp` 的非零退出被吞掉、测试全绿，却在上游真跑时红 —— 这也是本次 dry_run 的价值：
+master 一个字节没动，问题在预演分支上就被抓住。
