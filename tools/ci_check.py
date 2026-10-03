@@ -302,6 +302,12 @@ CHECKS = [
         [r"EXPECT_CERT: a7fdc7b704db284774a0124fb13495b5e6ee4a05f6430547ad8ec21aba5ac938"],
         [],
     ),
+    (
+        "提醒体检要认识「假期首末课程排除」（否则用户会以为提醒坏了）",
+        F_REMSCREEN,
+        [r"假期首末课程排除", r"loadBeforeCourseExclusion"],
+        [],
+    ),
 ]
 
 

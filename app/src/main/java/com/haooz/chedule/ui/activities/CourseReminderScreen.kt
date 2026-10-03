@@ -1346,6 +1346,8 @@ private data class ReminderHealthItem(
     val ok: Boolean,
     val detail: String,
     val fix: Intent?,
+    /** 纯说明项（不是"通过 / 不通过"）：显示 ℹ，且不计入"待处理"计数 */
+    val isInfo: Boolean = false,
 )
 
 /**
@@ -1467,6 +1469,29 @@ private fun buildReminderHealth(context: android.content.Context): List<Reminder
         },
         fix = null,
     )
+    // 假期首末课程排除（**说明项**，不是"通过/不通过"）：
+    //   上游新增「假期前日课程排除」，加上原有的「末期课程排除」——被排除的节次在那些天
+    //   **不展示也不提醒**（卡片 / 岛 / 提醒走同一套日解析）。很多人会以为"提醒坏了"，
+    //   这里明说一句并标出当前范围。
+    val beforeExclusion = com.haooz.chedule.data.HolidayManager.loadBeforeCourseExclusion(context)
+    val endExclusion = com.haooz.chedule.data.HolidayManager.loadEndCourseExclusion(context)
+    if (beforeExclusion.enabled || endExclusion.enabled) {
+        val parts = mutableListOf<String>()
+        if (beforeExclusion.enabled) {
+            parts += "假期前一天：第 ${beforeExclusion.startSection}~${beforeExclusion.endSection} 节"
+        }
+        if (endExclusion.enabled) {
+            parts += "假期最后一天：第 ${endExclusion.startSection}~${endExclusion.endSection} 节"
+        }
+        out += ReminderHealthItem(
+            title = "假期首末课程排除",
+            ok = true,
+            detail = parts.joinToString("；") + " —— 这些课在这些天不展示也不提醒（不是提醒坏了）",
+            fix = null,
+            isInfo = true,
+        )
+    }
+
     return out
 }
 
@@ -1543,9 +1568,11 @@ private fun ReminderHealthCard() {
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = if (item.ok) "\u2713" else "\u2715",
+                        text = if (item.isInfo) "\u2139" else if (item.ok) "\u2713" else "\u2715",
                         style = MiuixTheme.textStyles.body1.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
-                        color = if (item.ok) {
+                        color = if (item.isInfo) {
+                            MiuixTheme.colorScheme.onSurfaceVariantSummary
+                        } else if (item.ok) {
                             androidx.compose.ui.graphics.Color(0xFF3BA55D)
                         } else {
                             androidx.compose.ui.graphics.Color(0xFFD7263D)
