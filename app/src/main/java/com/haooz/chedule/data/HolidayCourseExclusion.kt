@@ -80,7 +80,16 @@ object HolidayCourseExclusion {
         )
     }
 
-    fun isBeforeHolidayDate(
+    /**
+ * 该日期是否为「假期的前一天」。
+ *
+ * 判定只看「后一天是否假期」，**刻意不看当天是否为调休上班日**：用户开启「假期前日课程
+ * 排除」后，规则在假期前一天硬性生效，当天即使是调休上班日（TYPE_WORKSWAP + 配了
+ * followWeekday）也一样停课。课表/今日/提醒/桌面组件/ICS 导出全部按这一条口径。
+ * 不要因为「调休上班日本来就要上课」就擅自加排除 —— 那会与调休配置互相打架，
+ * 是有意为之的取舍。
+ */
+fun isBeforeHolidayDate(
         entriesByYear: Map<Int, List<HolidayManager.Entry>>,
         date: LocalDate,
     ): Boolean {

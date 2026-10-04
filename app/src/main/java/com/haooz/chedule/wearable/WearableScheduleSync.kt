@@ -194,7 +194,7 @@ object WearableScheduleSync {
         try {
             val repo = CourseRepository.getInstance(appContext)
             // v4 整表推送：一次下发完整学期（课程+周次规则+设置+节次时间+假期），
-            // 手表自行推算任意日期；旧组包（buildWeekJson/buildDaysJson）保留可回退。
+            // 手表自行推算任意日期。
             val payload = WatchPayload.buildFullJson(repo, appContext, scheduleName)
             val api = messageApi ?: return
             api.sendMessage(id, payload.toByteArray(Charsets.UTF_8))

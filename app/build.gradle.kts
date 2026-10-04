@@ -16,8 +16,8 @@ android {
         applicationId = "com.haooz.chedule"
         minSdk = 31
         targetSdk = 37
-        versionCode = 161
-        versionName = "1.6.1-1002"
+        versionCode = 162
+        versionName = "1.6.2-1003"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -35,6 +35,9 @@ android {
         }
     }
     packaging {
+        dex {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "/META-INF/DEPENDENCIES"

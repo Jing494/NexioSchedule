@@ -50,8 +50,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,6 +70,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -126,7 +127,6 @@ import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import kotlin.time.Duration.Companion.milliseconds
 import androidx.compose.ui.graphics.Color as ComposeColor
-import androidx.compose.ui.state.ToggleableState
 import com.kyant.backdrop.backdrops.layerBackdrop as liquidGlassLayerBackdrop
 
 class SwitchScheduleActivity : ComponentActivity() {
@@ -201,6 +201,12 @@ fun SwitchScheduleScreen(
         withFrameNanos { }
         try {
             screenGraphicsLayer.toImageBitmap().asAndroidBitmap()
+        } catch (_: OutOfMemoryError) {
+            // OOM 是 Error 不是 Exception：全屏读回在低端机上最容易触发
+            com.haooz.chedule.ui.utils.CrashLogHelper.trace(
+                "切换课表", "page_snapshot_oom"
+            )
+            null
         } catch (_: Exception) {
             null
         }
@@ -214,8 +220,7 @@ fun SwitchScheduleScreen(
         )
     }
     LaunchedEffect(Unit) {
-        // initial 值来自 ScheduleViewModel 的实时 StateFlow，已经是最新；再读一次磁盘只会
-        // 让首帧之后立刻多一次重组，正好压在进场动画的头几帧上。独立 Activity 启动时
+        // initial 值来自 ScheduleViewModel 的实时 StateFlow，已经是最新
         // （initial 为 null）仍然需要读。
         if (initialScheduleNames == null) {
             scheduleNames = repository.getScheduleNames()
@@ -316,14 +321,29 @@ fun SwitchScheduleScreen(
             scope.launch {
                 val fullBitmap = capturePageBitmap()
                 if (fullBitmap != null) {
-                    val x = (bounds.left - contentRootX).toInt()
-                        .coerceIn(0, fullBitmap.width - 1)
-                    val y = (bounds.top - contentRootY).toInt()
-                        .coerceIn(0, fullBitmap.height - 1)
-                    val w = bounds.width.toInt().coerceIn(1, fullBitmap.width - x)
-                    val h = bounds.height.toInt().coerceIn(1, fullBitmap.height - y)
-                    val cardBitmap = android.graphics.Bitmap.createBitmap(fullBitmap, x, y, w, h)
-                    onCardSnapshot(fullBitmap, cardBitmap, bounds)
+                    // 裁剪也要兜 OOM：这里原来完全没有 try，一张全屏位图裁失败就是闪退
+                    val cardBitmap = try {
+                        val x = (bounds.left - contentRootX).toInt()
+                            .coerceIn(0, fullBitmap.width - 1)
+                        val y = (bounds.top - contentRootY).toInt()
+                            .coerceIn(0, fullBitmap.height - 1)
+                        val w = bounds.width.toInt().coerceIn(1, fullBitmap.width - x)
+                        val h = bounds.height.toInt().coerceIn(1, fullBitmap.height - y)
+                        android.graphics.Bitmap.createBitmap(fullBitmap, x, y, w, h)
+                    } catch (_: Exception) {
+                        null
+                    } catch (_: OutOfMemoryError) {
+                        com.haooz.chedule.ui.utils.CrashLogHelper.trace(
+                            "切换课表", "card_crop_oom"
+                        )
+                        null
+                    }
+                    if (cardBitmap != null) {
+                        onCardSnapshot(fullBitmap, cardBitmap, bounds)
+                    } else {
+                        // 裁不出卡片快照：整屏素材没人消费，直接回收（宿主会走无快照退出）
+                        runCatching { if (!fullBitmap.isRecycled) fullBitmap.recycle() }
+                    }
                 }
                 onCardClick(bounds)
             }
@@ -747,11 +767,18 @@ fun SwitchScheduleScreen(
                     }
                 }
                 // 进场形变锚点：当前课表卡片（不是列表第一项）
+                // 一页只截一次：currentCardBounds 之后每次变化（文件夹展开动画、列表滚动、
+                // 顶部折叠标题高度变化…）都会重跑这个 effect，而每次 capturePageBitmap()
+                // 都是一张全屏 toImageBitmap。宿主此时 switchPendingReverse 早已是 false，
+                // 回调会被直接忽略——纯浪费一张全屏位图，动画收尾时正好和别的快照叠峰值。
+                val switchSnapshotDelivered = remember { intArrayOf(0) }
                 LaunchedEffect(currentCardBounds) {
                     if (embedded) return@LaunchedEffect
+                    if (switchSnapshotDelivered[0] != 0) return@LaunchedEffect
                     val bounds = currentCardBounds
                     if (bounds != null) {
                         val bitmap = capturePageBitmap()
+                        switchSnapshotDelivered[0] = 1
                         // 截图失败也要回调：否则 switchCapturingSnapshot 永远为 true，
                         // 页面会一直停在 alpha=0 的黑屏上
                         val adjustedBounds = androidx.compose.ui.geometry.Rect(
@@ -768,7 +795,8 @@ fun SwitchScheduleScreen(
                 LaunchedEffect(Unit) {
                     if (embedded) return@LaunchedEffect
                     delay(700.milliseconds)
-                    if (currentCardBounds == null) {
+                    if (currentCardBounds == null && switchSnapshotDelivered[0] == 0) {
+                        switchSnapshotDelivered[0] = 1
                         onScreenReady(null, androidx.compose.ui.geometry.Rect.Zero)
                     }
                 }
@@ -1374,7 +1402,6 @@ private fun ScheduleCardRow(
         }
     }
     Card(
-        cornerRadius = 20.dp,
         modifier = itemModifier
             .fillMaxWidth()
             .then(if (indent) Modifier.padding(start = 14.dp) else Modifier)
@@ -1409,7 +1436,6 @@ private fun ScheduleCardRow(
         } else {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                cornerRadius = 20.dp,
                 showIndication = true,
                 insideMargin = PaddingValues(
                     horizontal = 16.dp,
@@ -1478,7 +1504,6 @@ private fun FolderCardRow(
         label = "folderExpandRotation"
     )
     Card(
-        cornerRadius = 20.dp,
         modifier = itemModifier
             .fillMaxWidth()
             .graphicsLayer {
@@ -1492,7 +1517,6 @@ private fun FolderCardRow(
             // 编辑模式下仍保留左侧文件夹图标，右侧放复选框（点整行即可切换选中）
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                cornerRadius = 20.dp,
                 showIndication = true,
                 insideMargin = PaddingValues(
                     horizontal = 16.dp,
@@ -1534,7 +1558,6 @@ private fun FolderCardRow(
         } else {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                cornerRadius = 20.dp,
                 showIndication = true,
                 insideMargin = PaddingValues(
                     horizontal = 16.dp,
@@ -1590,11 +1613,16 @@ private fun MoveTargetRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit
 ) {
+    val cancelButtonColors = ButtonDefaults.textButtonColors()
+    val rowColor = remember(cancelButtonColors) {
+        cancelButtonColors.color.copy(alpha = cancelButtonColors.alpha)
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         cornerRadius = 16.dp,
         showIndication = true,
         insideMargin = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+        colors = CardDefaults.defaultColors(color = rowColor),
         onClick = onClick
     ) {
         Row(
@@ -1645,8 +1673,8 @@ private fun RowScope.BottomBarItem(
         animationSpec = tween(150),
         label = "pressScale"
     )
-    val pressColor = if (isAppDarkTheme()) ComposeColor.White.copy(alpha = 0.11f * pressAlpha)
-    else ComposeColor.Black.copy(alpha = 0.07f * pressAlpha)
+    val pressColor = if (isAppDarkTheme()) ComposeColor.White.copy(alpha = 0.1f * pressAlpha)
+    else ComposeColor.Black.copy(alpha = 0.06f * pressAlpha)
     Column(
         modifier = Modifier
             .pointerInput(enabled) {

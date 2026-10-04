@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -116,7 +115,7 @@ fun BackupAndMigrationScreen(
     )
 
     val isTablet = LocalConfiguration.current.screenWidthDp >= 600
-    val tabletHorizontalPadding = 20.dp
+    val tabletHorizontalPadding = if (isTablet) 20.dp else 16.dp
 
     val webDavManager = remember { WebDavManager(context) }
     val lastSyncTimeMs = webDavManager.lastSyncTime
@@ -278,10 +277,8 @@ fun BackupAndMigrationScreen(
                 item {
                     SmallTitle(
                         text = "导入方式",
-                        modifier = Modifier.offset(x = (-16).dp)
                     )
                     Card(
-                        cornerRadius = 20.dp,
                         modifier = Modifier.fillMaxWidth(),
                         insideMargin = PaddingValues(0.dp)
                     ) {
@@ -314,10 +311,8 @@ fun BackupAndMigrationScreen(
                 item {
                     SmallTitle(
                         text = "口令",
-                        modifier = Modifier.offset(x = (-16).dp)
                     )
                     Card(
-                        cornerRadius = 20.dp,
                         modifier = Modifier.fillMaxWidth(),
                         insideMargin = PaddingValues(0.dp)
                     ) {
@@ -355,10 +350,8 @@ fun BackupAndMigrationScreen(
                 item {
                     SmallTitle(
                         text = "文件",
-                        modifier = Modifier.offset(x = (-16).dp)
                     )
                     Card(
-                        cornerRadius = 20.dp,
                         modifier = Modifier.fillMaxWidth(),
                         insideMargin = PaddingValues(0.dp)
                     ) {
@@ -388,10 +381,8 @@ fun BackupAndMigrationScreen(
                 item {
                     SmallTitle(
                         text = "文件与口令",
-                        modifier = Modifier.offset(x = (-16).dp)
                     )
                     Card(
-                        cornerRadius = 20.dp,
                         modifier = Modifier.fillMaxWidth(),
                         insideMargin = PaddingValues(0.dp)
                     ) {
@@ -427,7 +418,6 @@ fun BackupAndMigrationScreen(
                 }
                 item {
                     Card(
-                    cornerRadius = 20.dp,
                     modifier = Modifier.fillMaxWidth(),
                     insideMargin = PaddingValues(0.dp)
                 ) {
@@ -458,10 +448,8 @@ fun BackupAndMigrationScreen(
                 item {
                     SmallTitle(
                         text = "导出课表",
-                        modifier = Modifier.offset(x = (-16).dp)
                     )
                     Card(
-                        cornerRadius = 20.dp,
                         modifier = Modifier.fillMaxWidth(),
                         insideMargin = PaddingValues(0.dp)
                     ) {
@@ -500,10 +488,8 @@ fun BackupAndMigrationScreen(
                 item {
                     SmallTitle(
                         text = "导出格式",
-                        modifier = Modifier.offset(x = (-16).dp)
                     )
                     Card(
-                        cornerRadius = 20.dp,
                         modifier = Modifier.fillMaxWidth(),
                         insideMargin = PaddingValues(0.dp)
                     ) {
@@ -547,7 +533,6 @@ fun BackupAndMigrationScreen(
                 }
                 item {
                     Card(
-                        cornerRadius = 20.dp,
                         modifier = Modifier.fillMaxWidth(),
                         insideMargin = PaddingValues(0.dp)
                     ) {
@@ -584,10 +569,8 @@ fun BackupAndMigrationScreen(
                 item {
                     SmallTitle(
                         text = "备份",
-                        modifier = Modifier.offset(x = (-16).dp)
                     )
                     Card(
-                        cornerRadius = 20.dp,
                         modifier = Modifier.fillMaxWidth(),
                         insideMargin = PaddingValues(0.dp)
                     ) {

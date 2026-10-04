@@ -566,7 +566,6 @@ fun HolidaySettingsScreen(
                 )
                 if (teachingWeekReorganizations.isNotEmpty()) {
                     Card(
-                        cornerRadius = 20.dp,
                         modifier = Modifier.fillMaxWidth(),
                         insideMargin = PaddingValues(0.dp),
                     ) {
@@ -602,7 +601,6 @@ fun HolidaySettingsScreen(
                     Spacer(modifier = Modifier.fillMaxWidth().height(12.dp))
                 }
                 Card(
-                    cornerRadius = 20.dp,
                     modifier = Modifier.fillMaxWidth(),
                     insideMargin = PaddingValues(0.dp),
                 ) {
@@ -617,26 +615,26 @@ fun HolidaySettingsScreen(
                 SectionTitleRow(
                     text = "假期余额提醒",
                     description = "• 假期期间每天一条，含假期最后一天（不占超级岛/实时动态的位置）\n" +
-                        "• 独立开关：不再挂在「节假日首末课程排除」下面 —— 关掉豁免不会连带关掉余额提醒",
+                        "• 独立开关：不再挂在「节假日课程排除」下面 —— 关掉豁免不会连带关掉余额提醒",
                     liquidGlassBackdrop = liquidGlassBackdrop,
                 )
                 HolidayBalanceCard()
             }
             item {
-                SectionTitleRow(
-                    text = "节假日首末课程排除",
-                    description = "• 假期前一天的某几节课可能不用上\n" +
-                        "• 假期最后一天的某几节课可能需要正常上课\n" +
-                        "• 可以将节假日最后一天或前一天的某几节课进行相应操作",
+
+                    text = "节假日课程排除",
+                    description =
+                        "• 假期前一天或最后一天的几节课不用上课\n" +
+                        "• 可以将节假日前后的某几节课进行排除\n" +
+                        "「假期前一天即使是调休上班日也会照常应用该规则」",
                     liquidGlassBackdrop = liquidGlassBackdrop,
                 )
                 Card(
-                    cornerRadius = 20.dp,
                     modifier = Modifier.fillMaxWidth(),
                     insideMargin = PaddingValues(0.dp),
                 ) {
                     SwitchPreference(
-                        title = "开启假期前日课程排除",
+                        title = "假期前日课程排除",
                         checked = beforeCourseExclusion.enabled,
                         onCheckedChange = { enabled ->
                             val updated = beforeCourseExclusion.copy(enabled = enabled)
@@ -670,7 +668,7 @@ fun HolidaySettingsScreen(
                     insideMargin = PaddingValues(0.dp),
                 ) {
                     SwitchPreference(
-                        title = "开启假期末天课程排除",
+                        title = "假期末天课程排除",
                         checked = endCourseExclusion.enabled,
                         onCheckedChange = { enabled ->
                             val updated = endCourseExclusion.copy(enabled = enabled)
@@ -1023,7 +1021,6 @@ private fun TeachingWeekRuleEditDialog(
     val sheetContent: @Composable () -> Unit = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Card(
-                cornerRadius = 20.dp,
                 modifier = Modifier.fillMaxWidth(),
                 insideMargin = PaddingValues(0.dp),
                 colors = CardDefaults.defaultColors(
@@ -1047,7 +1044,6 @@ private fun TeachingWeekRuleEditDialog(
                 }
             }
             Card(
-                cornerRadius = 20.dp,
                 modifier = Modifier.fillMaxWidth(),
                 insideMargin = PaddingValues(0.dp),
                 colors = CardDefaults.defaultColors(
@@ -1190,7 +1186,6 @@ private fun TeachingWeekRulePreviewCard(
     )
 
     Card(
-        cornerRadius = 20.dp,
         modifier = Modifier.fillMaxWidth(),
         insideMargin = PaddingValues(0.dp),
         colors = CardDefaults.defaultColors(
@@ -1564,9 +1559,7 @@ private fun SectionTitleRow(
     liquidGlassBackdrop: Backdrop?,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .offset((-16).dp),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SmallTitle(
@@ -1703,7 +1696,13 @@ private fun InfoDropdown(
             imageVector = MiuixIcons.Info,
             contentDescription = null,
             colorFilter = ColorFilter.tint(infoColor),
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier
+                // CenterEnd 会把图标贴到 36dp Box 的右边缘，而这个 Box 是 fillMaxWidth
+                // Row 的末项、没有尾部 padding，结果图标右边缘与列表内容右边缘重合、
+                // 看着是顶在边上。让出 8dp（其余行的内容都有内边距，视觉上才齐平）；
+                // padding 套在 size 外层，36dp 的可点区域保持不变。
+                .padding(end = 8.dp)
+                .size(20.dp),
         )
         OverlayListPopup(
             show = expanded,
@@ -1739,7 +1738,6 @@ private fun DataManagementCard(
         selectedContainerColor = Color.Transparent,
     )
     Card(
-        cornerRadius = 20.dp,
         modifier = Modifier.fillMaxWidth(),
         insideMargin = PaddingValues(0.dp),
     ) {
@@ -1769,7 +1767,6 @@ private fun HolidayEntriesCard(
     onEdit: (HolidayManager.Entry) -> Unit,
 ) {
     Card(
-        cornerRadius = 20.dp,
         modifier = Modifier.fillMaxWidth(),
         insideMargin = PaddingValues(0.dp),
     ) {
@@ -1834,7 +1831,6 @@ private fun entrySummary(entry: HolidayManager.Entry): String {
 private fun AddEntryCard(type: Int, onAdd: () -> Unit) {
     val isHoliday = type == HolidayManager.TYPE_HOLIDAY
     Card(
-        cornerRadius = 20.dp,
         modifier = Modifier.fillMaxWidth(),
         insideMargin = PaddingValues(0.dp),
     ) {

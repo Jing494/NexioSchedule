@@ -1691,7 +1691,6 @@ private fun QuoteCard(
     val quote = pool[quoteIndex]
 
     BlurCard(
-        cornerRadius = 20.dp,
         wallpaperBackdrop = wallpaperBackdrop,
         blurRadius = blurRadius,
         surfaceOpacity = surfaceOpacity,
@@ -1838,7 +1837,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.addCourseSections(
                     blurRadius = blurRadius,
                     surfaceOpacity = surfaceOpacity
                 )
-                BlurCard(cornerRadius = 20.dp, wallpaperBackdrop = wallpaperBackdrop, blurRadius = blurRadius, surfaceOpacity = surfaceOpacity, modifier = Modifier.fillMaxWidth()) {
+                BlurCard(wallpaperBackdrop = wallpaperBackdrop, blurRadius = blurRadius, surfaceOpacity = surfaceOpacity, modifier = Modifier.fillMaxWidth()) {
                     Column {
                         morningCourses.forEach { course ->
                             CourseItemWithClick(course, courses, hiddenCourseIds, sectionTimes, pageDate, pageWeek, onCourseClick, wallpaperBackdrop != null, showClassroom, showTeacher)
@@ -1857,7 +1856,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.addCourseSections(
                     blurRadius = blurRadius,
                     surfaceOpacity = surfaceOpacity
                 )
-                BlurCard(cornerRadius = 20.dp, wallpaperBackdrop = wallpaperBackdrop, blurRadius = blurRadius, surfaceOpacity = surfaceOpacity, modifier = Modifier.fillMaxWidth()) {
+                BlurCard(wallpaperBackdrop = wallpaperBackdrop, blurRadius = blurRadius, surfaceOpacity = surfaceOpacity, modifier = Modifier.fillMaxWidth()) {
                     Column {
                         afternoonCourses.forEach { course ->
                             CourseItemWithClick(course, courses, hiddenCourseIds, sectionTimes, pageDate, pageWeek, onCourseClick, wallpaperBackdrop != null, showClassroom, showTeacher)
@@ -1876,7 +1875,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.addCourseSections(
                     blurRadius = blurRadius,
                     surfaceOpacity = surfaceOpacity
                 )
-                BlurCard(cornerRadius = 20.dp, wallpaperBackdrop = wallpaperBackdrop, blurRadius = blurRadius, surfaceOpacity = surfaceOpacity, modifier = Modifier.fillMaxWidth()) {
+                BlurCard(wallpaperBackdrop = wallpaperBackdrop, blurRadius = blurRadius, surfaceOpacity = surfaceOpacity, modifier = Modifier.fillMaxWidth()) {
                     Column {
                         eveningCourses.forEach { course ->
                             CourseItemWithClick(course, courses, hiddenCourseIds, sectionTimes, pageDate, pageWeek, onCourseClick, wallpaperBackdrop != null, showClassroom, showTeacher)

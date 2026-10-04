@@ -70,7 +70,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,6 +92,8 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -108,6 +109,8 @@ import androidx.core.graphics.get
 import androidx.core.graphics.scale
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.haooz.chedule.data.Course
+import com.haooz.chedule.data.PrivacyConsent
+import com.haooz.chedule.data.StatsReporter
 import com.haooz.chedule.data.ThemeMode
 import com.haooz.chedule.reminder.CourseReminderHelper
 import com.haooz.chedule.reminder.IslandNotificationHelper
@@ -134,6 +137,7 @@ import com.haooz.chedule.ui.screens.AddCourseDialog
 import com.haooz.chedule.ui.screens.CourseDetailScreen
 import com.haooz.chedule.ui.screens.CustomizeScheduleScreen
 import com.haooz.chedule.ui.screens.MainScheduleScreen
+import com.haooz.chedule.ui.screens.PrivacyConsentScreen
 import com.haooz.chedule.ui.screens.ScheduleGridGeometry
 import com.haooz.chedule.ui.screens.SettingsScreen
 import com.haooz.chedule.ui.screens.ShiftScheduleScreen
@@ -183,11 +187,11 @@ import top.yukonga.miuix.kmp.squircle.addSquircleRect
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
+import top.yukonga.miuix.kmp.utils.MiuixPopupUtils.Companion.MiuixPopupHost
 import java.time.LocalDate
 import java.util.Calendar
 import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.time.Duration.Companion.milliseconds
 import androidx.compose.ui.graphics.Color as ComposeColor
@@ -255,23 +259,6 @@ private class DragMotionHolder {
         lastTimeMs = 0L
         lastOffsetX = 0f
         lastOffsetY = 0f
-    }
-}
-
-// 按 0.25px 量化缓存 RenderEffect，避免 graphicsLayer 每帧 new 造成 GC 抖动
-private class BlurEffectCache {
-    private var cachedPx = Float.NaN
-    private var cached: androidx.compose.ui.graphics.RenderEffect? = null
-
-    fun get(px: Float): androidx.compose.ui.graphics.RenderEffect {
-        val quantized = (px * 4f).toInt().toFloat() / 4f
-        if (cachedPx != quantized || cached == null) {
-            cachedPx = quantized
-            cached = android.graphics.RenderEffect.createBlurEffect(
-                quantized, quantized, android.graphics.Shader.TileMode.CLAMP
-            ).asComposeRenderEffect()
-        }
-        return cached!!
     }
 }
 
@@ -380,9 +367,15 @@ class MainActivity : ComponentActivity() {
             IslandNotificationHelper.init(appContext)
         }
 
-        com.haooz.chedule.data.StatsReporter.init(this)
-        com.haooz.chedule.data.StatsReporter.reportActive(this)
-        com.haooz.chedule.data.StatsReporter.reportInstallOnce(this)
+        // 同步隐私同意状态到可观察状态：主界面已预加载，依赖同意的副作用据此判断是否可执行
+        com.haooz.chedule.data.PrivacyConsent.refresh(this)
+
+        // 合规：仅在用户同意隐私政策后，才进行设备信息上报
+        if (com.haooz.chedule.data.PrivacyConsent.hasConsented(this)) {
+            com.haooz.chedule.data.StatsReporter.init(this)
+            com.haooz.chedule.data.StatsReporter.reportActive(this)
+            com.haooz.chedule.data.StatsReporter.reportInstallOnce(this)
+        }
 
         // 异步预加载搭配壁纸，Compose 侧已处理 cachedWallpaperBitmap=null
         if (cachedWallpaperBitmap == null) {
@@ -448,7 +441,32 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             CourseScheduleTheme {
-                CourseScheduleApp()
+                // 合规：未同意隐私政策前不申请权限、不收集信息（由 privacyConsented 门禁网络副作用）；
+                // 主界面仍照常组合（预加载），这样点「同意」后即时进入，不会卡顿
+                var privacyAgreed by remember {
+                    mutableStateOf(com.haooz.chedule.data.PrivacyConsent.hasConsented(this@MainActivity))
+                }
+                Box(modifier = Modifier.fillMaxSize()) {
+                    CourseScheduleApp(privacyConsented = privacyAgreed)
+                    if (!privacyAgreed) {
+                        PrivacyConsentScreen(
+                            onAgree = {
+                                PrivacyConsent.setConsented(this@MainActivity)
+                                // 同意后方可进行设备信息上报
+                                StatsReporter.init(this@MainActivity)
+                                StatsReporter.reportActive(this@MainActivity)
+                                StatsReporter.reportInstallOnce(this@MainActivity)
+                                privacyAgreed = true
+                            },
+                            onDecline = { finish() },
+                            onOpenPolicy = {
+                                startActivity(
+                                    Intent(this@MainActivity, PrivacyPolicyActivity::class.java)
+                                )
+                            }
+                        )
+                    }
+                }
             }
         }
     }
@@ -961,6 +979,9 @@ private fun MorePopupMenus(
     todayMorePopupFraction: Animatable<Float, *>,
     scheduleMenuOffset: () -> Offset = { Offset.Zero },
     todayMenuOffset: () -> Offset = { Offset.Zero },
+    moreSlotTopPx: Float = 0f,
+    scheduleMaterialAlpha: Float = 1f,
+    todayMaterialAlpha: Float = 1f,
     liquidGlassBackdrop: com.kyant.backdrop.Backdrop,
     isShiftMode: Boolean = false,
     onJumpWeek: () -> Unit,
@@ -971,7 +992,17 @@ private fun MorePopupMenus(
     onMoreBackCancelled: () -> Unit = {},
     onTodayMoreBackProgress: (Float) -> Unit = {},
     onTodayMoreBackCancelled: () -> Unit = {},
+    // 平板右上角不显示「更多」：跳转/管理/外观都已在侧栏里
+    enabled: Boolean = true,
 ) {
+    if (!enabled) {
+        // 兜底：若进入平板前菜单正开着，强制收起，避免残留展开态
+        LaunchedEffect(Unit) {
+            if (showMorePopup) onMorePopupDismiss()
+            if (showTodayMorePopup) onTodayMorePopupDismiss()
+        }
+        return
+    }
     if (showMorePopup) {
         Box(
             modifier = Modifier
@@ -993,13 +1024,25 @@ private fun MorePopupMenus(
         )
     }
     val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    // 优先用「更多」占位槽的实测位置（布局期上报，首帧即准）；未测到时回退到 inset 估算
+    // 必须钳到 ≥0：padding 传负值会抛 IllegalArgumentException("Padding must be non-negative")。
+    // 两个分支都可能算出负值 —— 槽位 y 是相对 Compose 根的（状态栏由 Scaffold inset 吃掉，
+    // 槽位贴近根原点时 < 24dp 阴影预留）；横屏/全面屏手势导航时 statusBars inset 直接为 0dp。
+    val anchorTop = (
+        if (moreSlotTopPx > 0f) {
+            with(LocalDensity.current) { moreSlotTopPx.toDp() } -
+                com.haooz.chedule.ui.basic.LiquidGlassDropdownShadowPadding
+        } else if (statusBarHeight > 0.dp) {
+            statusBarHeight - 20.dp
+        } else {
+            17.dp
+        }
+        ).coerceAtLeast(0.dp)
     Box(
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer { clip = false }
-            .padding(
-                top = if (statusBarHeight > 0.dp) statusBarHeight - 20.dp else 17.dp,
-            )
+            .padding(top = anchorTop)
             .offset(x = 9.dp),
         contentAlignment = Alignment.TopEnd
     ) {
@@ -1014,6 +1057,7 @@ private fun MorePopupMenus(
             triggerContentDescription = "更多",
             onExpand = onMorePopupExpand,
             offsetPx = scheduleMenuOffset,
+            materialAlpha = scheduleMaterialAlpha,
         ) {
             LiquidGlassDropdownMenuItem(
                 text = "跳转周数",
@@ -1074,6 +1118,7 @@ private fun MorePopupMenus(
             triggerContentDescription = "更多",
             onExpand = onTodayMorePopupExpand,
             offsetPx = todayMenuOffset,
+            materialAlpha = todayMaterialAlpha,
         ) {
             LiquidGlassDropdownMenuItem(
                 text = "跳转日期",
@@ -1126,7 +1171,7 @@ private fun MorePopupMenus(
 
 @SuppressLint("ConfigurationScreenWidthHeight", "UseOfNonLambdaOffsetOverload", "UseKtx")
 @Composable
-fun CourseScheduleApp() {
+fun CourseScheduleApp(privacyConsented: Boolean = true) {
     val context = LocalContext.current
 
 
@@ -1143,7 +1188,9 @@ fun CourseScheduleApp() {
     val todayScrollBehavior = rememberSharedScrollBehavior()
     val scheduleScrollBehavior = rememberSharedScrollBehavior()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(privacyConsented) {
+        // 合规：未同意隐私政策前不进行云同步等网络行为
+        if (!privacyConsented) return@LaunchedEffect
         val syncManager = com.haooz.chedule.data.SyncManager.getInstance(context)
         val repository = com.haooz.chedule.data.CourseRepository(context)
         val webDavManager = com.haooz.chedule.data.WebDavManager(context)
@@ -1661,12 +1708,23 @@ fun CourseScheduleApp() {
     }
     val mainSnapshotRequester = remember { MainSnapshotRequester() }
     var mainSnapshotToken by remember { mutableIntStateOf(0) }
-    val captureMainContentBitmap: suspend () -> android.graphics.Bitmap = {
+    val captureMainContentBitmap: suspend () -> android.graphics.Bitmap? = {
         mainSnapshotToken++
         // 等两帧：draw 录制完成 + 帧已提交
         withFrameNanos { }
         withFrameNanos { }
-        screenGraphicsLayer.toImageBitmap().asAndroidBitmap()
+        // 必须单独 catch OutOfMemoryError：Bitmap 像素在 native 堆，全屏 toImageBitmap
+        // 读回是低端机上最容易 OOM 的一步，而 OOM 是 Error 不是 Exception，
+        // 只写 catch(Exception) 等于没兜底 —— 直接把进程带走。
+        // 返回 null：所有消费方都已能处理「没有快照」（切换页照样走完动画）。
+        try {
+            screenGraphicsLayer.toImageBitmap().asAndroidBitmap()
+        } catch (_: OutOfMemoryError) {
+            com.haooz.chedule.ui.utils.CrashLogHelper.trace("主页", "main_snapshot_oom")
+            null
+        } catch (_: Exception) {
+            null
+        }
     }
     var blurSnapshotJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
@@ -2348,14 +2406,18 @@ fun CourseScheduleApp() {
             mainContentSnapshot = fullSnapshot
             hiddenCourseIds = setOf(courseIdToHide)
             val oldDetail = detailSnapshot
-            detailSnapshot = try {
-                val x = cardLeft.toInt().coerceIn(0, fullSnapshot.width - 1)
-                val y = cardTop.toInt().coerceIn(0, fullSnapshot.height - 1)
-                val w = cardWidth.toInt().coerceIn(1, fullSnapshot.width - x)
-                val h = cardHeight.toInt().coerceIn(1, fullSnapshot.height - y)
-                android.graphics.Bitmap.createBitmap(fullSnapshot, x, y, w, h)
-            } catch (_: Exception) {
-                null
+            detailSnapshot = fullSnapshot?.let { snap ->
+                try {
+                    val x = cardLeft.toInt().coerceIn(0, snap.width - 1)
+                    val y = cardTop.toInt().coerceIn(0, snap.height - 1)
+                    val w = cardWidth.toInt().coerceIn(1, snap.width - x)
+                    val h = cardHeight.toInt().coerceIn(1, snap.height - y)
+                    android.graphics.Bitmap.createBitmap(snap, x, y, w, h)
+                } catch (_: Exception) {
+                    null
+                } catch (_: OutOfMemoryError) {
+                    null
+                }
             }
             recycleIndependentBitmap(oldDetail, detailSnapshot, fullSnapshot)
 
@@ -2385,11 +2447,17 @@ fun CourseScheduleApp() {
             val oldCombSnapshots = combinations.mapNotNull { it.snapshot }
             combinations = combinations.map { it.copy(snapshot = null) }
             delay(50.milliseconds)
-            // toImageBitmap 硬件位图直接画回会与背景模糊形成 RenderNode 自引用导致栈溢出，
-            // 必须复制为独立 ARGB_8888 切断引用；~10MB 拷贝挪到 IO
+            // 复制为独立 ARGB_8888 切断引用
+            // 截不到（OOM）就不做开洞快照，直接照常进搭配页
             val captured = captureMainContentBitmap()
-            val currentSnapshot = withContext(Dispatchers.IO) {
-                captured.copy(android.graphics.Bitmap.Config.ARGB_8888, false) ?: captured
+            val currentSnapshot = captured?.let { snap ->
+                try {
+                    withContext(Dispatchers.IO) {
+                        snap.copy(android.graphics.Bitmap.Config.ARGB_8888, false) ?: snap
+                    }
+                } catch (_: OutOfMemoryError) {
+                    null
+                }
             }
             val oldCustomize = customizeSnapshot
             val oldCover = snapshotCoverBitmap
@@ -2521,6 +2589,17 @@ fun CourseScheduleApp() {
     // 按钮原地随菜单展开淡出，形成"按钮连贯变为菜单"的单一动画
     val morePopupFraction = remember { Animatable(0f) }
     val todayMorePopupFraction = remember { Animatable(0f) }
+    // 「更多」占位槽实测顶部位置（px，root 坐标）：布局期上报，菜单据此定位，避免首帧 inset 未到而偏位
+    val moreSlotTopPx = remember { mutableStateOf(0f) }
+    // 仅在主内容处于「静止未缩放」时采样槽位位置：onGloballyPositioned 上报的是
+    // positionInRoot（根坐标，含祖先 graphicsLayer 的缩放），而它被当作 popupHost 内的
+    // 局部 padding 使用。课表外观开洞把主内容缩到 0.65 时会形成「越缩越小」的正反馈：
+    // 采样值被压缩 → padding 变小 → 按钮上移 → 再采到更小的值。
+    // 症状是进页后「更多」按钮错位，严重时算出负值抛 Padding must be non-negative。
+    val canSampleMoreSlot = !isWindowCutoutActive && !showCustomizePage && !showSwitchSchedule
+    // 顶栏滚动材质透明度（收起态「更多」玻璃渐显渐隐）；两个顶栏各自一份，避免切页时互相覆盖
+    val scheduleMaterialAlpha = remember { mutableStateOf(1f) }
+    val todayMaterialAlpha = remember { mutableStateOf(1f) }
     var todayJumpToDateTrigger by remember { mutableIntStateOf(0) }
 
     val isViewingCurrentWeek = currentViewingWeek == currentWeek
@@ -2660,9 +2739,6 @@ fun CourseScheduleApp() {
         val latestIsWindowCutout by rememberUpdatedState(isWindowCutoutActive)
         val latestShowCustomize by rememberUpdatedState(showCustomizePage)
         val latestIsCustomizeExiting by rememberUpdatedState(isCustomizeExiting)
-        val latestSwitchAnimRunning by rememberUpdatedState(switchAnimRunning)
-        val latestSwitchAnimForward by rememberUpdatedState(switchAnimForward)
-        val latestShowSwitch by rememberUpdatedState(showSwitchSchedule)
         val latestDraggingCard by rememberUpdatedState(isDraggingCard)
         val latestRailBlurEpoch by rememberUpdatedState(railBlurResampleEpoch.intValue)
         // 无壁纸周左右滑：跳过 liquidGlass 整树逐帧重录（chrome 采样缓存随之跳过模糊）。
@@ -2692,10 +2768,9 @@ fun CourseScheduleApp() {
                     // 开洞编辑时主内容持续缩放，绝不能停录
                     latestIsWindowCutout ||
                     (latestShowCustomize && latestIsCustomizeExiting) ||
-                    latestShowSwitch && latestSwitchAnimForward && latestSwitchAnimRunning ||
-                    latestSwitchAnimRunning ||
-                    shortcutMenuBlurRadius.value > 0.01f ||
-                    managePageBlurRadius.value > 0.01f ||
+                    // 切换课表进/退场动画期间刻意「不」录：这一段里主内容 alpha=0
+                    latestShortcutBlur > 0.01f ||
+                    latestManageBlur > 0.01f ||
                     // 非静止端点视为动画进行中
                     (cutoutMainScale.value != 1f && cutoutMainScale.value != 0.75f) ||
                     backgroundScale.value != 1f ||
@@ -2996,6 +3071,8 @@ fun CourseScheduleApp() {
                                         scrollBehavior = scheduleScrollBehavior,
                                         blurResampleKey = railBlurResampleEpoch.intValue,
                                         blurSampleTrack = com.haooz.chedule.ui.components.tabletNavExpandSampleTrack,
+                                        onMoreSlotTop = { if (canSampleMoreSlot) moreSlotTopPx.value = it },
+                                        onMoreMaterial = { scheduleMaterialAlpha.value = it },
                                     )
                                 }
                             }
@@ -3090,9 +3167,90 @@ fun CourseScheduleApp() {
                                     visible = showTodayTitle,
                                     blurResampleKey = railBlurResampleEpoch.intValue,
                                     blurSampleTrack = com.haooz.chedule.ui.components.tabletNavExpandSampleTrack,
+                                    onMoreSlotTop = { if (canSampleMoreSlot) moreSlotTopPx.value = it },
+                                    onMoreMaterial = { todayMaterialAlpha.value = it },
                                 )
                             }
                         }
+                    },
+                    // popup 槽是 Scaffold 最上层，但内容按组合顺序绘制：
+                    // 「更多」控件排在 MiuixPopupHost 之前，故只高于顶栏按钮、低于弹窗，
+                    // 打开添加课程弹窗时会被遮罩一起压暗
+                    popupHost = {
+                        val menuDark = forcedDark ?: appSettingDark
+                        val menuController = remember {
+                            ThemeController(if (menuDark) ColorSchemeMode.Dark else ColorSchemeMode.Light)
+                        }
+                        // 组合期同步 mode：SideEffect 会晚一帧
+                        menuController.colorSchemeMode =
+                            if (menuDark) ColorSchemeMode.Dark else ColorSchemeMode.Light
+                        // 单个「更多」控件随所在顶栏一起滑动：与顶栏同一套 delta 公式；
+                        // 非当前页时整块被平移出屏幕，天然只留一份可见
+                        val scheduleMoreMenuOffset: () -> Offset = {
+                            val page = mainPagerState.currentPage
+                            val off = mainPagerState.currentPageOffsetFraction
+                            val delta = (if (isShiftMode) 0 else 1) - page - off
+                            if (navBarStyle == "rail") Offset(0f, delta * screenHPx)
+                            else Offset(delta * screenWPx, 0f)
+                        }
+                        val todayMoreMenuOffset: () -> Offset = {
+                            val page = mainPagerState.currentPage
+                            val off = mainPagerState.currentPageOffsetFraction
+                            // 排班模式下没有今日页，恒移出屏幕
+                            val delta = if (isShiftMode) -1f else (-page - off)
+                            if (navBarStyle == "rail") Offset(0f, delta * screenHPx)
+                            else Offset(delta * screenWPx, 0f)
+                        }
+                        MiuixTheme(controller = menuController) {
+                            CompositionLocalProvider(LocalForcedDarkTheme provides forcedDark) {
+                                MorePopupMenus(
+                                    showMorePopup = showMorePopup,
+                                    onMorePopupDismiss = { showMorePopup = false },
+                                    onMorePopupExpand = { showMorePopup = true },
+                                    showTodayMorePopup = showTodayMorePopup,
+                                    onTodayMorePopupDismiss = { showTodayMorePopup = false },
+                                    onTodayMorePopupExpand = { showTodayMorePopup = true },
+                                    morePopupFraction = morePopupFraction,
+                                    todayMorePopupFraction = todayMorePopupFraction,
+                                    scheduleMenuOffset = scheduleMoreMenuOffset,
+                                    todayMenuOffset = todayMoreMenuOffset,
+                                    moreSlotTopPx = moreSlotTopPx.value,
+                                    scheduleMaterialAlpha = scheduleMaterialAlpha.value,
+                                    todayMaterialAlpha = todayMaterialAlpha.value,
+                                    liquidGlassBackdrop = liquidGlassBackdrop,
+                                    isShiftMode = isShiftMode,
+                                    // 平板（rail）右上角不显示「更多」
+                                    enabled = navBarStyle != "rail",
+                                    // 预测性返回：手势推进时菜单缩回按钮处（按钮随之淡入），取消时恢复展开
+                                    onMoreBackProgress = { progress ->
+                                        coroutineScope.launch { morePopupFraction.snapTo(1f - progress) }
+                                    },
+                                    onMoreBackCancelled = {
+                                        coroutineScope.launch { morePopupFraction.animateTo(1f, tween(150)) }
+                                    },
+                                    onTodayMoreBackProgress = { progress ->
+                                        coroutineScope.launch { todayMorePopupFraction.snapTo(1f - progress) }
+                                    },
+                                    onTodayMoreBackCancelled = {
+                                        coroutineScope.launch { todayMorePopupFraction.animateTo(1f, tween(150)) }
+                                    },
+                                    onJumpWeek = { viewModel.showJumpWeekDialog() },
+                                    onCourseManage = {
+                                        val intent = Intent(context, CourseManageActivity::class.java)
+                                        context.startActivity(intent)
+                                    },
+                                    onEnterCustomize = {
+                                        coroutineScope.launch {
+                                            delay(200.milliseconds)
+                                            enterCustomizePage()
+                                        }
+                                    },
+                                    onJumpToDate = { todayJumpToDateTrigger++ },
+                                )
+                            }
+                        }
+                        // 弹窗排在「更多」之后 → 始终盖在它之上，遮罩能压暗「更多」
+                        MiuixPopupHost()
                     }
                 ) { paddingValues ->
                     // 详情动画期间用快照占位；占位须吃满触摸，避免事件穿到卡片
@@ -3147,7 +3305,7 @@ fun CourseScheduleApp() {
                             if (showSharedWallpaperLayer && sharedWallpaperBitmap != null) {
                                 // 全屏垫背景色 + 裁切：壁纸切页平移时露出的空隙由背景色盖住（侧栏下始终有内容，不出漏）
                                 val wallpaperPadColor =
-                                    if (isAppDarkTheme()) Color(0xFF000000) else Color(0xFFF7F7F7)
+                                    MiuixTheme.colorScheme.surface
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
@@ -4218,7 +4376,9 @@ fun CourseScheduleApp() {
                     )
                     // 节点常驻组合树、仅 show 控显隐，退出动画才能播完
                     var notice by remember { mutableStateOf<com.haooz.chedule.data.Notice?>(null) }
-                    LaunchedEffect(Unit) {
+                    LaunchedEffect(privacyConsented) {
+                        // 合规：未同意隐私政策前不拉取公告（不触网）
+                        if (!privacyConsented) return@LaunchedEffect
                         val n = com.haooz.chedule.data.NoticeFetcher.fetch(context)
                         if (n != null && com.haooz.chedule.data.NoticeFetcher.shouldShow(context, n)) {
                             notice = n
@@ -4369,8 +4529,13 @@ fun CourseScheduleApp() {
             }
             // 快照层也要拦截触摸，覆盖 showDetail 已 false 但快照未清除的窗口
             if (mainContentSnapshot != null) {
+                // remember 固定包装对象身份：asImageBitmap() 每帧新建会让 Image 的位图纹理
+                // 缓存每帧失效，全屏快照每帧重传纹理
+                val mainSnapshotImage = remember(mainContentSnapshot) {
+                    mainContentSnapshot!!.asImageBitmap()
+                }
                 Image(
-                    bitmap = mainContentSnapshot!!.asImageBitmap(),
+                    bitmap = mainSnapshotImage,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize().consumeAllTouches(),
                     contentScale = ContentScale.Crop
@@ -4653,79 +4818,18 @@ fun CourseScheduleApp() {
                 }
             )
         }
-        val menuDark = forcedDark ?: appSettingDark
-        val menuController = remember {
-            ThemeController(if (menuDark) ColorSchemeMode.Dark else ColorSchemeMode.Light)
-        }
-        // 组合期同步 mode：SideEffect 会晚一帧
-        menuController.colorSchemeMode =
-            if (menuDark) ColorSchemeMode.Dark else ColorSchemeMode.Light
-        // 单个「更多」控件随所在顶栏一起滑动：与顶栏同一套 delta 公式；
-        // 非当前页时整块被平移出屏幕，天然只留一份可见
-        val scheduleMoreMenuOffset: () -> Offset = {
-            val page = mainPagerState.currentPage
-            val off = mainPagerState.currentPageOffsetFraction
-            val delta = (if (isShiftMode) 0 else 1) - page - off
-            if (navBarStyle == "rail") Offset(0f, delta * screenHPx) else Offset(delta * screenWPx, 0f)
-        }
-        val todayMoreMenuOffset: () -> Offset = {
-            val page = mainPagerState.currentPage
-            val off = mainPagerState.currentPageOffsetFraction
-            // 排班模式下没有今日页，恒移出屏幕
-            val delta = if (isShiftMode) -1f else (-page - off)
-            if (navBarStyle == "rail") Offset(0f, delta * screenHPx) else Offset(delta * screenWPx, 0f)
-        }
-        MiuixTheme(controller = menuController) {
-            CompositionLocalProvider(LocalForcedDarkTheme provides forcedDark) {
-                MorePopupMenus(
-                    showMorePopup = showMorePopup,
-                    onMorePopupDismiss = { showMorePopup = false },
-                    onMorePopupExpand = { showMorePopup = true },
-                    showTodayMorePopup = showTodayMorePopup,
-                    onTodayMorePopupDismiss = { showTodayMorePopup = false },
-                    onTodayMorePopupExpand = { showTodayMorePopup = true },
-                    morePopupFraction = morePopupFraction,
-                    todayMorePopupFraction = todayMorePopupFraction,
-                    scheduleMenuOffset = scheduleMoreMenuOffset,
-                    todayMenuOffset = todayMoreMenuOffset,
-                    liquidGlassBackdrop = liquidGlassBackdrop,
-                    isShiftMode = isShiftMode,
-                    // 预测性返回：手势推进时菜单缩回按钮处（按钮随之淡入），取消时恢复展开
-                    onMoreBackProgress = { progress ->
-                        coroutineScope.launch { morePopupFraction.snapTo(1f - progress) }
-                    },
-                    onMoreBackCancelled = {
-                        coroutineScope.launch { morePopupFraction.animateTo(1f, tween(150)) }
-                    },
-                    onTodayMoreBackProgress = { progress ->
-                        coroutineScope.launch { todayMorePopupFraction.snapTo(1f - progress) }
-                    },
-                    onTodayMoreBackCancelled = {
-                        coroutineScope.launch { todayMorePopupFraction.animateTo(1f, tween(150)) }
-                    },
-                    onJumpWeek = { viewModel.showJumpWeekDialog() },
-                    onCourseManage = {
-                        val intent = Intent(context, CourseManageActivity::class.java)
-                        context.startActivity(intent)
-                    },
-                    onEnterCustomize = {
-                        coroutineScope.launch {
-                            delay(200.milliseconds)
-                            enterCustomizePage()
-                        }
-                    },
-                    onJumpToDate = { todayJumpToDateTrigger++ },
-                )
-            }
-        }
         if (isEntryAnimating) {
+            // alpha 必须走 graphicsLayer：原来这里在组合期读 switchReturnBgScrim.value，
+            // 进场动画 350ms 里每帧让根内容作用域失效 → 整棵 MainActivity 内容树
+            // （pager + 各页顶栏底栏 + 卡片）重组 20+ 次。视觉等价：黑底 + 层透明度。
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(
-                        if (isDark) ComposeColor.Black.copy(alpha = switchReturnBgScrim.value)
-                        else ComposeColor.Black.copy(alpha = switchReturnBgScrim.value * 0.6f)
-                    )
+                    .background(ComposeColor.Black)
+                    .graphicsLayer {
+                        alpha = if (isDark) switchReturnBgScrim.value
+                        else switchReturnBgScrim.value * 0.6f
+                    }
             )
         }
         val window = (context as? ComponentActivity)?.window
@@ -4993,8 +5097,9 @@ fun CourseScheduleApp() {
         }
 
         if (snapshotCoverBitmap != null) {
+            val coverImage = remember(snapshotCoverBitmap) { snapshotCoverBitmap!!.asImageBitmap() }
             Image(
-                bitmap = snapshotCoverBitmap!!.asImageBitmap(),
+                bitmap = coverImage,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
@@ -5003,8 +5108,9 @@ fun CourseScheduleApp() {
 
         // 只作用于快照这一层，避免叠加闪烁
         if (customizeCoverActive && customizeSnapshot != null) {
+            val customizeImage = remember(customizeSnapshot) { customizeSnapshot!!.asImageBitmap() }
             Image(
-                bitmap = customizeSnapshot!!.asImageBitmap(),
+                bitmap = customizeImage,
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
@@ -5201,28 +5307,25 @@ fun CourseScheduleApp() {
         }
         // 切换课表：p 在卡片↔全屏之间形变；进入 p:1→0，退出 p:0→1
         if (showSwitchSchedule) {
-            val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
-            val screenWidth = windowInfo.containerSize.width.toFloat()
-            val screenHeight = windowInfo.containerSize.height.toFloat()
-            val p = switchAnimProgress.value
-            // 初值 0：首帧不挂 RenderEffect
-            val switchPageBlur = remember { Animatable(0f) }
-            val blurEffectCache = remember { BlurEffectCache() }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    // blur/alpha 合一层，少一次离屏合成
                     .graphicsLayer {
                         alpha = if (switchCapturingSnapshot) 0f else 1f
-                        val r = switchPageBlur.value
-                        renderEffect = if (r > 0.01f) {
-                            blurEffectCache.get(r * density.density)
-                        } else null
                     }
             ) {
                 SwitchScheduleScreen(
                     onBack = { switchPageBitmap ->
-                        if (switchAnimRunning && !switchAnimForward) return@SwitchScheduleScreen
+                        if (switchAnimRunning && !switchAnimForward) {
+                            // 退出动画已在跑，这次回调没人消费。它带的整屏截图只用来裁卡片，
+                            // 直接回收，否则每次快速连点返回都漏一张全屏位图
+                            coroutineScope.launch {
+                                delay(32.milliseconds)
+                                recycleIndependentBitmap(switchPageBitmap, switchCardSnapshot)
+                            }
+                            return@SwitchScheduleScreen
+                        }
                         val wasForward = switchAnimForward
                         switchAnimForward = false
                         switchAnimRunning = true
@@ -5260,19 +5363,12 @@ fun CourseScheduleApp() {
                                     android.graphics.Bitmap.createBitmap(screenBitmap, x, y, w, h)
                                 } catch (_: Exception) {
                                     null
+                                } catch (_: OutOfMemoryError) {
+                                    null
                                 }
                                 val currentProgress = switchAnimProgress.value
                                 val remainingDuration =
                                     ((1f - currentProgress) * 560).toInt().coerceAtLeast(1)
-                                launch {
-                                    switchPageBlur.animateTo(
-                                        5f,
-                                        animationSpec = tween(
-                                            remainingDuration,
-                                            easing = OobeQuartOutEasing
-                                        )
-                                    )
-                                }
                                 switchAnimProgress.animateTo(
                                     targetValue = 1f,
                                     animationSpec = tween(
@@ -5303,6 +5399,17 @@ fun CourseScheduleApp() {
                                 )
                                 recycleIndependentBitmap(
                                     oldSwitchMain,
+                                    switchPageBitmap,
+                                    MainActivity.cachedWallpaperBitmap,
+                                    wallpaperBitmap,
+                                )
+                                // onBack 带回来的整屏截图只用来裁卡片快照；裁完即弃。
+                                // 它和 mainContentSnapshot 是两个独立对象时（选中的是另一张
+                                // 课表 / 点了当前课表走 dismissKeepCurrent）才会走到这里。
+                                recycleIndependentBitmap(
+                                    switchPageBitmap,
+                                    oldSwitchCard,
+                                    oldSwitchMain,
                                     MainActivity.cachedWallpaperBitmap,
                                     wallpaperBitmap,
                                 )
@@ -5322,8 +5429,17 @@ fun CourseScheduleApp() {
                     onCardClick = { bounds ->
                         switchCardBounds = bounds
                     },
-                    onCardSnapshot = { _, cardBitmap, bounds ->
-                        if (switchAnimJob?.isActive == true) return@SwitchScheduleScreen
+                    onCardSnapshot = { fullBitmap, cardBitmap, bounds ->
+                        if (switchAnimJob?.isActive == true) {
+                            // 退出动画已在跑：卡片快照和它裁自的整屏截图都无人消费。
+                            // 互为 keep，裁剪区等于整图时两者同一对象，天然都不回收
+                            coroutineScope.launch {
+                                delay(32.milliseconds)
+                                recycleIndependentBitmap(cardBitmap, fullBitmap)
+                                recycleIndependentBitmap(fullBitmap, cardBitmap)
+                            }
+                            return@SwitchScheduleScreen
+                        }
                         switchAnimForward = false
                         switchAnimRunning = true
                         switchAnimJob?.cancel()
@@ -5347,15 +5463,6 @@ fun CourseScheduleApp() {
                             val currentProgress = switchAnimProgress.value
                             val remainingDuration =
                                 ((1f - currentProgress) * 560).toInt().coerceAtLeast(1)
-                            launch {
-                                switchPageBlur.animateTo(
-                                    5f,
-                                    animationSpec = tween(
-                                        remainingDuration,
-                                        easing = OobeQuartOutEasing
-                                    )
-                                )
-                            }
                             switchAnimProgress.animateTo(
                                 targetValue = 1f,
                                 animationSpec = tween(
@@ -5369,13 +5476,35 @@ fun CourseScheduleApp() {
                             switchCardSnapshot = null
                             switchCardBounds = null
                             mainContentSnapshot = null
+                            // fullBitmap 是切换页的整屏截图，只用来裁 cardBitmap，裁完即弃；
+                            // 每次「选中另一张课表」原先都直接丢弃一张全屏位图。
+                            // keep 传 cardBitmap：裁剪区等于整图时两者同一对象，天然不回收
+                            launch {
+                                delay(32.milliseconds)
+                                recycleIndependentBitmap(
+                                    fullBitmap,
+                                    cardBitmap,
+                                    MainActivity.cachedWallpaperBitmap,
+                                    wallpaperBitmap,
+                                )
+                            }
                         }
                     },
                     onCurrentCardBounds = { bounds ->
                         switchCurrentCardBounds = bounds
                     },
                     onScreenReady = { screenBitmap, cardBounds ->
-                        if (switchPendingReverse) {
+                        if (!switchPendingReverse) {
+                            // 锚点 bounds 后续再变会重复回调（见 SwitchScheduleScreen 里的上闩），
+                            // 走到这里说明动画早已启动：这张全屏截图没人要，直接回收
+                            com.haooz.chedule.ui.utils.CrashLogHelper.trace(
+                                "切换课表", "screen_ready_stale", "pending=false"
+                            )
+                            coroutineScope.launch {
+                                delay(32.milliseconds)
+                                recycleIndependentBitmap(screenBitmap, switchCardSnapshot)
+                            }
+                        } else {
                             switchPendingReverse = false
                             switchAnimForward = true
                             switchAnimRunning = true
@@ -5404,11 +5533,22 @@ fun CourseScheduleApp() {
                                     android.graphics.Bitmap.createBitmap(screenBitmap, x, y, w, h)
                                 } catch (_: Exception) {
                                     null
+                                } catch (_: OutOfMemoryError) {
+                                    null
                                 }
                             } else null
+                            // screenBitmap 只用来裁 cardSnap，裁完即弃。原先只等 GC 回收，
+                            // 反复进出切换页几次，光这一项就够在低端机上把动画收尾那一帧的
+                            // 位图峰值顶爆（manifest 没开 largeHeap）。
+                            // 延后两帧再回收：与本文件其余快照位图同一套时序。
+                            // keep 传 cardSnap 是必须的：裁剪区恰好等于整图时
+                            // createBitmap 会原样返回 screenBitmap，此时它就是 cardSnap 本体。
+                            coroutineScope.launch {
+                                delay(32.milliseconds)
+                                recycleIndependentBitmap(screenBitmap, cardSnap, switchCardSnapshot)
+                            }
                             switchAnimJob = coroutineScope.launch {
                                 switchAnimProgress.snapTo(1f)
-                                switchPageBlur.snapTo(5f)
                                 switchReturnBgScrim.snapTo(0.4f)
                                 switchCapturingSnapshot = false
                                 switchOverlayActive = true
@@ -5416,15 +5556,6 @@ fun CourseScheduleApp() {
                                 switchCardSnapshot = cardSnap
                                 val remainingDuration = 350
                                 val morphExitEase = CubicBezierEasing(0.3f, 0.65f, 0.35f, 1.0f)
-                                launch {
-                                    switchPageBlur.animateTo(
-                                        0f,
-                                        animationSpec = tween(
-                                            remainingDuration,
-                                            easing = OobeCubicOutEasing
-                                        )
-                                    )
-                                }
                                 launch {
                                     switchReturnBgScrim.animateTo(
                                         0f,
@@ -5463,73 +5594,15 @@ fun CourseScheduleApp() {
                 )
             }
             // p 在卡片矩形↔全屏插值，卡片/主内容快照交叉淡入淡出
-            if (switchOverlayActive) {
-                val sBounds = switchCardBounds
-                val cLeft: Float
-                val cTop: Float
-                val cWidth: Float
-                val cHeight: Float
-                if (sBounds != null) {
-                    cLeft = sBounds.left + (0f - sBounds.left) * p
-                    cTop = sBounds.top + (0f - sBounds.top) * p
-                    cWidth = sBounds.width + (screenWidth - sBounds.width) * p
-                    cHeight = sBounds.height + (screenHeight - sBounds.height) * p
-                } else {
-                    cLeft = 0f; cTop = 0f; cWidth = screenWidth; cHeight = screenHeight
-                }
-                val startRadius = with(density) { 20.dp.toPx() }
-                val cRadius =
-                    with(density) { (startRadius + (screenCornerRadius - startRadius) * p).toDp() }
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            if (isDark) ComposeColor(0xFF2C2C2C).copy(
-                                alpha = (p * 0.5f).coerceIn(
-                                    0f,
-                                    0.5f
-                                )
-                            )
-                            else ComposeColor.Black.copy(alpha = (p * 0.5f).coerceIn(0f, 0.5f))
-                        )
-                )
-                Box(
-                    modifier = Modifier
-                        .offset(
-                            x = with(density) { cLeft.toDp() },
-                            y = with(density) { cTop.toDp() }
-                        )
-                        .size(
-                            width = with(density) { cWidth.toDp() },
-                            height = with(density) { cHeight.toDp() }
-                        )
-                        .clip(ContinuousRoundedRectangle(cRadius))
-                        .background(MiuixTheme.colorScheme.background)
-                ) {
-                    if (switchCardSnapshot != null) {
-                        Image(
-                            bitmap = switchCardSnapshot!!.asImageBitmap(),
-                            contentDescription = null,
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .clip(ContinuousRoundedRectangle(20.dp))
-                                .graphicsLayer { alpha = (1f - p * 2f).coerceIn(0f, 1f) },
-                            contentScale = ContentScale.None
-                        )
-                    }
-                    if (mainContentSnapshot != null) {
-                        Image(
-                            bitmap = mainContentSnapshot!!.asImageBitmap(),
-                            contentDescription = null,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer { alpha = ((p - 0.2f) / 0.7f).coerceIn(0f, 1f) },
-                            contentScale = ContentScale.Crop,
-                            alignment = Alignment.TopCenter
-                        )
-                    }
-                }
-            }
+            SwitchMorphOverlay(
+                active = switchOverlayActive,
+                progress = switchAnimProgress,
+                cardBounds = switchCardBounds,
+                cardSnapshot = switchCardSnapshot,
+                mainSnapshot = mainContentSnapshot,
+                screenCornerRadius = screenCornerRadius,
+                isDark = isDark,
+            )
         }
 
         ShiftLoadingOverlay(
@@ -5548,6 +5621,94 @@ fun CourseScheduleApp() {
             },
             onHide = { showShiftLoading = false },
         )
+    }
+}
+
+@Composable
+private fun SwitchMorphOverlay(
+    active: Boolean,
+    progress: androidx.compose.animation.core.Animatable<Float, androidx.compose.animation.core.AnimationVector1D>,
+    cardBounds: androidx.compose.ui.geometry.Rect?,
+    cardSnapshot: android.graphics.Bitmap?,
+    mainSnapshot: android.graphics.Bitmap?,
+    screenCornerRadius: Float,
+    isDark: Boolean,
+) {
+    // 门控必须留在本 composable 内：退出的兜底分支会出现
+    // showSwitchSchedule && !switchOverlayActive 的窗口，无条件绘制会闪一帧全屏底色
+    if (!active) return
+    val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
+    val screenWidth = windowInfo.containerSize.width.toFloat()
+    val screenHeight = windowInfo.containerSize.height.toFloat()
+    val density = LocalDensity.current
+    val p = progress.value
+
+    // asImageBitmap() 每次调用都 new 一个 AndroidImageBitmap 包装对象，而 Image 的位图
+    // 纹理缓存是按这个对象身份命中的：写在组合里 = 每帧换一个身份 = 缓存全失效，
+    // 全屏的 mainSnapshot 每帧都要重新上传纹理。这里按底层 Bitmap 身份记住包装对象。
+    val cardImage = remember(cardSnapshot) { cardSnapshot?.asImageBitmap() }
+    val mainImage = remember(mainSnapshot) { mainSnapshot?.asImageBitmap() }
+
+    val sBounds = cardBounds
+    val cLeft: Float
+    val cTop: Float
+    val cWidth: Float
+    val cHeight: Float
+    if (sBounds != null) {
+        cLeft = sBounds.left + (0f - sBounds.left) * p
+        cTop = sBounds.top + (0f - sBounds.top) * p
+        cWidth = sBounds.width + (screenWidth - sBounds.width) * p
+        cHeight = sBounds.height + (screenHeight - sBounds.height) * p
+    } else {
+        cLeft = 0f; cTop = 0f; cWidth = screenWidth; cHeight = screenHeight
+    }
+    val startRadius = with(density) { 20.dp.toPx() }
+    val cRadius =
+        with(density) { (startRadius + (screenCornerRadius - startRadius) * p).toDp() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                if (isDark) ComposeColor(0xFF2C2C2C).copy(alpha = (p * 0.5f).coerceIn(0f, 0.5f))
+                else ComposeColor.Black.copy(alpha = (p * 0.5f).coerceIn(0f, 0.5f))
+            )
+    )
+    Box(
+        modifier = Modifier
+            .offset(
+                x = with(density) { cLeft.toDp() },
+                y = with(density) { cTop.toDp() }
+            )
+            .size(
+                width = with(density) { cWidth.toDp() },
+                height = with(density) { cHeight.toDp() }
+            )
+            .clip(ContinuousRoundedRectangle(cRadius))
+            .background(MiuixTheme.colorScheme.background)
+    ) {
+        if (cardImage != null) {
+            Image(
+                bitmap = cardImage,
+                contentDescription = null,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .clip(ContinuousRoundedRectangle(20.dp))
+                    .graphicsLayer { alpha = (1f - p * 2f).coerceIn(0f, 1f) },
+                contentScale = ContentScale.None
+            )
+        }
+        if (mainImage != null) {
+            Image(
+                bitmap = mainImage,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = ((p - 0.2f) / 0.7f).coerceIn(0f, 1f) },
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.TopCenter
+            )
+        }
     }
 }
 
@@ -5607,6 +5768,8 @@ private fun TodayTopBar(
     visible: Boolean = true,
     blurResampleKey: Int = 0,
     blurSampleTrack: () -> Float = { 0f },
+    onMoreSlotTop: (Float) -> Unit = {},
+    onMoreMaterial: (Float) -> Unit = {},
 ) {
     if (liquidGlassBackdrop == null) return
     val isTabletLiquidGlass = navBarStyle == "rail"
@@ -5639,6 +5802,7 @@ private fun TodayTopBar(
             titleModifier = titleRailPadding,
             // 平板左上角不放返回按钮
             startAction = null,
+            onAlphaChanged = { backdrop, _ -> onMoreMaterial(backdrop) },
             endAction = { backdropAlpha, shadowAlpha ->
                 if (visible) {
                     if (isTabletLiquidGlass) {
@@ -5668,7 +5832,11 @@ private fun TodayTopBar(
                         }
                     } else {
                         // 「更多」按钮由下拉菜单组件自带（收起态即那颗按钮，唯一一份），这里只占位对齐
-                        Spacer(modifier = Modifier.size(42.dp))
+                        Spacer(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .onGloballyPositioned { onMoreSlotTop(it.positionInRoot().y) }
+                        )
                     }
                 }
             },

@@ -308,7 +308,7 @@ fun CourseReminderScreen(
         selectedContainerColor = Color.Transparent,
     )
     val isTablet = LocalConfiguration.current.screenWidthDp >= 600
-    val tabletHorizontalPadding = 20.dp
+    val tabletHorizontalPadding = if (isTablet) 20.dp else 16.dp
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
@@ -343,7 +343,6 @@ fun CourseReminderScreen(
                     // 开启提醒
                     item {
                         Card(
-                            cornerRadius = 20.dp,
                             modifier = Modifier.fillMaxWidth(),
                             insideMargin = PaddingValues(0.dp)
                         ) {
@@ -387,7 +386,6 @@ fun CourseReminderScreen(
                     item {
                         val masterEnabled = preClassReminder || nextDayReminder
                         Card(
-                            cornerRadius = 20.dp,
                             modifier = Modifier.fillMaxWidth(),
                             insideMargin = PaddingValues(0.dp)
                         ) {
@@ -607,7 +605,6 @@ fun CourseReminderScreen(
                     if (isIslandSupported && masterEnabled) {
                         item {
                         Card(
-                            cornerRadius = 20.dp,
                             modifier = Modifier.fillMaxWidth(),
                             insideMargin = PaddingValues(0.dp)
                         ) {
@@ -874,7 +871,6 @@ fun CourseReminderScreen(
                         if (!islandNotification || !isIslandSupported) {
                             // 原生实况：只保留右侧缩略内容；课中开关已在上方勿扰卡片
                             Card(
-                                cornerRadius = 20.dp,
                                 modifier = Modifier.fillMaxWidth(),
                             insideMargin = PaddingValues(0.dp)
                             ) {
@@ -889,7 +885,6 @@ fun CourseReminderScreen(
                         } else {
                             // 开启超级岛：显示"超级岛左侧"、"超级岛右侧"和"息屏显示"
                             Card(
-                                cornerRadius = 20.dp,
                                 modifier = Modifier.fillMaxWidth(),
                             insideMargin = PaddingValues(0.dp)
                             ) {
@@ -933,7 +928,6 @@ fun CourseReminderScreen(
                     // 权限设置
                     item {
                         Card(
-                            cornerRadius = 20.dp,
                             modifier = Modifier.fillMaxWidth(),
                             insideMargin = PaddingValues(0.dp)
                         ) {
