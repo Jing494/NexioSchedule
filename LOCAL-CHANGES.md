@@ -494,3 +494,18 @@ master 一个字节没动，问题在预演分支上就被抓住。
 
 **顺带**：把 `UpdateChecker.kt` / `UpdateInstaller.kt` 加入「故意分歧清单」——
 这两处我们的定制最深、上游又改得最勤，以后一撞就该人工过一眼（这次就是撞了才发现要合体）。
+
+### 十六、Gitee 自愈 job（补齐「GitHub 有、Gitee 缺」的版本）
+
+**事故**：gh17 在 Gitee 上整版缺失。日志里的真因是 `curl exit 35`（Gitee 与 runner 之间 TLS 抖动），
+而**创建 release 的那句 curl 没加保护** —— GitHub 默认 shell 是 `bash -e {0}`，一次抖动就掐断整步，
+后面写的「重试 / 按 tag 回查 / 附件重试」根本没机会跑；随后按设计把「没有安装包的半成品 release」删掉，
+于是 Gitee 上什么都没有（GitHub 侧正常，master 全程可用）。
+
+**两处修法**：
+1. 现有 Gitee 发布步骤加固：创建 release 的 curl 包进 3 次重试 + `|| true`；按 tag 回查加保护；
+   附件上传重试 3→5 次、退避 5s→10s（跨国上传会抖，抖一次就得回退重发一整版）。
+2. **新增 `gitee-backfill` job（自愈）**：不依赖构建、跑得很快，手动 dispatch 与每 6 小时的定时都会跑。
+   对最近 3 个 GitHub Release 逐个检查 Gitee 侧：缺 release 就补建、缺安装包就从 GitHub Release
+   拉同名 APK 挂上去并核验。用桩把三条控制流都跑过（齐全→跳过 / 缺 release→补建+挂包 / 有壳无包→只挂包），
+   并用 `bash -e` 复现 GitHub 的默认 shell（这个事故的根因就是 `-e` 下未保护的 curl）。

@@ -647,3 +647,74 @@ jobs:
             gh issue create --repo "$GITHUB_REPOSITORY" \
               --title "自动构建失败：$(date +%F)" --body "$BODY" || echo "开 Issue 失败（忽略）"
           fi
+
+  # ─────────────────────────────────────────────────────────────
+  # Gitee 自愈：把「GitHub 上已有、Gitee 上却缺（或没有安装包）」的版本补回去。
+  # 真实事故：2026-10-04 gh17 因一次 TLS 抖动（curl exit 35）在 Gitee 上整版缺失 ——
+  #   当时创建 release 的那句 curl 没做保护，GitHub 默认的 `bash -e` 直接掐断整步，
+  #   后面写的重试/回查/附件重试全都没机会跑（已修，但已缺的那版要能补）。
+  # 独立成 job：不依赖构建、跑得很快；手动 dispatch 或每 6 小时的定时都会跑一次。
+  gitee-backfill:
+    runs-on: ubuntu-latest
+    continue-on-error: true          # 补齐是"修复"，不该让整条流水线变红
+    steps:
+      - name: 检查并补齐 Gitee 缺失的版本
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GT: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: ${{ vars.GITEE_REPO }}
+        run: |
+          # 注意：GitHub 默认 shell 是 `bash -e {0}`，这里的 `set -uo pipefail` **不会**去掉 -e，
+          #   所以每条 curl/gh 都必须自带 `|| true` 或落在 if/|| 里 —— 否则一次抖动又会掐断整步
+          #   （gh17 在 Gitee 上缺失就是这么来的）。失败就留给下一轮再补。
+          set -uo pipefail
+          if [ -z "$GT" ] || [ -z "$GITEE_REPO" ]; then
+            echo "未配置 GITEE_TOKEN / GITEE_REPO，跳过 Gitee 补齐"; exit 0
+          fi
+          API="https://gitee.com/api/v5/repos/$GITEE_REPO"
+          COUNT=0
+          TAGS=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=3" --jq '.[].tag_name' 2>/dev/null || true)
+          echo "GitHub 最近版本："; printf '%s\n' "$TAGS"
+          for TAG in $TAGS; do
+            [ -n "$TAG" ] || continue
+            RID=$(curl -s --max-time 30 "$API/releases/tags/$TAG?access_token=$GT" 2>/dev/null \
+              | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('id','') if isinstance(d,dict) else '')" 2>/dev/null || true)
+            APK_N=0
+            if [ -n "$RID" ]; then
+              APK_N=$(curl -s --max-time 30 "$API/releases/$RID?access_token=$GT" 2>/dev/null \
+                | python3 -c "import json,sys;d=json.load(sys.stdin);print(sum(1 for a in (d.get('assets') or []) if str(a.get('name','')).endswith('.apk')) if isinstance(d,dict) else 0)" 2>/dev/null || echo 0)
+            fi
+            if [ -n "$RID" ] && [ "${APK_N:-0}" != "0" ]; then
+              echo "✅ $TAG 在 Gitee 已完整（$APK_N 个 .apk）"; continue
+            fi
+            echo "🩹 需要补齐：$TAG（Gitee release id=${RID:-无}）"
+            if [ -z "$RID" ]; then
+              for i in 1 2 3; do
+                RESP=$(curl -s -X POST "$API/releases" --max-time 40 \
+                  --data-urlencode "access_token=$GT" --data-urlencode "tag_name=$TAG" \
+                  --data-urlencode "name=$TAG" --data-urlencode "target_commitish=master" \
+                  --data-urlencode "body=本包与 GitHub Release 同一构建产物：https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" 2>/dev/null || true)
+                RID=$(printf '%s' "$RESP" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('id','') if isinstance(d,dict) else '')" 2>/dev/null || true)
+                [ -n "$RID" ] && break
+                echo "  ⚠️ 第 $i 次创建 release 失败（TLS/网络抖动？），5 秒后重试"; sleep 5
+              done
+            fi
+            if [ -z "$RID" ]; then echo "::warning::$TAG 建 release 失败，留给下一轮"; continue; fi
+            rm -rf /tmp/bf && mkdir -p /tmp/bf
+            if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.apk*' --dir /tmp/bf 2>/dev/null; then
+              for f in /tmp/bf/*.apk; do
+                [ -f "$f" ] || continue
+                for i in 1 2 3; do
+                  curl -s -X POST "$API/releases/$RID/attach_files" --max-time 180 \
+                    -F "access_token=$GT" -F "file=@$f" -o /tmp/bf/attach.json 2>/dev/null || true
+                  N=$(curl -s --max-time 30 "$API/releases/$RID?access_token=$GT" 2>/dev/null \
+                    | python3 -c "import json,sys;d=json.load(sys.stdin);print(sum(1 for a in (d.get('assets') or []) if str(a.get('name','')).endswith('.apk')) if isinstance(d,dict) else 0)" 2>/dev/null || echo 0)
+                  if [ "${N:-0}" != "0" ]; then echo "  ✅ $TAG 已补上安装包（Gitee .apk 数=$N）"; COUNT=$((COUNT+1)); break; fi
+                  echo "  ⚠️ 第 $i 次上传后仍看不到附件，10 秒后重试"; sleep 10
+                done
+              done
+            else
+              echo "::warning::$TAG 在 GitHub 上找不到可下载的资产"
+            fi
+          done
+          echo "本轮补齐 $COUNT 个版本"
