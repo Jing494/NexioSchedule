@@ -115,13 +115,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         )
     }
 
-    private fun isBeforeHolidayExclusionActive(date: LocalDate): Boolean =
-        HolidayCourseExclusion.isEnabledBeforeHolidayDate(
-            HolidayManager.loadAllByYear(getApplication()),
-            date,
-            HolidayManager.loadBeforeCourseExclusion(getApplication<Application>()),
-        )
-
     private val _showNonCurrentWeek = MutableStateFlow(repository.getShowNonCurrentWeek())
     val showNonCurrentWeek: StateFlow<Boolean> = _showNonCurrentWeek.asStateFlow()
 
