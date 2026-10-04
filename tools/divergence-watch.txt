@@ -21,6 +21,10 @@
 #   · ui/activities/CourseReminderScreen.kt  提醒体检（上游没有）
 #   · app/build.gradle.kts                 上游在这里加过签名/构建期要求（缺 keystore 就构建失败）
 app/build.gradle.kts
+#   · ui/utils/UpdateChecker.kt              更新源指向本 fork 两个仓库 + 变体感知挑包（-wear）
+#   · ui/utils/UpdateInstaller.kt            安装前签名预检 + 本地缓存名带变体后缀
+app/src/main/java/com/haooz/chedule/ui/utils/UpdateChecker.kt
+app/src/main/java/com/haooz/chedule/ui/utils/UpdateInstaller.kt
 app/src/main/java/com/haooz/chedule/data/CourseRepository.kt
 app/src/main/java/com/haooz/chedule/ui/utils/GlassPerf.kt
 app/src/main/java/com/haooz/chedule/ui/utils/MinuteTick.kt

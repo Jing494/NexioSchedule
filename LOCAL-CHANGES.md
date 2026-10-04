@@ -471,3 +471,26 @@ master 一个字节没动，问题在预演分支上就被抓住。
 
 **文案**：已跟随上游把该段从「节假日末期课程排除」改名为「节假日首末课程排除」（本 fork 余额卡片描述里也同步）。
 **未做（可选）**：测试页加一个「假期前日排除」场景，不必等真假期就能验证联动。
+
+### 十五、上游 v1.6.1beta8→v1.6.2beta4（7 提交 / 73 文件）的合并与同步审查
+
+**冲突 9 文件 14 段**，处置见合并提交 `69d5f765`。两条最关键的：
+- `UpdateChecker.kt`：上游新增「记录附件 sha256(digest) + 体积」与「安装包完整性校验」
+  （体积/ZIP 魔数/中央目录/PM 解析/包名与 versionCode 递增）。做法是**合体**：
+  采集摘要时用**本变体的 -wear 过滤**（否则 wear 用户会拿普通包的摘要去校验 wear 包，永远失败），
+  并把上游的校验块与我们的 `apkTagOrNull`（剥 `-wear`）并存。
+  上游的 `verifyApk`/`rememberApkDigest` 已接进安装链路（`UpdateInstaller` 42/106 行调用），
+  我们的 `signatureMatchesOwn` 预检仍在 `installApk` 之前 —— 两道闸叠加，互不冲突。
+- `WatchPayload.kt`：整文件取上游（手表协议 v4 由上游重写，本 fork 无定制）。
+
+**新增的上游数据流向（需要你知情/拍板）**：上游这轮加了首次启动的**隐私同意弹窗**
+（未同意不申请权限、不发起网络副作用），并新增 `StatsReporter` / `NoticeFetcher` /
+`AppreciationFetcher` —— **同意后**会在启动时把设备/运行信息发往
+`http://182.92.193.223`（**明文 HTTP**）与 `nexioschedule.icu`（安装量/活跃/公告）。
+我们 fork 的额外流向只有：更新检查走**我们自己的** GitHub/Gitee Release、WebDAV 备份走你自己填的服务器。
+`CrashLogHelper` 经核查**完全不联网**（本地录屏/日志留痕）。
+→ 选项：① 保持上游行为（你可在弹窗里拒绝）；② 本 fork 关掉 phone-home（小改动、需新增分歧清单项）；
+③ 保持行为但把本 fork 的策略文案补一句"更新检查走本 fork 仓库"。
+
+**顺带**：把 `UpdateChecker.kt` / `UpdateInstaller.kt` 加入「故意分歧清单」——
+这两处我们的定制最深、上游又改得最勤，以后一撞就该人工过一眼（这次就是撞了才发现要合体）。
