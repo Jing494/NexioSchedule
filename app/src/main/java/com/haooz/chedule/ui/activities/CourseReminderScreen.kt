@@ -1472,15 +1472,15 @@ private fun buildReminderHealth(context: android.content.Context): List<Reminder
     if (beforeExclusion.enabled || endExclusion.enabled) {
         val parts = mutableListOf<String>()
         if (beforeExclusion.enabled) {
-            parts += "假期前一天：第 ${beforeExclusion.startSection}~${beforeExclusion.endSection} 节"
+            parts += "前一天 ${beforeExclusion.startSection}~${beforeExclusion.endSection} 节"
         }
         if (endExclusion.enabled) {
-            parts += "假期最后一天：第 ${endExclusion.startSection}~${endExclusion.endSection} 节"
+            parts += "最后一天 ${endExclusion.startSection}~${endExclusion.endSection} 节"
         }
         out += ReminderHealthItem(
-            title = "假期首末课程排除",
+            title = "假期课程排除",
             ok = true,
-            detail = parts.joinToString("；") + " —— 这些课在这些天不展示也不提醒（不是提醒坏了）",
+            detail = "假期课程排除：" + parts.joinToString("、") + " 不展示也不提醒（正常）",
             fix = null,
             isInfo = true,
         )
@@ -1546,6 +1546,22 @@ private fun ReminderHealthCard() {
             AnimatedVisibility(visible = expanded) {
             Column(modifier = Modifier.fillMaxWidth()) {
             items.forEach { item ->
+                if (item.isInfo) {
+                    // 说明项：卡片底部一行浅色小字 —— 不占「通过/不通过」的图标位、也不带标题，
+                    // 免得跟上面「✓ + 短说明」的节奏打架（真机反馈：图标位上放 ℹ 不好看）。
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = item.detail,
+                            style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                } else {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1562,11 +1578,9 @@ private fun ReminderHealthCard() {
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = if (item.isInfo) "\u2139" else if (item.ok) "\u2713" else "\u2715",
+                        text = if (item.ok) "\u2713" else "\u2715",
                         style = MiuixTheme.textStyles.body1.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
-                        color = if (item.isInfo) {
-                            MiuixTheme.colorScheme.onSurfaceVariantSummary
-                        } else if (item.ok) {
+                        color = if (item.ok) {
                             androidx.compose.ui.graphics.Color(0xFF3BA55D)
                         } else {
                             androidx.compose.ui.graphics.Color(0xFFD7263D)
@@ -1592,6 +1606,7 @@ private fun ReminderHealthCard() {
                             color = MiuixTheme.colorScheme.primary,
                         )
                     }
+                }
                 }
             }
             TextButton(

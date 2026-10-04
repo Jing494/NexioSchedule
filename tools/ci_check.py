@@ -305,7 +305,7 @@ CHECKS = [
     (
         "提醒体检要认识「假期首末课程排除」（否则用户会以为提醒坏了）",
         F_REMSCREEN,
-        [r"假期首末课程排除", r"loadBeforeCourseExclusion"],
+        [r"假期课程排除：", r"loadBeforeCourseExclusion"],
         [],
     ),
 ]

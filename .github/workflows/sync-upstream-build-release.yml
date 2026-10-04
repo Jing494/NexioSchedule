@@ -704,13 +704,21 @@ jobs:
             if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.apk*' --dir /tmp/bf 2>/dev/null; then
               for f in /tmp/bf/*.apk; do
                 [ -f "$f" ] || continue
-                for i in 1 2 3; do
+                # ★ 先查同名附件：Gitee 的附件列表**有延迟**（实测 8 分钟级），
+                #   挂完立刻查会看不到 → 重试就会把同一个包挂成两份（gh17 补的时候就这样挂了两份同名）。
+                #   所以：已经存在同名就直接跳过；否则挂一次、再用较长退避轮询等它出现。
+                FN=$(basename "$f")
+                if curl -s --max-time 30 "$API/releases/$RID?access_token=$GT" 2>/dev/null \
+                   | python3 -c "import json,sys;d=json.load(sys.stdin);print(any(str(a.get('name',''))=='$FN' for a in (d.get('assets') or [])) if isinstance(d,dict) else False)" 2>/dev/null | grep -q True; then
+                  echo "  已存在同名附件 $FN，跳过"; continue
+                fi
+                for i in 1 2 3 4 5; do
                   curl -s -X POST "$API/releases/$RID/attach_files" --max-time 180 \
                     -F "access_token=$GT" -F "file=@$f" -o /tmp/bf/attach.json 2>/dev/null || true
                   N=$(curl -s --max-time 30 "$API/releases/$RID?access_token=$GT" 2>/dev/null \
                     | python3 -c "import json,sys;d=json.load(sys.stdin);print(sum(1 for a in (d.get('assets') or []) if str(a.get('name','')).endswith('.apk')) if isinstance(d,dict) else 0)" 2>/dev/null || echo 0)
                   if [ "${N:-0}" != "0" ]; then echo "  ✅ $TAG 已补上安装包（Gitee .apk 数=$N）"; COUNT=$((COUNT+1)); break; fi
-                  echo "  ⚠️ 第 $i 次上传后仍看不到附件，10 秒后重试"; sleep 10
+                  echo "  ⚠️ 第 $i 次上传后仍看不到附件，等 20 秒再看（Gitee 附件列表有延迟）"; sleep 20
                 done
               done
             else
