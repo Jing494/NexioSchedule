@@ -417,6 +417,7 @@ internal object UpdateChecker {
     private fun ByteArray.toHexString(): String =
         joinToString("") { "%02x".format(it) }
 
+    /**
      * 从下载文件名取 tag：`update-<tag>.apk` 与 `update-<tag>-wear.apk` 都认。
      * 变体后缀必须在这里剥掉，否则清理逻辑会把 wear 包当成"tag 对不上"删掉。
      */

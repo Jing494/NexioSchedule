@@ -621,7 +621,7 @@ fun HolidaySettingsScreen(
                 HolidayBalanceCard()
             }
             item {
-
+                SectionTitleRow(
                     text = "节假日课程排除",
                     description =
                         "• 假期前一天或最后一天的几节课不用上课\n" +

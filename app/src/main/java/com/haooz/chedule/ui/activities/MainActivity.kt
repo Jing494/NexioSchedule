@@ -2769,8 +2769,8 @@ fun CourseScheduleApp(privacyConsented: Boolean = true) {
                     latestIsWindowCutout ||
                     (latestShowCustomize && latestIsCustomizeExiting) ||
                     // 切换课表进/退场动画期间刻意「不」录：这一段里主内容 alpha=0
-                    latestShortcutBlur > 0.01f ||
-                    latestManageBlur > 0.01f ||
+                    shortcutMenuBlurRadius.value > 0.01f ||
+                    managePageBlurRadius.value > 0.01f ||
                     // 非静止端点视为动画进行中
                     (cutoutMainScale.value != 1f && cutoutMainScale.value != 0.75f) ||
                     backgroundScale.value != 1f ||
