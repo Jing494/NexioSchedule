@@ -226,6 +226,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_BASE: ${{ vars.GH_BASE }}
         run: |
           # CI 在云端，用官方 Gradle 源（仓库里的 wrapper 指向的是国内镜像）
           sed -i 's#distributionUrl=.*#distributionUrl=https://services.gradle.org/distributions/gradle-9.5.1-bin.zip#' \
@@ -239,7 +240,9 @@ jobs:
           #   既触发不了"覆盖安装"，也会被下面的单调性守卫拦下。全局计数天然单调。
           GH_COUNT=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
             --jq '.[].tag_name' 2>/dev/null | sed 's/.*-gh//' | grep -cE '^[0-9]+$' || true)
-          GH_N=$((GH_COUNT + 1))
+          # 迁移到新仓库时旧仓库已发到 gh26；仓库变量 GH_BASE 用来接上序号。
+          GH_BASE="${GH_BASE:-0}"
+          GH_N=$((GH_BASE + GH_COUNT + 1))
           FORK_CODE=$((VC * 100 + GH_N))
           # 版本号用第 4 段递增：1.5.6.1-gh1 / 1.5.6.2-gh2 …
           # 这样 App 的更新检查（比较数字段）才能认出"有新版"，同时 MAJOR.MINOR.PATCH 与上游保持对齐。

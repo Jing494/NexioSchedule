@@ -1,7 +1,7 @@
 > ⚠️ **已退役，仅作留档**：本 fork 自 `1.6.0.2-beta33` 起改用**合并式 fork** ——
 > `master` 就是发布分支（= 上游 + 定制提交），CI 直接构建并自动 `git merge upstream/master`。
 > 因此 `series/` 与 `tools/check_patches.py` **不再参与构建**（保留是为了留一份"曾经定制了什么"的清单，
-> 以及万一要回退旧流水线）。当前机制见根 README 与 `.github/workflows/sync-upstream-build-release.yml`。
+> 以及万一要回退旧流水线）。当前机制见根 README 与 `.github/workflows/build-release.yml`。
 
 # patches/ — 本 fork 的定制补丁序列
 
