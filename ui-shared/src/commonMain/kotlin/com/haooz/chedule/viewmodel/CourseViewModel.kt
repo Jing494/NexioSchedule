@@ -185,7 +185,6 @@ class CourseViewModel : ViewModel() {
         synchronizedOn(courseRefreshLock) {
             applyCoursesAndRefreshWidgets(mutation())
         }
-        ScheduleEffects.syncWearable("course-mutate")
         // 课程变了要重排闹钟：增删改/调课/交换都走 saveCourses(notify=false)
         viewModelScope.launch(ioDispatcher) { rescheduleReminders() }
         // 跨 ViewModel 实例广播：主页与管理页各自持有独立 CourseViewModel，

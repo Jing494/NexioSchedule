@@ -1,3 +1,4 @@
+<!-- fork-only:start -->
 <!-- 本 fork 的说明放在最前面；下面的上游 README 原文完整保留、未做任何改动 -->
 
 > ### 🔧 这是 [Jing494](https://github.com/Jing494) 的定制分支（基于上游 [HaoZai000/NexioSchedule](https://github.com/HaoZai000/NexioSchedule)）
@@ -6,13 +7,11 @@
 > - **构建全程在 GitHub Actions**：`master` 就是发布分支（= 上游 + 本 fork 的定制提交）→ 发现上游有新提交就自动 `git merge` → 编译 → **用本 fork 自己的 keystore 签名** → 发 Release。本地不参与编译。
 > - **与上游原版的差异**：见每个 Release 的说明与仓库里的 `LOCAL-CHANGES.md`（岛的修复、拖拽几何、提醒可靠性、流畅度、诊断工具等）。
 > - **安装注意**：本 fork 签名与上游原版不同 —— 从上游切过来需先卸载（会丢 App 内数据，建议先做 WebDAV 备份）；**同一 fork 系列可直接覆盖升级**。
-> - 三道自动守卫（质量门禁 35 条不变量 / 「故意分歧」清单 / APK 契约核验）不过就不会发版；**合并冲突时不推 master、不发版**，只开 Issue 等人工处理。流水线思路参考 [xiaoxun007/NexioSchedule](https://github.com/xiaoxun007/NexioSchedule)。
+> - 三道自动守卫（质量门禁 47 条不变量 / 「故意分歧」清单 / APK 契约核验）不过就不会发版；**合并冲突时不推 master、不发版**，只开 Issue 等人工处理。流水线思路参考 [xiaoxun007/NexioSchedule](https://github.com/xiaoxun007/NexioSchedule)。
 > - 上游项目、许可、全部基础功能均归上游作者；**下面即上游 README 原文**。
-> - **📱 两个变体（按需选一个）**：`Nexio.v…-gh….apk` 是普通版（本 fork keystore 签，可直接覆盖安装你现在手机上那版）；
->   `Nexio.v…-gh…-wear.apk` 是 **wear 版**（与手表 rpk 同证书，供小米穿戴互联用）。
->   两者是**同一次构建**（版本号相同）、**签名不同** → 不能互相覆盖安装；
->   App 内更新会按**自身签名**自动只取对应变体，安装前还会再校验一次签名，拿错包会直接删掉。
->   没配 `WEAR_KEYSTORE_BASE64` 时流水线只出普通版（不会因此变红）。
+> - **手表互联已移除**：本版本起不再提供 wear 变体，也不再提供 App 内的手表/手环推送入口。
+
+<!-- fork-only:end -->
 
 ---
 
@@ -182,13 +181,20 @@ androidApp/src/main/java/com/haooz/chedule/
 | [Shizuku](https://github.com/RikkaApps/Shizuku) | RikkaApps |
 | [Backdrop](https://github.com/Kyant0/AndroidLiquidGlass) | Kyant0 |
 
+## 鸣谢
+
+- **上游作者 / 维护者**：[HaoZai000](https://github.com/HaoZai000) —— [NexioSchedule](https://github.com/HaoZai000/NexioSchedule) 的全部基础功能与长期维护。
+- **流水线思路**：[xiaoxun007](https://github.com/xiaoxun007) 的 [NexioSchedule](https://github.com/xiaoxun007/NexioSchedule) —— 本 fork 的「合并式同步 + 自动构建发布」参考了它的做法。
+- **社区贡献**：Nanawwa（#84 缩略态地点精简）、leset0ng（#53 底栏 insets）、Alittlejelly（Vela/手环版历史贡献）等。
+- 更完整的名单与各自贡献见 [CREDITS.md](CREDITS.md)。
+
 ## 开源协议
 
 本项目采用 **[GNU Affero General Public License v3.0](LICENSE)**（AGPL-3.0）开源。
 
 允许自由使用、学习、修改及商业分发；若通过网络向他人提供本应用或修改版，须同时提供完整对应源代码。协议全文见 [LICENSE](LICENSE)，中文摘要与带目录的在线版本见官网 [开源协议页](https://nexioschedule.icu/license.html)。
 
-第三方组件（`miuix/`、`backdrop/` 等 Apache-2.0 修改版）的许可证、修改声明与不随仓库分发的专有组件说明，见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+第三方组件（miuix/、backdrop/ 等 Apache-2.0 修改版）的许可证与修改声明，见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 
 ## 免责声明
 

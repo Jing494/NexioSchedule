@@ -1945,7 +1945,7 @@ class CourseRepository private constructor() : PeriodTimeSource {
     /**
      * 直接改写 TimeConfig 后广播一次「设置变更」。[saveTimeConfig] 只落盘、不发通知
      *（它被很多内部批量写调用），所以「改一改再存回去」的路径必须自己补这一下，
-     * 否则课程提醒 / 小部件 / 手表推送仍按改动前的时间工作。
+     * 否则课程提醒 / 小部件仍按改动前的时间工作。
      */
     fun notifyTimeConfigChanged() {
         notifyCourseChanged("settings")

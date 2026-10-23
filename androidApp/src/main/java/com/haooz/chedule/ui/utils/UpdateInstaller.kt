@@ -23,13 +23,11 @@ internal object UpdateInstaller {
 
     private val installScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    // 本地文件名带变体后缀（普通 ""/wear "-wear"）：两个变体的缓存不会互相顶掉，
-    // 也让"日志里看到的包名"能直接反映出变体。
     fun apkFile(context: Context, tag: String): File =
-        File(context.filesDir, "update-$tag${UpdateChecker.variantSuffix(context)}.apk")
+        File(context.filesDir, "update-$tag.apk")
 
     private fun partFile(context: Context, tag: String): File =
-        File(context.filesDir, "update-$tag${UpdateChecker.variantSuffix(context)}.apk.part")
+        File(context.filesDir, "update-$tag.apk.part")
 
     /**
      * 本地是否已有一份**可安装**的安装包。
@@ -135,11 +133,10 @@ internal object UpdateInstaller {
         onFinished: (() -> Unit)? = null,
     ) {
         // ★ 交给安装器之前的最后一道闸：包的签名必须等于**本机当前安装**的签名。
-        //   两个变体（普通 / wear）签的不是同一把钥匙，拿错包只会失败或逼用户卸载重装；
         //   顺带挡住"下载被替换/半成品"这类事。校验不过就删掉，绝不交给安装器。
         if (!signatureMatchesOwn(context, file)) {
             file.delete()
-            showToast("安装包与当前版本签名不一致（可能是另一个变体），已删除", longDuration = true)
+            showToast("安装包与当前版本签名不一致（可能是被替换的包），已删除", longDuration = true)
             onFinished?.invoke()
             return
         }

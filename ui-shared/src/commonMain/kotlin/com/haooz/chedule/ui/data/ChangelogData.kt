@@ -7,6 +7,14 @@ data class ChangelogEntry(
 )
 val changelogData = listOf(
     ChangelogEntry(
+        version = "v1.6.7.28-gh28",
+        date = "2026-10-24",
+        changes = listOf(
+            "移除手表互联功能与 wear 变体，不再提供手表/手环推送",
+            "更新检查改为单变体，仍保留安装前签名校验"
+        )
+    ),
+    ChangelogEntry(
         version = "v1.6.7-1017",
         date = "2026-10-17",
         changes = listOf(

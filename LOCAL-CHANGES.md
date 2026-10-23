@@ -75,9 +75,9 @@
 | 分钟节拍 | `ui-shared/…/ui/utils/MinuteTick.kt` + TodayScreen / TodayAssistantCard | 用 kotlinx.datetime，不要 java.time |
 | 节次几何单一真源 | `ui-shared/…/ui/screens/MainScheduleScreen.kt`（ScheduleGridGeometry）+ `…/ui/activities/CourseScheduleApp.kt`（computeDropTarget） | `sectionTopDp` **和** `specialBandRangesDp` 都要 |
 | 备份语义（故意分歧） | `core/…/data/CourseRepository.kt` | 黑名单导出 + `prefs@文件@键` + `appearance_settings` |
-| 更新链路（fork 源 + wear 变体） | `androidApp/…/ui/utils/UpdateChecker.kt` / `UpdateInstaller.kt` + `ui-shared/…/ui/components/UpdateDialog.kt`、`activities/UpdateSettingsScreen.kt` | 只认带包版本 / 切源重查 / 安装前签名预检 |
+| 更新链路（fork 源 + 签名预检） | `androidApp/…/ui/utils/UpdateChecker.kt` / `UpdateInstaller.kt` + `ui-shared/…/ui/components/UpdateDialog.kt`、`activities/UpdateSettingsScreen.kt` | 只认带包版本 / 切源重查 / 安装前签名预检 |
 | 单 Activity + 路由 | `androidApp/…/ui/navigation/AppRouteContent.kt` + `ui-shared/…/ui/navigation/*` | 新页面加路由，不动 Manifest |
-| CI / 门禁 / 版本号 | `.github/workflows/sync-upstream-build-release.yml` + `tools/` | 门禁 43 条 +「配置自检」 |
+| CI / 门禁 / 版本号 | `.github/workflows/build-release.yml` + `tools/` | 门禁 47 条 +「配置自检」 |
 
 **fork 独有的新文件**（不会与上游正文冲突，但模块搬家时 git 可能把它们放错位置）：
 
@@ -91,7 +91,7 @@
 
 1. 两边都改 → 先查 §七「故意取舍」，再决定；能"新增分支 / 新增函数"就不要改上游那几行。
 2. 上游用默认值重构 helper 时（如 `buildGridGeometry()`），**fork 加的字段必须显式补上** —— 有默认值就照样编译，语义静默丢失。
-3. 合并后必须 `python3 tools/ci_check.py .`：43 条全绿 + `[00] 配置自检` 通过才算完；路径报"文件不存在"先怀疑脚本过期。
+3. 合并后必须 `python3 tools/ci_check.py .`：47 条全绿 + `[00] 配置自检` 通过才算完；路径报"文件不存在"先怀疑脚本过期。
 
 ## 四、上游发新版了，怎么合
 
@@ -299,7 +299,7 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 | 新增 | 内容 |
 |---|---|
 | `ui/screens/ClassEndEffects.kt` | **下课庆祝特效**：烟花粒子 + 随爆炸的短促震动（并加了 `VIBRATE` 权限） |
-| `wearable/WatchPayload.kt` + `WearableScheduleSync.kt` + `app/libs/xms-wearable-lib_1.4_release.aar` | **小米手表同步**（AAR 是 102 KB 二进制，随上游基准进来 —— 我们的补丁不需要携带它，所以不会踩到「二进制补丁」问题） |
+| `wearable/WatchPayload.kt` + `WearableScheduleSync.kt` + `app/libs/xms-wearable-lib_1.4_release.aar` | **小米手表同步**（AAR 是 102 KB 二进制，随上游基准进来 —— 我们的补丁不需要携带它，所以不会踩到「二进制补丁」问题；2026-10-24 已移除） |
 | CourseRepository / 两屏备份 / 偏好设置 / 设置页 / 今日助手 / 今日页 / ShareScheduleData | 接入上面两个功能 |
 
 ### 冲突只有 3 处
@@ -334,11 +334,11 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 
 ## 十一、CI 改为「合并式 fork」（B+C 方案）
 
-**改了什么**：`.github/workflows/sync-upstream-build-release.yml` 不再"钉死上游基准 + 逐个 `git am` 重放补丁"，
+**改了什么**：`.github/workflows/build-release.yml` 不再"钉死上游基准 + 逐个 `git am` 重放补丁"，
 改成 `master` 就是发布分支（= 上游 + 本 fork 的定制提交），CI 直接构建它：
 
 - 定时（每 6h）/ 手动触发 → 上游有新提交就先 `git merge upstream/master`；
-- 合并干净且未命中「分歧清单」→ 构建 → 门禁 35 条 + APK 契约核验全绿 → **才**推 master、才发版；
+- 合并干净且未命中「分歧清单」→ 构建 → 门禁 35 条（当时） + APK 契约核验全绿 → **才**推 master、才发版；
 - 合并冲突 → `merge --abort`，**远端一个字节都不动**，另开 Issue 等人工。
 
 **为什么**：31 个补丁每次升基准都要整体重放，上游一动就可能"半合半不合"地留下孤儿引用。
@@ -370,7 +370,7 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 
 ### 十一·附：落地与验证结果（同一天完成）
 
-- **beta33 升基准的编译问题**：先修 v45，再跑 `dry_run` —— 门禁 35 条全过、`BUILD SUCCESSFUL`、
+- **beta33 升基准的编译问题**：先修 v45，再跑 `dry_run` —— 门禁 35 条（当时）全过、`BUILD SUCCESSFUL`、
   算出 `1.6.0.2.12-gh12`；随后正式发版 **gh12**：GitHub + Gitee 双平台都挂上了 APK + `.sha256`，
   签名指纹 `a7fdc7b7…ac938` 一致、`versionCode 15812` 单调（序号 12 > 历史 11）。
 - **新（合并式）CI 的真实验证**：先把它推成 `ci-merge-test` 分支，用
@@ -384,7 +384,7 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 
 ### 十一·附2：合并式 CI 的第一次真实自动跟（它挡住的两件事）
 
-上游 PR #57（`9ea4e54d`）进来后，定时任务自动合并 → 门禁 35 条通过 → **构建失败**，
+上游 PR #57（`9ea4e54d`）进来后，定时任务自动合并 → 门禁 35 条（当时）通过 → **构建失败**，
 流水线按设计**没推 master** 并开了 Issue。原因不是我们的代码（Kotlin 编译全过）：
 
 ```
@@ -410,7 +410,9 @@ keystore.properties"这类结构问题；输出**只给类型与位置、命中�
 公开证书是合法入库的，真正的私钥由内容头规则抓 —— 否则会误拦发布（已用真实合并树本地预跑验证）。
 另外失败 Issue 改为**去重**（同类未关就追加评论），不再按天堆一屏。
 
-### 十二、wear 变体（与手表 rpk 同证书的第二签名）
+### 十二、wear 变体（与手表 rpk 同证书的第二签名）—— **已停用（2026-10-24 移除）**
+
+> 以下为历史记录，保留用于追溯。手表互联需求已取消，相关代码/CI/secrets 均已移除。
 
 **需求**：小米穿戴的 interconnect 在商店签名那一套里要求「手表 rpk 与手机 APK 同包名且同签名」
 （`WearableScheduleSync` 的注释），而本 fork 普通包用的是自己的 keystore（为了覆盖安装）。
@@ -484,7 +486,9 @@ master 一个字节没动，问题在预演分支上就被抓住。
 **文案**：已跟随上游把该段从「节假日末期课程排除」改名为「节假日首末课程排除」（本 fork 余额卡片描述里也同步）。
 **未做（可选）**：测试页加一个「假期前日排除」场景，不必等真假期就能验证联动。
 
-### 十五、上游 v1.6.1beta8→v1.6.2beta4（7 提交 / 73 文件）的合并与同步审查
+### 十五、上游 v1.6.1beta8→v1.6.2beta4（7 提交 / 73 文件）的合并与同步审查（历史记录；wear 已移除）
+
+> 本节为历史审查记录；其中手表相关代码已于 2026-10-24 移除。
 
 **冲突 9 文件 14 段**，处置见合并提交 `69d5f765`。两条最关键的：
 - `UpdateChecker.kt`：上游新增「记录附件 sha256(digest) + 体积」与「安装包完整性校验」
@@ -605,3 +609,21 @@ CI 门禁 41/41、KMP 平台纯净度 360 文件零违规、凭据扫描干净�
 
 另外：产物路径别再写死 `app-release[-unsigned].apk` —— KMP 重构后 `androidApp` 的产物名变了，
 工作流已改成按目录 `find` 解析（写死就报 `Unable to open … No such file`）。
+
+---
+
+## 十九、移除手表互联与 wear 变体（2026-10-24）
+
+**决定**：手表互联需求取消。旧仓库 26 个 Release 从未发布过 -wear.apk（WEAR_* secrets 一直未配置），
+gh27 的 wear 包下载量为 0，没有需要迁移的真实用户。
+
+**删除**：
+- androidApp/…/wearable/（WatchPayload / WearableScheduleSync）与相关测试
+- 小米 XMS AAR 依赖、androidApp/libs/ 说明
+- App 内「导出到手环」入口与 onExportToWearable 注入链
+- ScheduleEffects.syncWearable 及 iOS/Android 实现
+- UpdateChecker / UpdateInstaller 的 wear 变体分流（保留签名预检）
+- CI 的 wear 签名/契约步骤、AAR 还原步骤、WEAR_* / XMS_AAR_* secrets
+
+**保留**：§十二、§十五 的历史记录已标「已停用」；发布流程改为单变体普通包。
+gh28 起只发普通包，gh27 的 wear 附件从 GitHub/Gitee 删除。

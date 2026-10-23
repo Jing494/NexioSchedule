@@ -571,7 +571,6 @@ object HolidayManager {
             putLong(KEY_VERSION, newVersion)
         }
         _dataRevision.value = newVersion
-        ScheduleEffects.syncWearable("holiday-mutate")
         true
     }
 

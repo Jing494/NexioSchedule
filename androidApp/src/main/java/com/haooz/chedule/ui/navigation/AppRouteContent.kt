@@ -85,7 +85,6 @@ import com.haooz.chedule.ui.utils.ShareCodeFetchResult
 import com.haooz.chedule.ui.utils.ThirdPartyShareImporter
 import com.haooz.chedule.ui.utils.applyThemeAwareSystemBars
 import com.haooz.chedule.ui.utils.performScheduleShare
-import com.haooz.chedule.wearable.WearableScheduleSync
 import com.haooz.chedule.viewmodel.CourseViewModel
 import com.haooz.chedule.viewmodel.ScheduleViewModel
 import com.haooz.chedule.viewmodel.SettingsViewModel
@@ -284,7 +283,7 @@ fun AppRouteContent(
  * 课表导入 / 导出 / 备份的 **Android 包装**。
  *
  * 这里只剩四条 Android 专有能力的装配：文件选择器 / 提醒重排 / 口令取回与抓取 /
- * 口令分享出图 / 手环推送。三者共用同一份装配，只是 `mode` 不同。
+ * 口令分享出图。四者共用同一份装配，只是 `mode` 不同。
  */
 @Composable
 private fun AndroidBackupAndMigrationRoute(router: AppRouter, mode: ScheduleDataManageMode) {
@@ -320,8 +319,6 @@ private fun AndroidBackupAndMigrationRoute(router: AppRouter, mode: ScheduleData
                 onSharingChanged = onSharingChanged,
             )
         },
-        // 手环推送
-        onExportToWearable = { name -> WearableScheduleSync.exportToWearable(context, name) },
     )
 }
 

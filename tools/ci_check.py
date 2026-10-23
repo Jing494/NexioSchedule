@@ -305,21 +305,9 @@ CHECKS = [
         [],
     ),
     (
-        "更新按变体分流：普通/wear 两个变体签名不同，绝不能互相覆盖安装",
+        "更新包必须校验本 fork 签名（防替换包）",
         F_UPDCHECK,
         [r'const val FORK_CERT_SHA256 = "a7fdc7b704db284774a0124fb13495b5e6ee4a05f6430547ad8ec21aba5ac938"'],
-        [],
-    ),
-    (
-        "变体判定读不到自己签名时必须按「普通变体」处理（fail-safe：判成 wear 会让普通用户永远收不到更新）",
-        F_UPDCHECK,
-        [r"own\.isNotBlank\(\) && own != FORK_CERT_SHA256"],
-        [],
-    ),
-    (
-        "挑更新包必须按变体过滤附件（wear 只认 -wear）",
-        F_UPDCHECK,
-        [r"isWearAsset != wear"],
         [],
     ),
     (
@@ -330,7 +318,7 @@ CHECKS = [
     ),
     (
         "workflow 的 EXPECT_CERT 必须与 app 里的 FORK_CERT_SHA256 是同一把证书"
-        "（改了一处忘了另一处 = 更新分流会认错变体）",
+        "（改了一处忘了另一处 = 更新校验会失效）",
         WF_REL,
         [r"EXPECT_CERT: a7fdc7b704db284774a0124fb13495b5e6ee4a05f6430547ad8ec21aba5ac938"],
         [],
@@ -358,8 +346,43 @@ CHECKS = [
         [r"find androidApp/build/outputs/apk/release"],
         [r"SRC=.*app-release"],
     ),
+    (
+        "本复刻 README 的 fork 区块/鸣谢不能被合并冲掉",
+        "README.md",
+        [r"<!-- fork-only:start -->", r"<!-- fork-only:end -->", r"CREDITS\.md"],
+        [],
+    ),
+    (
+        "本复刻鸣谢文件不能被合并删掉",
+        "CREDITS.md",
+        [r"HaoZai000", r"xiaoxun007", r"Nanawwa"],
+        [],
+    ),
+    (
+        "本复刻维护清单不能被合并删掉",
+        "docs/FORK-MAINTENANCE.md",
+        [r"本复刻维护清单", r"fork-only"],
+        [],
+    ),
+    (
+        "已移除的专有 SDK 不能被写回第三方说明",
+        "THIRD-PARTY-NOTICES.md",
+        [r"Apache-2.0"],
+        [r"xms-wearable", r"XMS 手表互联 SDK"],
+    ),
+    (
+        "手表移除记录必须保留（历史章节不能整段删）",
+        "LOCAL-CHANGES.md",
+        [r"已停用（2026-10-24 移除）", r"## 十九、移除手表互联"],
+        [],
+    ),
+    (
+        "本复刻合并指南不能被合并删掉",
+        "LOCAL-CHANGES.md",
+        [r"本地定制改动清单"],
+        [],
+    ),
 ]
-
 
 def preflight():
     """门禁配置自检：路径常量指向的模块目录 / 文件必须存在。

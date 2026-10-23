@@ -131,10 +131,6 @@ fun bootstrapNexioIos() {
 private object IosScheduleChangeSink : ScheduleChangeSink {
     override fun rescheduleReminders() = IosCourseNotifier.reschedule()
 
-    override fun syncWearable(reason: String) {
-        NexioLog.d("IosScheduleChangeSink", "syncWearable($reason) ignored: no wearable on iOS")
-    }
-
     override fun refreshWidgets() = IosWidgetSnapshot.refresh()
 }
 
@@ -386,7 +382,7 @@ internal fun NexioIosRouteContent(router: AppRouter, route: AppRoute) {
         )
         // 课表导入/导出/备份：接 iOS 原生文件选择器（UIDocumentPicker）+ 三条口令导入。
         // 口令取回与星链是纯 HTTP（共享 HttpService = NSURLSession），WakeUp 走无头
-        // WKWebView（IosWakeUpImport）。口令**导出**与手环推送仍是 Android 专有。
+        // WKWebView（IosWakeUpImport）。口令**导出**仍是 Android 专有。
         AppRoute.ScheduleImport -> BackupAndMigrationRoute(
             router = router,
             mode = ScheduleDataManageMode.Import,

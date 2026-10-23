@@ -727,7 +727,7 @@ fun WebDavSettingsRoute(
  *
  * ⚠ 三个入口**必须**走路由，不能是独立 Activity：`BackupAndMigrationScreen` 的「本地备份」
  * 入口读 [LocalAppRouter]，独立 Activity 的 setContent 没有 provide，默认值 `error(...)` 一点就崩。
- * 口令取回 / 第三方抓取 / 分享出图 / 手环推送四条 Android 能力走注入，iOS/桌面默认「当前平台不支持」
+ * 口令取回 / 第三方抓取 / 分享出图三条 Android 能力走注入，iOS/桌面默认「当前平台不支持」
  * —— 这一页在 iOS 上仍能打开（WebDAV / 本地备份 / 文件导入导出可用），只是口令通道不可用。
  *
  * @param scheduleFileController Android 注入 `AndroidScheduleFileController(context)`；iOS/桌面用 [NoopScheduleFileController]（点导入会提示不可用）。
@@ -744,7 +744,6 @@ fun BackupAndMigrationRoute(
     -> Result<ThirdPartySharePayload> =
         { source, _ -> Result.failure(IllegalStateException("当前平台不支持${source.displayName}")) },
     onShareSchedule: (scheduleName: String, onSharingChanged: (Boolean) -> Unit) -> Unit = { _, _ -> },
-    onExportToWearable: suspend (scheduleName: String) -> String? = { null },
 ) {
     val title = when (mode) {
         ScheduleDataManageMode.Import -> "课表导入"
@@ -764,7 +763,6 @@ fun BackupAndMigrationRoute(
             onFetchShareCode = onFetchShareCode,
             onImportThirdParty = onImportThirdParty,
             onShareSchedule = onShareSchedule,
-            onExportToWearable = onExportToWearable,
         )
     }
 }

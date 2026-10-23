@@ -63,7 +63,7 @@ class NexioApplication : Application() {
         // 必须在 ScheduleAppearance.init 之后 —— 后端读它。
         com.haooz.chedule.data.WallpaperStore.backend =
             com.haooz.chedule.data.AndroidWallpaperBackend()
-        // 课程变更后的平台副作用（重排提醒 / 手表同步 / 刷新小组件）。
+        // 课程变更后的平台副作用（重排提醒 / 刷新小组件）。
         // CourseViewModel / ScheduleViewModel 已进 :ui-shared，不能直接碰 reminder/widget，
         // 只能经 :core 的 ScheduleEffects 出口回调到这里 —— 未注入时静默丢弃。
         com.haooz.chedule.data.ScheduleEffects.init(AndroidScheduleEffects(this))
@@ -89,7 +89,6 @@ class NexioApplication : Application() {
         )
         warmUpSharedPreferences()
         cleanupTransientFiles()
-        initWearableSync()
         enableWebViewRemoteDebugging()
         // 调休映射迁移：旧版存「第几周+星期几」，周次相对课表，换课表就错位。
         // 一次性换算成绝对日期（followDate），之后按当前课表实时折算。走后台线程避免拖慢冷启动。
@@ -114,17 +113,6 @@ class NexioApplication : Application() {
             val debuggable =
                 (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
             if (debuggable) android.webkit.WebView.setWebContentsDebuggingEnabled(true)
-        }
-    }
-
-    /** 手表课表推送：启动注册，课程变更走 CourseRepository 监听 */
-    private fun initWearableSync() {
-        runCatching {
-            com.haooz.chedule.wearable.WearableScheduleSync.init(this)
-            val repo = com.haooz.chedule.data.CourseRepository.getInstance()
-            repo.addCourseChangedListener { _, _ ->
-                com.haooz.chedule.wearable.WearableScheduleSync.onScheduleChanged("course-change")
-            }
         }
     }
 

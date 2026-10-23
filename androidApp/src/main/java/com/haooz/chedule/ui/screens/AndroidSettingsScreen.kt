@@ -41,7 +41,6 @@ import com.haooz.chedule.viewmodel.CourseViewModel
 import com.haooz.chedule.viewmodel.ScheduleViewModel
 import com.haooz.chedule.viewmodel.SettingsViewModel
 import com.haooz.chedule.viewmodel.ShiftViewModel
-import com.haooz.chedule.wearable.WearableScheduleSync
 import com.haooz.chedule.widget.WidgetUpdateCache
 import java.net.HttpURLConnection
 import java.net.URL
@@ -137,9 +136,6 @@ fun AndroidSettingsScreen(
                             onSharingChanged = onSharingChanged,
                         )
                     },
-                    onExportToWearable = { name ->
-                        WearableScheduleSync.exportToWearable(context, name)
-                    },
                 )
 
                 TabletSettingsDest.AiImport -> AiImportScreen(
@@ -185,9 +181,6 @@ fun AndroidSettingsScreen(
                             scheduleName = name,
                             onSharingChanged = onSharingChanged,
                         )
-                    },
-                    onExportToWearable = { name ->
-                        WearableScheduleSync.exportToWearable(context, name)
                     },
                 )
 

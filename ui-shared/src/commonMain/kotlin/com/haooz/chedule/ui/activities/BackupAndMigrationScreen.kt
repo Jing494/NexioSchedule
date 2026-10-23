@@ -1,5 +1,5 @@
 /**
- * 备份与迁移页面 - Screen。平台专有能力（文件选择/另存为、口令分享/抓取、手环推送、
+ * 备份与迁移页面 - Screen。平台专有能力（文件选择/另存为、口令分享/抓取、
  * 节假日变更后重排提醒）全部由宿主注入，见各参数注释。
  */
 package com.haooz.chedule.ui.activities
@@ -121,8 +121,6 @@ fun BackupAndMigrationScreen(
         { source, _ -> Result.failure(IllegalStateException("当前平台不支持${source.displayName}")) },
     /** 口令分享导出（上传 + 出图 + 系统分享，Android 专有，宿主注入）。 */
     onShareSchedule: (scheduleName: String, onSharingChanged: (Boolean) -> Unit) -> Unit = { _, _ -> },
-    /** 导出到手环（Android 专有；未连接/不支持时返回 null） */
-    onExportToWearable: suspend (scheduleName: String) -> String? = { null },
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -481,29 +479,6 @@ fun BackupAndMigrationScreen(
                                         showToast("请先选择要分享的课表")
                                     } else if (!isSharingExport) {
                                         showShareExportConfirmDialog = true
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        insideMargin = PaddingValues(0.dp)
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            ArrowPreference(
-                                title = "导出到手环",
-                                summary = "打包JSON并推送到手表/手环",
-                                onClick = {
-                                    scope.launch {
-                                        val path = onExportToWearable(selectedExportSchedule)
-                                        if (path != null) {
-                                            showToast("已导出并推送手环\n$path", longDuration = true)
-                                        } else {
-                                            showToast("导出失败，请确认手环已连接")
-                                        }
                                     }
                                 }
                             )

@@ -41,33 +41,12 @@ internal object UpdateChecker {
     private const val MIN_COMPLETE_APK_BYTES = 512L * 1024L
 
     /**
-     * 本 fork **普通变体**的签名证书 SHA-256（公开信息）。
+     * 本 fork 的签名证书 SHA-256（公开信息）。
      *
-     * 为什么需要它：同一个 Release 里会放两个变体的 APK ——
-     *   · 普通版：本 fork keystore 签的（能覆盖安装你现在手机上那版）；
-     *   · wear 版：与**手表 rpk 同一把** keystore 签的，文件名带 `-wear`
-     *     （小米穿戴 interconnect 要求手表 rpk 与 APK 同包名且同签名）。
-     * 两个变体签名不同 → Android 不允许互相覆盖安装 → 更新必须按变体分流。
-     * 分流依据就是**自己的签名**：等于下面的常量 = 普通变体；不等于 = wear/自签变体。
-     *
-     * ★ 必须与 .github/workflows 里的 EXPECT_CERT 一致（tools/ci_check.py 会钉住两边）
+     * 用途：更新包安装前校验「是不是本 fork 签的」，挡住被替换的包/半成品。
+     * 必须与 .github/workflows 里的 EXPECT_CERT 一致（tools/ci_check.py 会钉住两边）。
      */
     const val FORK_CERT_SHA256 = "a7fdc7b704db284774a0124fb13495b5e6ee4a05f6430547ad8ec21aba5ac938"
-
-    /** 本变体的附件名后缀：普通变体空串，wear 变体 "-wear" */
-    fun variantSuffix(context: Context): String = if (isWearVariant(context)) "-wear" else ""
-
-    /**
-     * 当前安装是不是 wear 变体 —— **只看自己的签名**，不看文件名/版本号（那些都能被改）。
-     *
-     * ★ 取不到自己签名时按**普通变体**处理（fail-safe，宁可给普通包）：
-     *   万一判成 wear，普通用户会永远收不到更新；判成普通最坏只是"白下一趟" ——
-     *   因为安装前还有一道签名预检会把不匹配的包拦下（见 UpdateInstaller.signatureMatchesOwn）。
-     */
-    fun isWearVariant(context: Context): Boolean {
-        val own = ownSignerSha256(context)
-        return own.isNotBlank() && own != FORK_CERT_SHA256
-    }
 
     /** 本机当前安装包的签名证书 SHA-256（小写十六进制）；取不到返回空串（调用方按"不匹配"处理） */
     fun ownSignerSha256(context: Context): String {
@@ -105,19 +84,16 @@ internal object UpdateChecker {
     // 本文件通过同模块顶层的 import 继续调用，行为逐字不变。
 
     /**
-     * 取该 release 里**本变体**的 .apk 附件下载地址；没有则返回空串。
-     *
-     * 普通变体不认带 `-wear` 的附件，wear 变体只认带 `-wear` 的 —— 两个变体签名不同，
-     * 拿错包要么装不上、要么逼用户卸载重装，所以在"挑包"这一层就分流。
+     * 取该 release 里第一个普通版 .apk 附件地址；没有则返回空串。
+     * 历史 -wear 附件直接跳过，避免普通用户拿到不同签名的包。
      */
-    private fun apkUrlOf(release: com.google.gson.JsonObject, wear: Boolean): String {
+    private fun apkUrlOf(release: com.google.gson.JsonObject): String {
         val assets = release.getAsJsonArray("assets") ?: return ""
         for (i in 0 until assets.size()) {
             val a = assets[i].asJsonObject
             val assetName = a.get("name")?.asString ?: ""
             if (!assetName.endsWith(".apk")) continue
-            val isWearAsset = assetName.substringBeforeLast(".apk").endsWith("-wear")
-            if (isWearAsset != wear) continue
+            if (assetName.substringBeforeLast(".apk").endsWith("-wear")) continue
             return a.get("browser_download_url")?.asString ?: ""
         }
         return ""
@@ -134,8 +110,6 @@ internal object UpdateChecker {
                 .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                 .build()
 
-            // 本变体（普通 / wear）：只认与**自己签名**匹配的那一类附件
-            val wearVariant = isWearVariant(context)
             // 更新源 = **本 fork 自己的两个仓库**（不再指向上游）：
             // 上游包与本 fork 签名不同，下载过去会装不上/要求卸载重装。
             // 国内优先 Gitee（默认 source=gitee），GitHub 作为备选。
@@ -184,7 +158,7 @@ internal object UpdateChecker {
                 //   attach 上去的（实测 gh5 差了 8 分钟）。这段窗口里"最新 release"没有 .apk，
                 //   一旦选中它，下载地址就是空的 —— 点「开始下载」只会弹「未找到下载链接」。
                 //   所以没有 .apk 的版本直接跳过，继续找「最新的、且带包的」。
-                val apk = apkUrlOf(release, wearVariant)
+                val apk = apkUrlOf(release)
                 if (apk.isBlank()) continue
 
                 if (best == null || isNewerVersion(ver, bestVer)) {
@@ -202,8 +176,7 @@ internal object UpdateChecker {
             val createdAt = json.get("created_at")?.asString ?: ""
             val apkUrl = bestApkUrl
             // ★ 上游这轮新增：同时记下该附件的 sha256（GitHub 下发 digest）与体积，供安装前完整性校验用。
-            //   必须取**本变体**的那一个附件（与 apkUrlOf 同一套 -wear 过滤）——
-            //   否则 wear 用户会拿普通包的摘要去校验 wear 包（或反之），永远校验失败。
+            //   必须取与 apkUrlOf 同一类的普通版附件（跳过历史 -wear 附件）。
             var apkSha256: String? = null
             var apkSize: Long? = null
             json.getAsJsonArray("assets")?.let { assets ->
@@ -211,8 +184,7 @@ internal object UpdateChecker {
                     val a = assets[i].asJsonObject
                     val assetName = a.get("name")?.asString ?: ""
                     if (!assetName.endsWith(".apk")) continue
-                    val isWearAsset = assetName.substringBeforeLast(".apk").endsWith("-wear")
-                    if (isWearAsset != wearVariant) continue
+                    if (assetName.substringBeforeLast(".apk").endsWith("-wear")) continue
                     // GitHub 资产下发 digest（"sha256:<hex>"），部分平台直接给 sha256；都没有就退化为解析级校验
                     val digest = a.get("digest")?.takeIf { !it.isJsonNull }?.asString
                         ?: a.get("sha256")?.takeIf { !it.isJsonNull }?.asString
@@ -467,13 +439,12 @@ internal object UpdateChecker {
         joinToString("") { "%02x".format(it) }
 
     /**
-     * 从下载文件名取 tag：`update-<tag>.apk` 与 `update-<tag>-wear.apk` 都认。
-     * 变体后缀必须在这里剥掉，否则清理逻辑会把 wear 包当成"tag 对不上"删掉。
+     * 从下载文件名取 tag（普通包 update-<tag>.apk）。
      */
     fun apkTagOrNull(fileName: String): String? {
         if (!fileName.startsWith(APK_PREFIX) || !fileName.endsWith(APK_SUFFIX)) return null
         val tag = fileName.removePrefix(APK_PREFIX).removeSuffix(APK_SUFFIX)
-        return tag.removeSuffix("-wear")
+        return tag
     }
 
     /**
