@@ -1,6 +1,7 @@
 /** 课程提醒设置页面 - Screen */
 package com.haooz.chedule.ui.activities
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn

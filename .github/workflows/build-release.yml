@@ -206,6 +206,21 @@ jobs:
           } > keystore.properties
           echo "keystore.properties 已写入（storeFile=../signing/fork.jks；别名与口令一律不回显）"
 
+      - name: 还原 XMS 手表 SDK（专有，不入库；3 段 secret 拼回）
+        if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'
+        env:
+          A1: ${{ secrets.XMS_AAR_B64_1 }}
+          A2: ${{ secrets.XMS_AAR_B64_2 }}
+          A3: ${{ secrets.XMS_AAR_B64_3 }}
+        run: |
+          if [ -z "$A1" ]; then
+            echo "::error::缺少 secrets.XMS_AAR_B64_1..3 —— 小米 XMS SDK 专有，不入库；见 androidApp/libs/README.md"
+            exit 1
+          fi
+          printf '%s' "$A1$A2$A3" | base64 -d > androidApp/libs/xms-wearable-lib_1.4_release.aar
+          test -s androidApp/libs/xms-wearable-lib_1.4_release.aar
+          echo "XMS AAR 已还原（$(stat -c%s androidApp/libs/xms-wearable-lib_1.4_release.aar) bytes）"
+
       - name: 计算 fork 版本号并构建
         id: build
         if: github.event_name == 'workflow_dispatch' || steps.merge.outputs.merged == 'true'

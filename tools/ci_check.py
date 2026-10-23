@@ -46,7 +46,12 @@ F_REMSCREEN = f"{J_SHARED}/ui/activities/CourseReminderScreen.kt"
 F_REMCONTROLLER = f"{J_CORE}/data/ReminderController.kt"
 F_UPDCHECK = f"{J_APP}/ui/utils/UpdateChecker.kt"
 F_UPDINST = f"{J_APP}/ui/utils/UpdateInstaller.kt"
-WF_REL = ".github/workflows/sync-upstream-build-release.yml"
+WF_CANDIDATES = (
+    ".github/workflows/sync-upstream-build-release.yml",
+    ".github/workflows/build-release.yml",
+)
+# 新建仓库不注册旧文件名（GitHub 的坑），对照仓/新仓用 build-release.yml；两者都认。
+WF_REL = next((p for p in WF_CANDIDATES if os.path.exists(p)), WF_CANDIDATES[0])
 F_UPDSET = f"{J_SHARED}/ui/activities/UpdateSettingsScreen.kt"
 F_MANIFEST = "androidApp/src/main/AndroidManifest.xml"
 
