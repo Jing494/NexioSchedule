@@ -38,7 +38,7 @@
 | 8 | `b39a0c4` | 2026-09-27 | v26：修「假期余额提醒」在假期最后一天永远不发 | 1 |
 | 9 | `2246fd2` | 2026-09-27 | v27：假期余额独立成卡 + 跟随豁免开关 + 只在最后N天 + 测试按钮 + 提醒体检 | 4 |
 | 10 | `8c9d098` | 2026-09-27 | docs: 加 LOCAL-CHANGES.md（本地定制清单 + 跟上上游的合并指南） | 1 |
-| 11 | `856261f` | 2026-09-27 | v28：流畅度 —— 预合成减半 / 整页重执行消除 / 轮询降到分钟节拍 / 滑动期毛玻璃降级 | 11 |
+| beyondViewportPageCount=1（预合成减半） | v28 改的 | 2026-10-25 上游改为滑动期 1 / 停稳 2/3；门禁 #19 已跟随 |
 | 12 | `11c88e1` | 2026-09-27 | docs: LOCAL-CHANGES 补 v28（栈深度、主题索引、复算脚本、3 条新取舍） | 1 |
 | 13 | `714c3cd` | 2026-09-27 | v29：毛玻璃降级从布尔硬切改为系数淡入淡出（修“突兀”） | 6 |
 | 14 | （docs 提交，SHA 见 `git log -1`） | 2026-09-27 | docs: LOCAL-CHANGES 补 v28/v29（栈深度 14、取舍 8 升级为“必须系数+淡入淡出”） | 1 |
@@ -208,8 +208,7 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
    目标是今天但首节更早→「今天返校」。16:00 口径与 `prepNotificationTitle` 必须一致。
    这次两个通道同时中招，正因为当初各写了一套 —— 别再分叉。
 
-10. **`beyondViewportPageCount` 现在是 1**：调回 2 等于同时多养两页的组合/测量/布局，
-    是本轮最大的一笔白干。若上游为了别的原因改大，要连带评估课表页开销。
+10. **课表周页预合成**：滑动期 beyondViewportPageCount=1，停稳后由 WeekPagerHost 扩到 2（边缘驻留连续翻周 3）。不要无条件常驻多页；改大要连带评估课表页开销。
 
 
 ---
@@ -225,7 +224,7 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 | 底栏避让导航栏 | `ScheduleBottomBar` 里 `maxOf(24.dp, navBarBottomInset + 8.dp)` | **删我的**（写法几乎相同） |
 | 横滑手势 | `HorizontalPagerGesture` 大改 279 行（加 overscroll / 橡皮筋） | **取上游**；我的"同一帧合并 scrollBy"性能补丁未落（待在新结构上重新评估） |
 | 教学周重组 | `TeachingWeekReorganization`（+ 假期设置页入口与规则列表） | 上游独有，保留 |
-| 课表页预合成 | 未动 | 我的 `beyondViewportPageCount = 1` 保留 |
+| 课表页预合成 | 上游改为 WeekPagerHost 动态 1/2/3 | 2026-10-25 合并后跟随上游，不再固定 1 |
 
 **仍然保留的本地定制**：假期余额提醒、返校准备清单、返校日子词（`returnDayVerb`）、
 超级岛/实时动态的规范修正与 XMSF 绕白名单、毛玻璃系数降级与折射宽度恒定、
@@ -252,7 +251,7 @@ git cherry-pick 99990be 48e434f ...      # 按第二节的 SHA
 |---|---|---|
 | "effects/onDrawSurface 必须 remember 稳定，否则 `DrawBackdropElement.equals` 判不等→重建 RenderEffect→壁纸玻璃无意义重绘" | v21/v28 给 TodayScreen 的玻璃卡/分组标题各加一层 remember 包装 | **取上游**（同源优化，且他们还把 `blurPx` 多 remember 了一层） |
 | "半径为 0 不挂 blur 图层" | v21 在 MainActivity 里用 `graphicsLayer { renderEffect = … }` 自己判 | **取上游**（他们的 `mainContentBlurModifier` 用同样两个半径来源与 `>0.01f` 阈值） |
-| `beyondViewportPageCount = 1`（预合成减半） | v28 改的 | 上游也采纳了 → **只保留我的说明注释** |
+| beyondViewportPageCount=1（预合成减半） | v28 改的 | 2026-10-25 上游改为滑动期 1 / 停稳 2/3；门禁 #19 已跟随 |
 | 毛玻璃系数淡入淡出（`glassPerfFactor`，折射宽度恒定只淡强度） | v29/v30 | **我的独有，保留**（上游没有系数，只有固定强度） |
 | 轮询降到分钟节拍（`MinuteTick`） | v28 | **我的独有，保留** |
 
@@ -627,3 +626,12 @@ gh27 的 wear 包下载量为 0，没有需要迁移的真实用户。
 
 **保留**：§十二、§十五 的历史记录已标「已停用」；发布流程改为单变体普通包。
 gh28 起只发普通包，gh27 的 wear 附件从 GitHub/Gitee 删除。
+
+---
+
+## 二十、跟上游 1.6.7-1025（21919ead，2026-10-25）
+
+- 22 笔；冲突 6 处；保留本 fork 的手表移除与分钟节拍。
+- TodayAssistantCard 的 tick 循环补回 now/current/next（上游把判定收进 statusAt）。
+- ci_check #19 跟随上游 WeekPagerHost：滑动期 beyond=1，停稳 2/3。
+- 发布 v1.6.7.29-gh29（versionCode 16729），Gitee 同步 ffca20e6。
