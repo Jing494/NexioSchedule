@@ -157,7 +157,11 @@ private fun rememberCourseStatus(
     var status by remember(courses, sectionTimes) { mutableStateOf(statusAt(nowLocalTime())) }
     LaunchedEffect(ranges) {
         while (true) {
-            val newStatus = statusAt(nowLocalTime())
+            val now = nowLocalTime()
+            // tick 需要 current/next 的边界；statusAt 复用同一套判定，避免两处口径分叉。
+            val current = ranges.find { coursePeriodOngoing(it.start, it.end, now) }
+            val next = ranges.find { now < it.start }
+            val newStatus = statusAt(now)
             // 文案未变化时不写状态，避免每秒重组
             if (newStatus != status) status = newStatus
             // 唤醒点**从当前剩余秒数推**（floor 口径），不是「睡到下一个整分」：
