@@ -1,25 +1,8 @@
 package com.haooz.chedule.ui.activities.classschedule
 
-import androidx.compose.ui.text.style.TextAlign
-import com.haooz.chedule.ui.components.cardRevealLayer
-import com.haooz.chedule.ui.components.rememberCardRevealState
-import com.haooz.chedule.ui.utils.hostVerticalBarEdge
-import com.haooz.chedule.ui.utils.LocalHostNavigation
-import com.haooz.chedule.ui.utils.TransitionLayerSnapshot
-
-import com.haooz.chedule.data.HolidayEntry
-
-import com.haooz.chedule.data.minusDays
-import com.haooz.chedule.data.nowLocalTime
-import com.haooz.chedule.data.plusDays
-import com.haooz.chedule.data.plusWeeks
-import com.haooz.chedule.data.todayLocalDate
-import kotlinx.datetime.isoDayNumber
-
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -46,10 +29,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerScope
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -57,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -102,6 +86,7 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -111,19 +96,40 @@ import com.haooz.chedule.data.Course
 import com.haooz.chedule.data.CourseRepository
 import com.haooz.chedule.data.DayScheduleResolver
 import com.haooz.chedule.data.HolidayCourseExclusion
+import com.haooz.chedule.data.HolidayEntry
 import com.haooz.chedule.data.HolidayManager
 import com.haooz.chedule.data.SpecialItem
 import com.haooz.chedule.data.TeachingWeekReorganization
+import com.haooz.chedule.data.minusDays
+import com.haooz.chedule.data.nowLocalTime
+import com.haooz.chedule.data.plusDays
+import com.haooz.chedule.data.plusWeeks
+import com.haooz.chedule.data.showToast
+import com.haooz.chedule.data.todayLocalDate
+import com.haooz.chedule.ui.activities.main.PagerJumpNeighbor
 import com.haooz.chedule.ui.basic.LiquidTopBarButton
-import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
-import com.kyant.backdrop.edgelight.edgeLight
+import com.haooz.chedule.ui.components.cardRevealLayer
+import com.haooz.chedule.ui.components.rememberCardRevealState
+import com.haooz.chedule.ui.components.text.LocalTextMotionInstant
+import com.haooz.chedule.ui.components.text.material.Text
+import com.haooz.chedule.ui.utils.LocalHostNavigation
+import com.haooz.chedule.ui.utils.PagerTakeoverGestureState
+import com.haooz.chedule.ui.utils.TransitionLayerSnapshot
 import com.haooz.chedule.ui.utils.courseCardSolidBacking
+import com.haooz.chedule.ui.utils.hostVerticalBarEdge
 import com.haooz.chedule.ui.utils.isAppDarkTheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
 import com.haooz.chedule.ui.utils.pagerAxisTakeoverGesture
+import com.haooz.chedule.ui.utils.rememberPagerTakeoverGestureState
 import com.haooz.chedule.ui.utils.schedulePageBackgroundColor
+import com.haooz.chedule.ui.utils.screenHeightDp
+import com.haooz.chedule.ui.utils.screenWidthDp
 import com.haooz.chedule.viewmodel.CourseViewModel
 import com.haooz.chedule.viewmodel.SettingsViewModel
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.BackdropEffectScope
+import com.kyant.backdrop.BackdropViewport
+import com.kyant.backdrop.LocalBackdropViewport
+import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.SharedBlurBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
@@ -131,32 +137,28 @@ import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.isRenderEffectSupported
 import com.kyant.capsule.ContinuousRoundedRectangle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.isoDayNumber
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
+import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
+import top.yukonga.miuix.kmp.layout.isTabletWidth
 import top.yukonga.miuix.kmp.overlay.BlurBottomSheet
 import top.yukonga.miuix.kmp.overlay.BlurBottomSheetTablet
 import top.yukonga.miuix.kmp.overlay.LocalSheetContentBackdrop
 import top.yukonga.miuix.kmp.overlay.LocalSheetTopBarMaterial
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import kotlinx.datetime.LocalDate
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 import com.kyant.backdrop.backdrops.layerBackdrop as kyantLayerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberKyantLayerBackdrop
-import com.haooz.chedule.data.showToast
-import top.yukonga.miuix.kmp.layout.isTabletWidth
-import com.haooz.chedule.ui.utils.screenWidthDp
-import com.haooz.chedule.ui.utils.screenHeightDp
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.BackdropEffectScope
-import com.kyant.backdrop.BackdropViewport
-import com.kyant.backdrop.LocalBackdropViewport
-import com.kyant.backdrop.backdrops.LayerBackdrop
 
 // 普通 holder 而非 state：避免 onGloballyPositioned 每次写入触发卡片重组
 private class CardBoundsHolder {
@@ -203,6 +205,8 @@ fun MainScheduleScreen(
     viewModel: CourseViewModel,
     settingsViewModel: SettingsViewModel,
     pagerState: PagerState,
+    /** 长距跳转借位页：让相邻页临时显示目标周（见 PagerJumpNeighbor） */
+    jumpNeighbor: PagerJumpNeighbor? = null,
     hiddenCourseIds: Set<String> = emptySet(),
     draggingCourseSlots: Set<Pair<String, Int>> = emptySet(),
     onCourseClick: (courses: List<Course>, cardLeft: Float, cardTop: Float, cardWidth: Float, cardHeight: Float, snapshot: TransitionLayerSnapshot?, courseIdToHide: String, targetWeek: Int) -> Unit = { _, _, _, _, _, _, _, _ -> },
@@ -237,10 +241,18 @@ fun MainScheduleScreen(
     onWallpaperScaleChange: (Float) -> Unit = {},
     appearance: AppearanceConfig = AppearanceConfig(),
     liquidGlassBackdrop: Backdrop? = null,
-    // 拖拽落点高亮：Pair(dayOfWeek, sectionRange)，sectionRange 为落点覆盖的节次区间
-    dropHighlight: Pair<Int, IntRange>? = null,
+    // 拖拽落点高亮：Pair(dayOfWeek, sectionRange)，sectionRange 为落点覆盖的节次区间。
+    // 传 lambda 而不是值：求值推迟到落点遮罩自己的组合作用域里，跨格只重组遮罩那一小块
+    // （传值等于在调用方组合期读落点状态，每跨一格整页重组一次）。
+    dropHighlight: () -> Pair<Int, IntRange>? = { null },
     // 落点遮罩出现动画的起点（通常是源课格），避免首次直接闪现在落点
-    dropHighlightOrigin: Pair<Int, IntRange>? = null,
+    dropHighlightOrigin: () -> Pair<Int, IntRange>? = { null },
+    // 拖课卡停在屏幕边缘热区（即将自动翻周）时为 true；供周 pager 在驻留空闲期
+    // 预组合翻页要用的邻页（beyond 1→3），把组合成本挪出翻页动画帧
+    edgeDwellHint: () -> Boolean = { false },
+    // 周 pager 的手势接管状态：借位跳周被手势打断时，jumpToPageSmoothly 借它
+    // 同步平移松手落页基准，避免手势被旧起点拉回跳转前的周
+    pagerGestureState: PagerTakeoverGestureState = rememberPagerTakeoverGestureState(),
     onGridGeometryChange: (ScheduleGridGeometry) -> Unit = {},
     scheduleScrollBehavior: SharedScrollBehavior? = null,
     // 由 Activity 层传入：不是防销毁，是液态玻璃重录要在外层读滚动状态 / 弹窗开合
@@ -296,7 +308,6 @@ fun MainScheduleScreen(
     val scheduleEndSpacer = nativeChromeInset?.plus(80.dp) ?: 175.dp
     val screenWidthPx = with(density) { screenWidthDp().dp.toPx() }
     val screenHeightPx = with(density) { screenHeightDp().dp.toPx() }
-    val scrollState = externalScrollState
     // 非 state 版本：卡片 onGloballyPositioned 读取不触发重组
     val touchState = remember { ScheduleTouchState() }
     // 跨周调课 tracker 的坐标（挂在 pager 上，跨周不重建）
@@ -322,10 +333,10 @@ fun MainScheduleScreen(
     }
     // 供停滑后冲刷 dayBounds 版本号；仅滑动起停各写一次
     val scheduleScrollInProgress = remember { mutableStateOf(false) }
-    LaunchedEffect(pagerState, scrollState) {
+    LaunchedEffect(pagerState, externalScrollState) {
         // 必须直接读 ScrollState：捕获 composition 期 Boolean 后 snapshotFlow 不会再观测变化
         snapshotFlow {
-            pagerState.isScrollInProgress || scrollState.isScrollInProgress
+            pagerState.isScrollInProgress || externalScrollState.isScrollInProgress
         }.collect {
             touchState.scrolling = it
             scheduleScrollInProgress.value = it
@@ -407,10 +418,10 @@ fun MainScheduleScreen(
                 if (currentMinutes in startMinutes until endMinutes) {
                     result = section
                 }
-                if (endMinutes > currentMinutes && endMinutes < nextTransition) {
+                if (endMinutes in (currentMinutes + 1)..<nextTransition) {
                     nextTransition = endMinutes
                 }
-                if (startMinutes > currentMinutes && startMinutes < nextTransition) {
+                if (startMinutes in (currentMinutes + 1)..<nextTransition) {
                     nextTransition = startMinutes
                 }
             }
@@ -927,52 +938,60 @@ fun MainScheduleScreen(
         }
 
 
-    HorizontalPager(
-        state = pagerState,
-        modifier = Modifier
-            .fillMaxSize()
-            // 页面级多指统计：多指（如三指下滑截图）时抑制卡片点击/长按
-            .pointerInput(touchState) {
-                awaitPointerEventScope {
-                    var active = false
-                    while (true) {
-                        val downCount = awaitPointerEvent(PointerEventPass.Initial)
-                            .changes.count { it.pressed }
-                        if (downCount == 0) {
-                            // 全部抬起：不清零，让最后一帧仍能被卡片读到「本手势是多指」
-                            active = false
-                        } else {
-                            if (!active) touchState.multiTouch = false
-                            if (downCount > 1) touchState.multiTouch = true
-                            active = true
+        // 翻页预组合策略收在 WeekPagerHost（见其注释）：滚动中收拢到 1、
+        // 停稳 250ms 后扩到 2、边缘驻留扩到 3。beyond 翻转只重组 Host，
+        // 不重建页内容 lambda，已组合的周页不会被连带重组。
+        WeekPagerHost(
+            state = pagerState,
+            dwellHint = edgeDwellHint,
+            modifier = Modifier
+                .fillMaxSize()
+                // 页面级多指统计：多指（如三指下滑截图）时抑制卡片点击/长按
+                .pointerInput(touchState) {
+                    awaitPointerEventScope {
+                        var active = false
+                        while (true) {
+                            val downCount = awaitPointerEvent(PointerEventPass.Initial)
+                                .changes.count { it.pressed }
+                            if (downCount == 0) {
+                                // 全部抬起：不清零，让最后一帧仍能被卡片读到「本手势是多指」
+                                active = false
+                            } else {
+                                if (!active) touchState.multiTouch = false
+                                if (downCount > 1) touchState.multiTouch = true
+                                active = true
+                            }
                         }
                     }
                 }
-            }
-            // 横竖主导手势（与今日页共用）：横向接管 pager，纵向仍归页内滚动
-            .pagerAxisTakeoverGesture(
-                pagerState = pagerState,
-                // 拖课卡那根手指由 blockedPointer 屏蔽；整页禁用会连「另一只手翻周」一起挡掉
-                blockGesture = { latestIsWallpaperEditing },
-                blockedPointer = { touchState.draggingPointerId },
-                // 第二只手纵向滑动直接滚屏（verticalScroll 在跟被屏蔽那根手指）
-                onVerticalScroll = { dy -> scrollState.dispatchRawDelta(-dy) },
-            )
-            // 跨周调课：跟手位移与收尾放在 pager 上。课卡所在周页翻过去会被回收，
-            // 卡片自己的 pointerInput 跟着取消；pager 不重建，拖到第几周都能继续跟手。
-            .onGloballyPositioned { dragOwnerCoords[0] = it }
-            .courseDragOwnerGesture(
-                touchState = touchState,
-                coordinates = dragOwnerCoords,
-                onDrag = { id, dx, dy -> latestOnCourseDrag.value(id, dx, dy) },
-                onDragEnd = { id -> latestOnCourseDragEnd.value(id) },
-                onDragCancel = { id -> latestOnCourseDragCancel.value(id) },
-            ),
-        beyondViewportPageCount = 1,
-        // 横向触摸改由 pagerAxisTakeoverGesture 驱动；纵滑主导时交给 verticalScroll
-        userScrollEnabled = false
-    ) { page ->
+                // 横竖主导手势（与今日页共用）：横向接管 pager，纵向仍归页内滚动
+                .pagerAxisTakeoverGesture(
+                    pagerState = pagerState,
+                    gestureState = pagerGestureState,
+                    // 拖课卡那根手指由 blockedPointer 屏蔽；整页禁用会连「另一只手翻周」一起挡掉
+                    blockGesture = { latestIsWallpaperEditing },
+                    blockedPointer = { touchState.draggingPointerId },
+                    // 第二只手纵向滑动直接滚屏（verticalScroll 在跟被屏蔽那根手指）
+                    onVerticalScroll = { dy -> externalScrollState.dispatchRawDelta(-dy) },
+                )
+                // 跨周调课：跟手位移与收尾放在 pager 上。课卡所在周页翻过去会被回收，
+                // 卡片自己的 pointerInput 跟着取消；pager 不重建，拖到第几周都能继续跟手。
+                .onGloballyPositioned { dragOwnerCoords[0] = it }
+                .courseDragOwnerGesture(
+                    touchState = touchState,
+                    coordinates = dragOwnerCoords,
+                    onDrag = { id, dx, dy -> latestOnCourseDrag.value(id, dx, dy) },
+                    onDragEnd = { id -> latestOnCourseDragEnd.value(id) },
+                    onDragCancel = { id -> latestOnCourseDragCancel.value(id) },
+                ),
+        ) { physicalPage ->
+            // 借位页：长距跳转期间这一页临时按目标周出内容
+            val page = jumpNeighbor?.resolve(physicalPage) ?: physicalPage
             val week = page + 1
+            // 借位页是「同一页换数据」而不是值更新：整屏文字直接换，不播交叉模糊。
+            // 否则一屏卡片的字各糊一遍 460ms，看起来像整页重播入场动画。
+            val borrowedPage = jumpNeighbor?.isBorrowed(physicalPage) == true
+            CompositionLocalProvider(LocalTextMotionInstant provides borrowedPage) {
 
 
 
@@ -988,7 +1007,7 @@ fun MainScheduleScreen(
                     .scrollEndHaptic(
                         hapticFeedbackType = HapticFeedbackType.TextHandleMove
                     )
-                    .verticalScroll(scrollState)
+                    .verticalScroll(externalScrollState)
                     // 底部留白直接计入滚动内容高度；强制无界测量，避免 fillMaxSize/测量链把内容压回视口高
                     .layout { measurable, constraints ->
                         val topPad = contentTopPaddingDp.roundToPx().coerceAtLeast(0)
@@ -1245,7 +1264,6 @@ fun MainScheduleScreen(
                                 onCourseDragEnd = onCourseDragEnd,
                                 onCourseDragCancel = onCourseDragCancel,
                                 onCourseMenuDismiss = onCourseMenuDismiss,
-                                dropHighlightSections = if (dropHighlight?.first == dayOfWeek) dropHighlight.second else null,
                                 isDark = scheduleIsDark,
                                 modifier = Modifier
                                     .weight(1f)
@@ -1352,7 +1370,6 @@ fun MainScheduleScreen(
                     if (showBreakDividers) {
                     val dividerShape = ContinuousRoundedRectangle(12.dp)
                     val dividerHorizontalPadding = if (isTablet) 24.dp else 4.dp
-                    val dividerIsDark = scheduleIsDark
                     val dividerDensity = LocalDensity.current
                     // ⚠ remember 放外层、with 放内层：with(density){remember{...}} 的双层接收者
                     // lambda 在 commonMain 目标下类型推断失败（Cannot infer R/T），交换嵌套语义等价
@@ -1363,11 +1380,11 @@ fun MainScheduleScreen(
                     val dividerBaseColor = when {
                         hasWallpaperDivider -> Color.Transparent
                         MiuixTheme.isDynamicColor -> MiuixTheme.colorScheme.surfaceContainerHigh
-                        dividerIsDark -> Color(0xFF121212)
+                        scheduleIsDark -> Color(0xFF121212)
                         else -> Color(0xFFF0F0F0)
                     }
                     // 15% 锚定当前视觉；百分比映射到 0..1（仅作用于有壁纸玻璃表面）
-                    val dividerSurfaceAlphaAt15 = if (dividerIsDark) 0.64f else 0.50f
+                    val dividerSurfaceAlphaAt15 = if (scheduleIsDark) 0.64f else 0.50f
                     val dividerBlurShape = remember { ContinuousRoundedRectangle(12.dp) }
 
                     @Composable
@@ -1384,14 +1401,14 @@ fun MainScheduleScreen(
                         val dividerFgBase = dividerBaseColor
                         val dividerFgSurface = if (MiuixTheme.isDynamicColor) {
                             MiuixTheme.colorScheme.surfaceContainerHigh.copy(alpha = surfaceAlpha)
-                        } else if (dividerIsDark) {
+                        } else if (scheduleIsDark) {
                             Color(0xFF323232).copy(alpha = surfaceAlpha)
                         } else {
                             Color.White.copy(alpha = surfaceAlpha)
                         }
                         // 描边只在有壁纸（玻璃）时画：纯色模式下分界线本身就是实色，加轮廓只会显脏
-                        val dividerOutlineColor = remember(dividerFgSurface, dividerIsDark) {
-                            scheduleOutlineColor(dividerFgSurface, dividerIsDark)
+                        val dividerOutlineColor = remember(dividerFgSurface, scheduleIsDark) {
+                            scheduleOutlineColor(dividerFgSurface, scheduleIsDark)
                         }
                         val dividerOutlineWidthPx = remember(dividerDensity) {
                             with(dividerDensity) { SCHEDULE_OUTLINE_WIDTH.toPx() }
@@ -1458,6 +1475,7 @@ fun MainScheduleScreen(
                     BreakDivider(dinnerBreakY, "晚休")
                     }
                 }
+            }
             }
 
             if (isWallpaperEditing && wallpaperBitmap != null) {
@@ -1744,8 +1762,7 @@ fun MainScheduleScreen(
             },
             onDismiss = { showSpecialItemDialog = false },
             onSave = {
-                val block = editingBlock
-                if (block == null) {
+                if (editingBlock == null) {
                     showSpecialItemDialog = false
                 } else {
                     val trimmedName = specialItemName.trim()
@@ -1761,7 +1778,7 @@ fun MainScheduleScreen(
                             // 不连续点选合并为连续区间，如 {1,3,4} → 两个子块。
                             // id 由 nextSpecialItemIds 保证一批内互不相同（见该函数注释）。
                             val ranges = mergeConsecutiveDays(selected)
-                            val base = block.safeItems.filter { it.id != specialItemEditingId }
+                            val base = editingBlock.safeItems.filter { it.id != specialItemEditingId }
                             val ids = nextSpecialItemIds(base, ranges.size)
                             val newItems = ranges.mapIndexed { i, (s, e) ->
                                 SpecialItem(
@@ -1783,12 +1800,11 @@ fun MainScheduleScreen(
                 }
             },
             onDelete = {
-                val block = editingBlock
-                if (block != null) {
+                if (editingBlock != null) {
                     settingsViewModel.updateSpecialBlocks(
                         specialBlocks.map {
                             if (it.id == specialItemEditingBlockId) {
-                                it.copy(items = block.safeItems.filter { item -> item.id != specialItemEditingId })
+                                it.copy(items = editingBlock.safeItems.filter { item -> item.id != specialItemEditingId })
                             } else it
                         }
                     )
@@ -1817,7 +1833,6 @@ private fun CourseDetailSheet(
             dimBackground = true,
             isBottomAligned = true,
             onDismissRequest = onDismiss,
-            liquidGlassBackdrop = liquidGlassBackdrop,
             endAction = endAction,
             content = content,
         )
@@ -1825,7 +1840,6 @@ private fun CourseDetailSheet(
         BlurBottomSheet(
             show = show,
             title = "课程详情",
-            liquidGlassBackdrop = liquidGlassBackdrop,
             dimBackground = true,
             onDismissRequest = onDismiss,
             endAction = endAction,
@@ -1845,10 +1859,50 @@ private data class DropMaskBox(
  * 调课落点示意遮罩：拖动换格时弹簧连续位移；出现从上方轻微落入，消失淡出。
  * 放在 DayColumn 之前，保证卡片画在遮罩之上。
  */
+/**
+ * 周 pager 宿主：beyond 预组合策略全部收在本函数作用域内。
+ *
+ * - 滚动中**组合期直读** isScrollInProgress 立即收拢到 1：与首个滚动位移帧同一次
+ *   重组/测量生效（快照原子性，无竞态），翻页动画帧最多释放 1 页，不再承担
+ *   17~45ms 的新周页组合尖刺
+ * - 停稳 250ms 后扩到 [idleBeyond]（默认 2，边缘驻留连续翻周 3）：把下一次翻页
+ *   要用的邻页组合挪进空闲帧，防抖让它落在落页弹簧收尾之后、不挤进落地帧
+ *
+ * ⚠ 这些状态的读写不得泄漏到调用方：beyond 翻转只重组本函数（体积极小），
+ *   调用方传入的页内容 lambda 实例保持不变，已组合的周页不会被连带重组
+ *   （曾把状态写在 MainScheduleScreen 主体里，每次翻转重建页 lambda，整批页
+ *   跟着重跑组合，实测反而更卡）。
+ */
+@Composable
+private fun WeekPagerHost(
+    state: PagerState,
+    dwellHint: () -> Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable PagerScope.(page: Int) -> Unit,
+) {
+    var idleBeyond by remember(state) { mutableIntStateOf(1) }
+    LaunchedEffect(state) {
+        snapshotFlow { !state.isScrollInProgress to dwellHint() }.collectLatest { (idle, dwelling) ->
+            if (idle) {
+                delay(250.milliseconds)
+                idleBeyond = if (dwelling) 3 else 2
+            }
+        }
+    }
+    HorizontalPager(
+        state = state,
+        modifier = modifier,
+        beyondViewportPageCount = if (state.isScrollInProgress) 1 else idleBeyond,
+        // 横向触摸改由 pagerAxisTakeoverGesture 驱动；纵滑主导时交给 verticalScroll
+        userScrollEnabled = false,
+        pageContent = content,
+    )
+}
+
 @Composable
 private fun AnimatedDropTargetMask(
-    dropHighlight: Pair<Int, IntRange>?,
-    dropHighlightOrigin: Pair<Int, IntRange>?,
+    dropHighlight: () -> Pair<Int, IntRange>?,
+    dropHighlightOrigin: () -> Pair<Int, IntRange>?,
     pageDayRange: List<Int>,
     grid: SpecialGridLayout,
     cardHeightPerSection: Float,
@@ -1867,8 +1921,18 @@ private fun AnimatedDropTargetMask(
     val alpha = remember { Animatable(0f) }
     val lastTarget = remember { mutableStateOf<DropMaskBox?>(null) }
 
-    // 没有落点且遮罩已淡尽时不挂这棵树：BoxWithConstraints 是 SubcomposeLayout
-    if (dropHighlight == null && dropHighlightOrigin == null && alpha.value <= 0.01f) return
+    // 落点在**这里**求值：调用方只传 lambda，跨格时订阅落在本函数的作用域，
+    // 只重组遮罩这一小块，不会把整页课表拖下水。
+    val highlight = dropHighlight()
+    val originHighlight = dropHighlightOrigin()
+
+    // 没有落点且遮罩已淡尽时不挂这棵树：BoxWithConstraints 是 SubcomposeLayout。
+    // 判据走 derivedStateOf —— 直接读 alpha.value 会让淡入/淡出的每一帧都重建整棵子组合。
+    val hasTarget = highlight != null || originHighlight != null
+    val mounted by remember(hasTarget) {
+        derivedStateOf { hasTarget || alpha.value > 0.01f }
+    }
+    if (!mounted) return
 
     BoxWithConstraints(
         modifier = Modifier
@@ -1913,8 +1977,8 @@ private fun AnimatedDropTargetMask(
                 }
             }
         }
-        val targetBox = remember(dropHighlight, boxOf) { boxOf(dropHighlight) }
-        val originBox = remember(dropHighlightOrigin, boxOf) { boxOf(dropHighlightOrigin) }
+        val targetBox = remember(highlight, boxOf) { boxOf(highlight) }
+        val originBox = remember(originHighlight, boxOf) { boxOf(originHighlight) }
 
         LaunchedEffect(targetBox) {
             if (targetBox == null) {
@@ -2008,6 +2072,9 @@ private fun AnimatedDropTargetMask(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(grid.totalHeight.dp)
+                    // 独立图层：拖拽跨格时弹簧每帧只重画这一层圆角矩形，
+                    // 没有它失效会冒泡到最近的页图层，整页课表每帧重绘 4~14ms
+                    .graphicsLayer {}
                     .drawBehind {
                         val a = alpha.value
                         if (a <= 0.01f) return@drawBehind

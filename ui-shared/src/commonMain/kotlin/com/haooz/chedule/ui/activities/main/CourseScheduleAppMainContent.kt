@@ -4,8 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
@@ -22,9 +20,11 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -65,6 +65,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.haooz.chedule.data.AppearanceConfig
@@ -75,22 +76,22 @@ import com.haooz.chedule.data.Notice
 import com.haooz.chedule.data.NoticeFetcher
 import com.haooz.chedule.data.randomUuidV4
 import com.haooz.chedule.data.showToast
-import com.haooz.chedule.ui.activities.today.TodayScreen
-import com.haooz.chedule.ui.components.BackToNowFloatingButton
 import com.haooz.chedule.ui.activities.classschedule.LandRippleSpec
 import com.haooz.chedule.ui.activities.classschedule.LocalLandRipple
-import com.haooz.chedule.ui.components.ScheduleBottomBar
+import com.haooz.chedule.ui.activities.classschedule.MainScheduleScreen
 import com.haooz.chedule.ui.activities.classschedule.ScheduleTopBar
+import com.haooz.chedule.ui.activities.today.TodayScreen
+import com.haooz.chedule.ui.components.BackToNowFloatingButton
+import com.haooz.chedule.ui.components.LiquidNavigationRail
+import com.haooz.chedule.ui.components.ScheduleBottomBar
 import com.haooz.chedule.ui.components.ShareImportDialog
 import com.haooz.chedule.ui.components.TabletNavSideState
 import com.haooz.chedule.ui.components.UpdateDialog
 import com.haooz.chedule.ui.components.tabletNavExpandSampleTrack
+import com.haooz.chedule.ui.components.tabletNavRailStartPadding
 import com.haooz.chedule.ui.navigation.AppRoute
 import com.haooz.chedule.ui.navigation.LocalAppRouter
 import com.haooz.chedule.ui.screens.AddCourseDialog
-import com.haooz.chedule.ui.activities.classschedule.MainScheduleScreen
-import com.haooz.chedule.ui.components.LiquidNavigationRail
-import com.haooz.chedule.ui.components.tabletNavRailStartPadding
 import com.haooz.chedule.ui.screens.ShiftScheduleScreen
 import com.haooz.chedule.ui.screens.TabletCourseManagePane
 import com.haooz.chedule.ui.screens.TabletSettingsChromeOverlay
@@ -102,6 +103,7 @@ import com.haooz.chedule.ui.utils.LocalHostNavigation
 import com.haooz.chedule.ui.utils.ScreenCornerRadiiPx
 import com.haooz.chedule.ui.utils.addScreenCornerRect
 import com.haooz.chedule.ui.utils.bottomFloatingPadding
+import com.haooz.chedule.ui.utils.rememberPagerTakeoverGestureState
 import com.haooz.chedule.ui.utils.buildShareScheduleMap
 import com.haooz.chedule.ui.utils.rememberAppSettingDark
 import com.kyant.backdrop.Backdrop
@@ -120,6 +122,7 @@ import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.MiuixPopupUtils.Companion.MiuixPopupHost
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 import com.kyant.backdrop.backdrops.layerBackdrop as liquidGlassLayerBackdrop
 
@@ -327,7 +330,7 @@ internal fun CourseScheduleAppMainContent(
             if (otherGlassWanted && !otherGlassActive) otherGlassActive = true
             LaunchedEffect(otherGlassWanted) {
                 if (otherGlassWanted) return@LaunchedEffect
-                delay(OVERLAY_GLASS_RELEASE_DELAY_MS)
+                delay(OVERLAY_GLASS_RELEASE_DELAY_MS.milliseconds)
                 otherGlassActive = false
             }
             val overlayGlassActive = menuGlassActive || otherGlassActive
@@ -472,12 +475,14 @@ internal fun CourseScheduleAppMainContent(
                                     ) {
                                         ScheduleTopBar(
                                             visible = true,
-                                            pagerCurrentPage = pagerState.currentPage,
+                                            // 标题跟着 currentViewingWeek 走：程序化跳周的那一帧就切成目标周，
+                                            // 不会再有一段「点完还停在第 10 周」的空窗
+                                            pagerCurrentPage = currentViewingWeek - 1,
                                             currentWeek = currentWeek,
                                             isHoliday = viewingIsHoliday,
                                             dayRange = dayRange,
                                             currentDayOfWeek = currentDayOfWeek,
-                                            isCurrentWeek = pagerState.currentPage + 1 == currentWeek && currentWeek in 1..totalWeeks,
+                                            isCurrentWeek = currentViewingWeek == currentWeek && currentWeek in 1..totalWeeks,
                                             weekDates = weekDates,
                                             isReorganized = teachingWeekRules.isNotEmpty(),
                                             onOpenSwitchSchedule = { openScheduleLibrary() },
@@ -664,7 +669,7 @@ internal fun CourseScheduleAppMainContent(
                         // 弹窗排在「更多」之后 → 始终盖在它之上，遮罩能压暗「更多」
                         MiuixPopupHost()
                     }
-                ) { paddingValues ->
+                ) {
                     // Keep the real source rendered underneath the detail morph.
                     // 不门控 combinations.isEmpty()：网格只依赖 viewModel，与壁纸加载解耦
                     // backdrop 挂在未 padding 的全屏层：录制原点固定在屏幕
@@ -850,6 +855,7 @@ internal fun CourseScheduleAppMainContent(
                                                                 )
                                                             },
                                                             pagerState = todayPagerState,
+                                                            jumpNeighbor = todayJumpNeighbor,
                                                             navBarStyle = navBarStyle,
                                                             onScrollYChanged = { _ -> },
                                                             settingsScrollBehavior = todayScrollBehavior,
@@ -904,10 +910,16 @@ internal fun CourseScheduleAppMainContent(
                                                                 token = landRippleToken
                                                             )
                                                         ) {
+                                                            // 手势状态提升并注入 state：借位跳周被手势打断时，
+                                                            // jumpToPageSmoothly 借它同步平移松手落页基准
+                                                            val weekGestureState = rememberPagerTakeoverGestureState()
+                                                            weekPagerGestureState = weekGestureState
                                                             MainScheduleScreen(
                                                                 viewModel = viewModel,
                                                                 settingsViewModel = settingsViewModel,
                                                                 pagerState = pagerState,
+                                                                jumpNeighbor = weekJumpNeighbor,
+                                                                pagerGestureState = weekGestureState,
                                                                 hiddenCourseIds = hiddenCourseIds,
                                                                 draggingCourseSlots = draggingCourseSlots,
                                                                 onCourseClick = { courses, left, top, width, height, cardLayer, courseIdToHide, targetWeek ->
@@ -946,10 +958,7 @@ internal fun CourseScheduleAppMainContent(
                                                                     hapticFeedback.performHapticFeedback(
                                                                         HapticFeedbackType.LongPress
                                                                     )
-                                                                    // 浮层照常起（原卡隐藏、浮层顶在原地）—— 自定义时间课也一样。
-                                                                    // 「不能拖动」由卡片侧保证：DayColumn 给这类课传 dragEnabled=false，
-                                                                    // 手指怎么动都不会 onDragStart/onDrag，浮层停在原位、也没有调课落点。
-                                                                    // ⚠ draggedWeek 必须同步：删除确认弹窗按「本周」删时读的就是它。
+                                                                    // 浮层照常起（原卡隐藏、浮层顶在原地）—— 自定义时间课也一样
                                                                     isDraggingCard = true
                                                                     floatingCardVisible = true
                                                                     // 新一轮长按：还没开始拖，高光先关
@@ -1033,7 +1042,7 @@ internal fun CourseScheduleAppMainContent(
                                                                 onCourseDragStart = { _ ->
                                                                     // 拖过位移阈值才到这里（卡片侧 moved > slop 才回调），
                                                                     // 跟手高光从这一刻才亮，紧接着 onCourseMenuDismiss 收菜单
-                                                                    pendingDropTarget = null
+                                                                    setPendingDropTarget(null)
                                                                     isFloatingCardDragging = true
                                                                 },
                                                                 onCourseMenuDismiss = {
@@ -1085,7 +1094,7 @@ internal fun CourseScheduleAppMainContent(
                                                                     val source = if (dropAborted) null else draggedCardCourse
                                                                     val target = pendingDropTarget
                                                                     val week = draggedWeek
-                                                                    pendingDropTarget = null
+                                                                    setPendingDropTarget(null)
                                                                     // 翻周动画还在跑时落点仍属于上一页：此时写库会写进错的周，
                                                                     // 宁可吸回原位让用户重拖
                                                                     if (source != null && target != null &&
@@ -1173,8 +1182,9 @@ internal fun CourseScheduleAppMainContent(
                                                                                 // 浮层连贯移到目标卡上方悬停等用户选择
                                                                                 pendingConflictCourse =
                                                                                     conflicts.first()
-                                                                                pendingDropTarget =
+                                                                                setPendingDropTarget(
                                                                                     target.first to targetStart
+                                                                                )
                                                                                 // 新冲突从第一步开始，清掉上一轮可能残留的两步状态
                                                                                 pendingConflictResolution = null
                                                                                 conflictConfirmResolution = null
@@ -1315,7 +1325,7 @@ internal fun CourseScheduleAppMainContent(
                                                                     // 手指已经跟丢了，绝不能按最后的落点写库。
                                                                     isFloatingCardDragging = false
                                                                     stopEdgeAutoPage()
-                                                                    pendingDropTarget = null
+                                                                    setPendingDropTarget(null)
                                                                     stopConflictHover()
                                                                     dismissFloatingCard()
                                                                 },
@@ -1343,7 +1353,13 @@ internal fun CourseScheduleAppMainContent(
                                                                         refreshPendingDropTarget()
                                                                     }
                                                                 },
-                                                                dropHighlight = run {
+                                                                // 落点高亮按 **lambda** 传：组合期不在这里求值，
+                                                                // 只有落点遮罩自己去读。写成 `run { }` 会在每次跨格时
+                                                                // 把整个主内容（4 页 pager + 整张课表）重组一遍 ——
+                                                                // 实测单帧 73ms（41ms 重组 + 32ms 遍历）。
+                                                                dropHighlight = {
+                                                                    // 订阅落点变更信号：pendingDropTarget 是普通字段
+                                                                    dropTargetRevision
                                                                     val emptyTarget =
                                                                         emptyCellMenuTarget
                                                                     if (emptyTarget != null && shortcutMenuVisible) {
@@ -1358,7 +1374,8 @@ internal fun CourseScheduleAppMainContent(
                                                                         } else null
                                                                     }
                                                                 },
-                                                                dropHighlightOrigin = run {
+                                                                dropHighlightOrigin = {
+                                                                    dropTargetRevision
                                                                     val source = draggedCardCourse
                                                                     if (floatingCardVisible && source != null && !isPasteFlight) {
                                                                         // 高亮画在网格列上：调课日列要用列星期，不能用数据星期
@@ -1371,6 +1388,8 @@ internal fun CourseScheduleAppMainContent(
                                                                         } else null
                                                                     }
                                                                 },
+                                                                // 边缘驻留（即将自动翻周）：周 pager 据此在空闲驻留期预组合邻页
+                                                                edgeDwellHint = { edgeAutoPageDirection != 0 },
                                                                 scheduleScrollBehavior = scheduleScrollBehavior,
                                                                 externalScrollState = scheduleScrollState,
                                                                 externalShowCourseDetail = scheduleShowCourseDetail,
@@ -1417,7 +1436,6 @@ internal fun CourseScheduleAppMainContent(
                                                                         isExitingShift = false
                                                                     },
                                                                     navBarStyle = navBarStyle,
-                                                                    onScrollYChanged = { _ -> },
                                                                     settingsScrollBehavior = settingsScrollBehavior,
                                                                     liquidGlassBackdrop = liquidGlassBackdrop,
                                                                     showUpdateSettings = showUpdateSettings,
@@ -1474,7 +1492,6 @@ internal fun CourseScheduleAppMainContent(
                                                     pagerState = pagerState,
                                                     scheduleDataVersion = dataVersion,
                                                     cardHeightPerSection = currentAppearance().cardHeight,
-                                                    liquidGlassBackdrop = liquidGlassBackdrop,
                                                     scheduleScrollBehavior = scheduleScrollBehavior,
                                                     isInFreeformWindow = isInFreeformWindow,
                                                     titleBarHeight = 56.dp,
@@ -1508,7 +1525,6 @@ internal fun CourseScheduleAppMainContent(
                                                             isExitingShift = false
                                                         },
                                                         navBarStyle = navBarStyle,
-                                                        onScrollYChanged = { _ -> },
                                                         settingsScrollBehavior = settingsScrollBehavior,
                                                         liquidGlassBackdrop = liquidGlassBackdrop,
                                                         showUpdateSettings = showUpdateSettings,
@@ -1604,14 +1620,8 @@ internal fun CourseScheduleAppMainContent(
                                     if (selectedTab == 0) {
                                         scrollToTodayTrigger++
                                     } else {
-                                        coroutineScope.launch {
-                                            val targetPage =
-                                                (currentWeek - 1).coerceIn(
-                                                    0,
-                                                    (totalWeeks - 1).coerceAtLeast(0)
-                                                )
-                                            pagerState.animateScrollToPage(targetPage)
-                                        }
+                                        // 标题立刻切到本周，再滑一页过去
+                                        coroutineScope.launch { jumpToWeek(currentWeek) }
                                     }
                                 },
                             )
@@ -1684,7 +1694,8 @@ internal fun CourseScheduleAppMainContent(
                                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                         viewModel.hideJumpWeekDialog()
                                         coroutineScope.launch {
-                                            pagerState.animateScrollToPage(jumpWeekTemp - 1)
+                                            // 跳周同样立刻切标题，不等落页
+                                            jumpToWeek(jumpWeekTemp)
                                         }
                                     },
                                     colors = ButtonDefaults.textButtonColorsPrimary(),
@@ -1991,10 +2002,38 @@ internal fun CourseScheduleAppMainContent(
                         }
                     }
                     // 提饱和：与玻璃面板同源，采样主内容 export。
-                    // 光晕半径取 min(短边, 250dp) × 0.5。
+                    //
+                    // 半径取 min(短边, 250dp) × 0.5（与 InteractiveHighlight 同式），遮罩用径向渐变
+                    // ——渐变在半径外恒为 0，所以只有「光晕包围盒」这一块有像素。节点做成这个
+                    // 正方形、跟着卡片中心走：整屏节点要付两次全屏离屏（saveLayer + 带 ColorFilter
+                    // 的采样层），包围盒只有 250dp 见方，像素量差一个数量级。
+                    val glowRadiusPx = remember(windowInfo.containerSize, density) {
+                        val container = windowInfo.containerSize
+                        val shortSide = minOf(container.width, container.height).toFloat()
+                        val cap = with(density) { 250.dp.toPx() }
+                        (if (shortSide > 0f) minOf(shortSide, cap) else cap) * 0.5f
+                    }
+                    // 遮罩渐变随节点尺寸固定，逐帧只读不重建（否则每帧都要新建 Brush/颜色表）
+                    val glowMaskBrush = remember(glowRadiusPx) {
+                        val r = glowRadiusPx.coerceAtLeast(1f)
+                        Brush.radialGradient(
+                            colors = listOf(Color.White, Color.White, Color.Transparent),
+                            center = Offset(r, r),
+                            radius = r,
+                        )
+                    }
                     Box(
                         Modifier
-                            .fillMaxSize()
+                            // 位移在 layout 阶段读 float state：不进组合，不触发重组
+                            .offset {
+                                IntOffset(
+                                    (draggedCardPosition.x + floatingOffsetX.floatValue - glowRadiusPx)
+                                        .roundToInt(),
+                                    (draggedCardPosition.y + floatingOffsetY.floatValue - glowRadiusPx)
+                                        .roundToInt()
+                                )
+                            }
+                            .size(with(density) { (glowRadiusPx * 2f).coerceAtLeast(1f).toDp() })
                             .drawWithContent {
                                 if (glowAlpha > 0f) {
                                     drawContext.canvas.saveLayer(
@@ -2002,23 +2041,7 @@ internal fun CourseScheduleAppMainContent(
                                         Paint()
                                     )
                                     drawContent()
-                                    // 半径与 InteractiveHighlight 同式：min(短边, 250dp) × 0.5
-                                    val radius = minOf(size.minDimension, 250.dp.toPx()) * 0.5f
-                                    drawRect(
-                                        brush = Brush.radialGradient(
-                                            colors = listOf(
-                                                Color.White,
-                                                Color.White,
-                                                Color.Transparent,
-                                            ),
-                                            center = Offset(
-                                                draggedCardPosition.x + floatingOffsetX.floatValue,
-                                                draggedCardPosition.y + floatingOffsetY.floatValue,
-                                            ),
-                                            radius = radius,
-                                        ),
-                                        blendMode = BlendMode.DstIn,
-                                    )
+                                    drawRect(brush = glowMaskBrush, blendMode = BlendMode.DstIn)
                                     drawContext.canvas.restore()
                                 }
                             }
@@ -2083,14 +2106,7 @@ internal fun CourseScheduleAppMainContent(
                                 if (selectedTab == 0) {
                                     scrollToTodayTrigger++
                                 } else {
-                                    coroutineScope.launch {
-                                        val targetPage =
-                                            (currentWeek - 1).coerceIn(
-                                                0,
-                                                (totalWeeks - 1).coerceAtLeast(0)
-                                            )
-                                        pagerState.animateScrollToPage(targetPage)
-                                    }
+                                    coroutineScope.launch { jumpToWeek(currentWeek) }
                                 }
                             },
                             modifier = Modifier.fillMaxSize().zIndex(22f),

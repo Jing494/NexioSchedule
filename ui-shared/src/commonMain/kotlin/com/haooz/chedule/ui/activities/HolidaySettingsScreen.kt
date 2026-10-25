@@ -1170,8 +1170,6 @@ private fun TeachingWeekRuleEditDialog(
             title = if (isEditing) "编辑教学周重组规则" else "添加教学周重组规则",
             dimBackground = true,
             enableContentHeightSnap = true,
-            sheetBackgroundAlpha = 1f,
-            liquidGlassBackdrop = null,
             onDismissRequest = onDismiss,
             startAction = startAction,
             endAction = endAction,
@@ -1199,8 +1197,6 @@ private fun TeachingWeekRuleEditDialog(
             title = if (isEditing) "编辑教学周重组规则" else "添加教学周重组规则",
             dimBackground = true,
             enableContentHeightSnap = true,
-            sheetBackgroundAlpha = 1f,
-            liquidGlassBackdrop = null,
             sheetOffsetDp = statusBarsPadding + 5.dp,
             onDismissRequest = onDismiss,
             startAction = startAction,
@@ -1750,10 +1746,8 @@ private fun SectionRangeDialog(
 }
 
 // ── 叹号说明弹窗的位置微调 ──────────────────────────────
-// 直接改这两行即可，不用碰 provider。
-//   Y：沿展开方向的偏移，向下展开为正、向上展开自动取反
-//   X：水平偏移，右为正、左为负
-// 两者都会过一遍窗口边界 clamp，挪太远顶到屏幕边缘就停住，不会跑出去。
+// 直接改这两行即可，不用碰 provider：Y 沿展开方向偏移（向下为正、向上自动取反），
+// X 水平偏移（右为正）；两者都会过窗口边界 clamp，太远会停在屏幕边缘不会跑出去。
 private val InfoPopupOffsetY = 13.dp
 private val InfoPopupOffsetX = (-15).dp
 
@@ -2236,8 +2230,6 @@ private fun EntryEditDialog(
             title = dialogTitle,
             dimBackground = true,
             enableContentHeightSnap = true,
-            sheetBackgroundAlpha = 1f,
-            liquidGlassBackdrop = null,
             onDismissRequest = onDismiss,
             startAction = startAction,
             endAction = endAction,
@@ -2264,8 +2256,6 @@ private fun EntryEditDialog(
             title = dialogTitle,
             dimBackground = true,
             enableContentHeightSnap = true,
-            sheetBackgroundAlpha = 1f,
-            liquidGlassBackdrop = null,
             sheetOffsetDp = statusBarsPadding + 5.dp,
             onDismissRequest = onDismiss,
             startAction = startAction,

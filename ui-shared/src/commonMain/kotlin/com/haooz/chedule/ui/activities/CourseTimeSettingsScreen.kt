@@ -29,11 +29,13 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalGraphicsContext
 import com.haooz.chedule.ui.utils.TransitionLayerSnapshot
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.text.font.FontWeight
@@ -59,8 +61,6 @@ import top.yukonga.miuix.kmp.basic.NumberPicker
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBarDefaults
 import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
 import top.yukonga.miuix.kmp.layout.collapsibleTopInset
@@ -80,12 +80,10 @@ data class TimeConfigCardBounds(
 )
 
 /**
- * 一级页面。
- *
- * 交互分层（刻意为之）：
- * - **节次骨架**（上午/下午/晚上各几节）属于「这张课表」，不是某个作息 → 就在这一层改。
- * - **作息方案**才是二级页面的单位：点某个作息才进二级，改的是它自己的一套时间。
- * - 只有一个配置，所以这一层**没有配置名称**，只有「添加作息」。
+ * 一级页面。交互分层（刻意为之）：
+ * - 节次骨架（上午/下午/晚上各几节）属于「这张课表」而非某个作息，就在这一层改。
+ * - 作息方案才是二级页面的单位：点某个作息进二级，改它自己的一套时间。
+ * - 只有一个配置，故本层无配置名称，只有「添加作息」。
  */
 @Composable
 fun CourseTimeSettingsScreen(
@@ -93,6 +91,12 @@ fun CourseTimeSettingsScreen(
     refreshTrigger: Int = 0,
     scrollBehavior: SharedScrollBehavior? = null,
     liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = null,
+    /**
+     * 正在 morph 进二级页的作息：源行必须隐藏。
+     * 与今日页（`hiddenCourseIds`）、课程管理页（`isHidden`）同一套做法：隐藏挂在录制层外面，
+     * 录制层继续留内容给二级页重放，否则会出现「源行还在原地 + 一张一样的卡飞上去」的双影。
+     */
+    morphingRoutineId: Long? = null,
 ) {
     val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
     val repository = remember { CourseRepository() }
@@ -128,10 +132,6 @@ fun CourseTimeSettingsScreen(
     }
 
     val backgroundColor = MiuixTheme.colorScheme.surface
-    val backdrop = rememberLayerBackdrop {
-        drawRect(backgroundColor)
-        drawContent()
-    }
     val isTablet = isTabletWidth()
     val tabletHorizontalPadding = if (isTablet) 20.dp else 16.dp
 
@@ -164,7 +164,6 @@ fun CourseTimeSettingsScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .layerBackdrop(backdrop)
             ) {
                 val listState = rememberLazyListState()
                 LazyColumn(
@@ -226,10 +225,11 @@ fun CourseTimeSettingsScreen(
                                     val routineLayer = routineLayers.getOrPut(routine.id) {
                                         graphicsContext.createGraphicsLayer()
                                     }
-                                    var bounds by remember {
-                                        mutableStateOf(TimeConfigCardBounds(0f, 0f, 0f, 0f))
-                                    }
+                                    // 只缓存布局坐标，点击时再换算：每次 placement 写一个新 Bounds
+                                    // 都是一次分配 + 一次快照写，滚动期间每帧都会发生
+                                    val cardCoords = remember { arrayOfNulls<LayoutCoordinates>(1) }
                                     val isActive = config.effectiveRoutineId() == routine.id
+                                    val isMorphing = morphingRoutineId == routine.id
                                     ArrowPreference(
                                         title = routine.name,
                                         // 只有一套作息时没有切换对象，显示「始终生效」而不是日期
@@ -266,28 +266,35 @@ fun CourseTimeSettingsScreen(
                                             hapticFeedback.performHapticFeedback(
                                                 HapticFeedbackType.Confirm
                                             )
+                                            val coords = cardCoords[0]
+                                            val bounds = if (coords != null && coords.isAttached) {
+                                                val pos = coords.positionInWindow()
+                                                TimeConfigCardBounds(
+                                                    left = pos.x,
+                                                    top = pos.y,
+                                                    width = coords.size.width.toFloat(),
+                                                    height = coords.size.height.toFloat(),
+                                                )
+                                            } else {
+                                                TimeConfigCardBounds(0f, 0f, 0f, 0f)
+                                            }
                                             onEditRoutine(routine, config, bounds.copy(
                                                 snapshot = TransitionLayerSnapshot(routineLayer)
                                             ))
                                         },
                                         holdDownState = false,
                                         modifier = Modifier
+                                            .graphicsLayer { alpha = if (isMorphing) 0f else 1f }
                                             .drawWithContent {
-                                                routineLayer.record {
-                                                    drawRect(routineBackground)
-                                                    this@drawWithContent.drawContent()
+                                                if (!isMorphing) {
+                                                    routineLayer.record {
+                                                        drawRect(routineBackground)
+                                                        this@drawWithContent.drawContent()
+                                                    }
                                                 }
                                                 drawLayer(routineLayer)
                                             }
-                                            .onGloballyPositioned { coordinates ->
-                                                val pos = coordinates.positionInWindow()
-                                                bounds = TimeConfigCardBounds(
-                                                    left = pos.x,
-                                                    top = pos.y,
-                                                    width = coordinates.size.width.toFloat(),
-                                                    height = coordinates.size.height.toFloat()
-                                                )
-                                            }
+                                            .onGloballyPositioned { cardCoords[0] = it }
                                     )
                                 }
                             }

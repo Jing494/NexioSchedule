@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.runtime.Composable
+import kotlin.concurrent.Volatile
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,7 +47,27 @@ import kotlin.math.sign
 /** 持有手势 settle Job，避免与下一次拖动抢 PagerState 写锁 */
 class PagerTakeoverGestureState internal constructor(
     internal val scope: CoroutineScope,
-)
+) {
+    /**
+     * 待平移的手势起点（页）。程序化借位跳周被手势打断时，pager 位置会被
+     * dispatchRawDelta 平移回逻辑页（借位页↔真身像素相同，屏上不跳），
+     * 松手落页计算用的本轮起点也要同步平移同一距离，否则落页目标会被
+     * 旧基准拉回跳转前的页。手势在事件循环/松手计算前消费并清零。
+     */
+    @Volatile
+    internal var pendingStartOffsetShiftPages = 0f
+
+    internal fun requestStartOffsetShift(pages: Float) {
+        if (pages != 0f) pendingStartOffsetShiftPages += pages
+    }
+
+    /** 取走并清零待平移量（手势侧消费） */
+    internal fun consumeStartOffsetShift(): Float {
+        val v = pendingStartOffsetShiftPages
+        if (v != 0f) pendingStartOffsetShiftPages = 0f
+        return v
+    }
+}
 
 @Composable
 fun rememberPagerTakeoverGestureState(): PagerTakeoverGestureState {
@@ -57,15 +78,9 @@ fun rememberPagerTakeoverGestureState(): PagerTakeoverGestureState {
 /**
  * 松手后横向落页。
  *
- * 连续切页时上一拍 settle 常未结束，起点可能是小数页，故目标以
- * `max/min(currentPage, startRound)` 为基准。
+ * 连续切页时上一拍 settle 常未结束、起点可能是小数页，故目标以 `max/min(currentPage, startRound)` 为基准。落页规则：位移约 1/4 页认方向；甩速 ≥ 100.dp/s 至少推进基准页 ±1。门限不能再高：小幅快甩释放速度常只有 300~600px/s，200.dp/s 会整段漏判；也不能再低，否则慢拖残余速度会误翻页。
  *
- * 落页规则：位移约 1/4 页认方向；甩速 ≥ 100.dp/s 至少推进基准页 ±1。
- * 门限不能再高：小幅快甩的释放速度常只有 300~600px/s，200.dp/s 会整段漏判；
- * 也不能再低，否则慢拖释放的残余速度会误翻页。
- *
- * [fingerDragPages] 是手指拖过的页数（正 = 下一页）。课表页每页是整张重表格，
- * 拖动中 pager 的 offset 可能落后于手指，距离判定取它与 pager 实际位移的绝对值较大者。
+ * [fingerDragPages] 是手指拖过的页数（正 = 下一页）。课表页每页是整张重表格，拖动中 pager 的 offset 可能落后于手指，距离判定取它与 pager 实际位移的绝对值较大者。
  */
 internal suspend fun settleHorizontalPager(
     pagerState: PagerState,
@@ -248,6 +263,9 @@ fun Modifier.pagerAxisTakeoverGesture(
                 var isAltPointer = false
                 val tracker = VelocityTracker()
                 val dragState = PagerDragState()
+                // 新手势起点即将按当前位置重新捕获：丢弃上一轮残留的平移量，
+                // 否则会错误地平移这一轮的落页基准
+                gestureState.consumeStartOffsetShift()
                 dragState.startScrollOffset =
                     pagerState.currentPage + pagerState.currentPageOffsetFraction
                 var dragChannel: Channel<Float>? = null
@@ -295,6 +313,9 @@ fun Modifier.pagerAxisTakeoverGesture(
                         abs(moveAvgVelocity.x) > abs(trackedVelocity.x) -> moveAvgVelocity
                         else -> trackedVelocity
                     }
+                    // 程序化借位跳周被打断时的位置平移：松手落页基准同步平移，
+                    // 否则会被旧起点拉回跳转前的页
+                    dragState.startScrollOffset += gestureState.consumeStartOffsetShift()
                     val startOffset = dragState.startScrollOffset
                     // scrollBy 坐标：负位移 = 下一页
                     val fingerDragPages = -accX / viewportPx

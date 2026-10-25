@@ -146,13 +146,9 @@ import top.yukonga.miuix.kmp.utils.NavigationBackHandlerFor
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * 路由宿主的**跨平台**部分：路由跳转、状态接线、Updater 订阅，平台能力一律参数注入。
+ * 路由宿主的跨平台部分：路由跳转、状态接线、Updater 订阅，平台能力一律参数注入。
  *
- * ⚠ 本文件**不能**改名为 `AppRouteContent.kt`：`:androidApp` 同包下已有一个同名文件，
- * 两边会生成同一个 facade 类 `AppRouteContentKt` —— 编译期静默通过，D8/R8 打 dex 时
- * 同名 class 冲突只留一个，本文件的路由全部 `NoSuchMethodError`，Android/iOS 都闪退。
- * ⇒ 往 `:ui-shared` 加文件前先查 `:androidApp` 同包有无同名 `.kt`；Android 侧同名包装
- * 一律加 `Android` 前缀（如 `AndroidWebHost`）。
+ * ⚠ 本文件不能改名 `AppRouteContent.kt`：`:androidApp` 同包已有一个同名文件，两边会生成同一 facade 类 `AppRouteContentKt`，编译期静默通过，但 D8/R8 打 dex 时同名 class 冲突只留一个，本文件路由全部 `NoSuchMethodError`，Android/iOS 都闪退。往 `:ui-shared` 加文件前先查 `:androidApp` 同包有无同名 `.kt`；Android 侧同名包装加 `Android` 前缀（如 `AndroidWebHost`）。
  */
 
 /**
@@ -478,7 +474,7 @@ fun HolidaySettingsRoute(
  * 桌面小部件引导路由。
  *
  * @param onRequestWidgetRefresh Android 注入 `WidgetUpdateCache` 清缓存 + 刷新已安装小部件；桌面/iOS 无 AppWidget 概念，默认空实现。
- * ⚠ 弹窗「添加到桌面」文案是 **Android 措辞**；iOS 若做 WidgetKit 需提成参数（现在走不到这一页）。
+ * ⚠ 弹窗「添加到桌面」文案是 Android 措辞；iOS 若做 WidgetKit 需提成参数（现在走不到这一页）。
  */
 @Composable
 fun WidgetIntroRoute(
@@ -775,10 +771,9 @@ fun BackupAndMigrationRoute(
  * 课程时间管理。
  *
  * 比普通文档页多两层结构：外层 `Box` 做「背景缩放 + 模糊」动画；
- * ⚠ 二级编辑页 `TimeConfigEditScreen` 必须渲染在 `Scaffold` **外面**，否则会被顶栏裁掉。
+ * ⚠ 二级编辑页 `TimeConfigEditScreen` 必须渲染在 `Scaffold` 外面，否则会被顶栏裁掉。
  *
- * @param isInFreeformWindow Android 读宿主 `MainActivity` 的 Compose 状态（子页拿不到
- *   自己的 Activity 回调）；桌面/iOS 没有这个概念，传 false。
+ * @param isInFreeformWindow Android 读宿主 `MainActivity` 的 Compose 状态（子页拿不到自己的 Activity 回调）；桌面/iOS 没有这个概念，传 false。
  */
 @Composable
 fun CourseTimeSettingsRoute(
@@ -796,7 +791,6 @@ fun CourseTimeSettingsRoute(
     // 圆角：Android 读系统真实圆角（自由小窗固定 20dp）；iOS/桌面返回 0 = 不裁切
     val screenCornerRadius = rememberScreenCornerRadiiPx()
 
-    // 页面状态管理
     var currentPage by remember { mutableStateOf("select") }
     NativeDocumentOverlayEffect(currentPage == "edit")
     val nativeBarInset = (LocalNativeDocumentChrome.current?.barInset ?: 0.0).dp
@@ -804,6 +798,8 @@ fun CourseTimeSettingsRoute(
     var editingConfig by remember { mutableStateOf<TimeConfig?>(null) }
     var editingRoutineId by remember { mutableStateOf<Long?>(null) }
     var editingCardBounds by remember { mutableStateOf<TimeConfigCardBounds?>(null) }
+    // morph 进二级页期间要隐藏的源行（退出动画播完、回到列表时才放开）
+    var morphingRoutineId by remember { mutableStateOf<Long?>(null) }
     var listRefreshTrigger by remember { mutableIntStateOf(0) }
 
     // Retained source-card drawing; the list page owns the underlying layer.
@@ -835,12 +831,12 @@ fun CourseTimeSettingsRoute(
                 ) { scrollBehavior, liquidGlassBackdrop ->
                     CourseTimeSettingsScreen(
                         onEditRoutine = { routine, baseConfig, bounds ->
-                            // 二级页面只编辑这一个作息：把该作息的时间叠加上去
                             editingExitStarted = false
                             editingConfig = baseConfig.effectiveFor(routine.id)
                             editingRoutineId = routine.id
                             editingCardBounds = bounds
                             cardSnapshot = bounds.snapshot
+                            morphingRoutineId = routine.id
                             coroutineScope.launch {
                                 if (editingExitStarted || currentPage != "edit") return@launch
                                 managePageBlurRadius.animateTo(
@@ -848,23 +844,21 @@ fun CourseTimeSettingsRoute(
                                     animationSpec = tween(540, easing = OobeQuartOutEasing)
                                 )
                             }
-                            // 最后触发组合（背景已在动画中）
                             currentPage = "edit"
                         },
                         refreshTrigger = listRefreshTrigger,
                         scrollBehavior = scrollBehavior,
                         liquidGlassBackdrop = liquidGlassBackdrop,
+                        morphingRoutineId = morphingRoutineId,
                     )
                 }
             }
         }
 
-        // 编辑页面渲染在 Scaffold 外面（与 CourseManageRoute 结构一致）
+        // 编辑页面渲染在 Scaffold 外面
         if (currentPage == "edit") {
             editingConfig?.let { config ->
                 val bounds = editingCardBounds
-                // Native controls stay above the morph. Consume only their extra overlap
-                // so the original editor layout and card bounds do not shift.
                 Box(Modifier.fillMaxSize().consumeWindowInsets(PaddingValues(top = nativeBarInset))) {
                     TimeConfigEditScreen(
                         timeConfig = config,
@@ -884,6 +878,7 @@ fun CourseTimeSettingsRoute(
                             editingRoutineId = null
                             editingCardBounds = null
                             cardSnapshot = null
+                            morphingRoutineId = null
                         },
                         onSave = { savedConfig ->
                             // 只替换这一个作息；节次骨架由一级页面管理，这里不碰。
@@ -980,7 +975,6 @@ fun CourseManageRoute(
     // 打开过编辑的课程 id，避免误删已修改的
     var editedCourseIds by remember { mutableStateOf(setOf<String>()) }
 
-    // 退出本页时清理本次新建但没编辑过的空课程
     DisposableEffect(Unit) {
         onDispose {
             val coursesToDelete = createdCourseIds - editedCourseIds
@@ -1003,8 +997,6 @@ fun CourseManageRoute(
     }
 
     // 返回键关闭菜单（嵌套返回拦截：菜单开着时由它接管，否则交给 AppNavHost 的返回）
-    // ⚠ `androidx.activity.compose.BackHandler` 是 Android 专有 —— 这里用 :miuix 的
-    // `NavigationBackHandlerFor`（skiko 侧有 actual，iOS/桌面是空实现）
     NavigationBackHandlerFor(
         enabled = showShortcutMenu,
         onBackCompleted = { showShortcutMenu = false },

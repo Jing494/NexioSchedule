@@ -63,9 +63,7 @@ object CourseReminderHelper {
 
     /**
      * 仅 debug 包打热路径日志，release 避免每分钟字符串拼接。
-     *
-     * 现在与 [logMinLevel] 统一：门面的默认值已经是 WARN，所以 release 包本就不打 d；
-     * debug 包则放开到 DEBUG 以便排查提醒链路。
+     * 与 [logMinLevel] 统一：门面默认已是 WARN，release 本就不打 d；debug 放开到 DEBUG 便于排查。
      */
     private fun debugEnabled(context: Context): Boolean {
         debugLogs?.let { return it }
@@ -451,10 +449,8 @@ object CourseReminderHelper {
     }
 
     /**
-     * 合并窗口。一次「切换课表」会同时惊动 CourseViewModel / ScheduleViewModel /
-     * SettingsViewModel，各自调一次 startReminderService，实测 1ms 内触发 4 次，
-     * 而每次都是 cancelAllAlarms + scheduleAllAlarms（全量重排）+ 写 SP。
-     * 这些调用读的是同一份最新状态，重复执行毫无意义，所以窗口内只真正跑一次。
+     * 合并窗口。一次「切换课表」会同时惊动多个 ViewModel 各调一次 startReminderService，
+     * 实测 1ms 内触发 4 次全量重排+写 SP，读的是同一份状态、重复无意义，故窗口内只真正跑一次。
      */
     private const val SERVICE_START_COALESCE_MS = 400L
 
@@ -974,17 +970,12 @@ object CourseReminderHelper {
         return safe
     }
 
-    // 这里曾按「关键 / 非关键时段」分流，非关键时段降级为 setAndAllowWhileIdle 以省电。
-    // 已移除，勿再引入：刷新链是链式的（每次触发后才注册下一次），
-    // 一旦掺入非精确闹钟，触发点漂移会逐次累积，Doze 深处延迟可达数小时，
-    // 跨日重调度与课前补发会整个失效——用户反馈的「提醒不准时」正源于此。
-    // 刷新链现在一律走 setExactAndAllowWhileIdle，见 scheduleNextWidgetRefresh。
+    // 切勿改用 setAndAllowWhileIdle 降级（详见下方 scheduleNextWidgetRefresh）：链式刷新会逐次累积漂移，Doze 深处延迟可达数小时。
 
     /**
-     * 刷新链必须始终精确唤醒，不能用 setAndAllowWhileIdle 降级。
-     * 它是链式调度：每次触发后才注册下一次。非精确闹钟会让触发点漂移，
-     * 且漂移逐次累积——Doze 深处可能延迟数小时，跨日重调度与课前补发会整个失效。
-     * 省下的那点电远不抵「提醒不准时」的代价。
+     * 刷新链必须始终精确唤醒，不能降级为 setAndAllowWhileIdle。
+     * 链式调度（每次触发才注册下一次）一旦掺入非精确闹钟，触发点漂移逐次累积，Doze 深处延迟可达数小时，
+     * 跨日重调度与课前补发整体失效——这正是此前用户反馈「提醒不准时」的根因。
      */
     fun scheduleNextWidgetRefresh(context: Context, alarmManager: AlarmManager) {
         val intent = Intent(context, WidgetRefreshReceiver::class.java).apply {
@@ -1036,9 +1027,8 @@ object CourseReminderHelper {
     }.maxByOrNull { it.first }?.second
 
     /**
-     * ⚠ 某日课表解析已整体抠进 `:core` 的 [DayScheduleResolver]（平台中立的纯计算，
-     * iOS 本地通知也要用）。这里的 [DayScheduleResolution] 与下面几个函数改为**委托**，
-     * 行为一位未改 —— 提醒排课算错的代价是用户上课没收到通知，且极难复现。
+     * ⚠ 某日课表解析已整体抠进 :core 的 [DayScheduleResolver]（平台中立纯计算，iOS 本地通知也用）。
+     * 本处 [DayScheduleResolution] 与下方函数改为委托，行为一位未改——排课算错的代价是用户上课没收到通知且极难复现。
      */
 
     /** 由开学日推目标日期所在日历课表周；仅作相对偏移，不直接当「当前周」 */

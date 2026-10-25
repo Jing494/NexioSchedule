@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableFloatState
+import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -61,6 +62,7 @@ import com.haooz.chedule.ui.navigation.AppRouter
 import com.haooz.chedule.ui.activities.classschedule.ScheduleGridGeometry
 import com.haooz.chedule.ui.utils.FeatureLog
 import com.haooz.chedule.ui.utils.HostNavigationState
+import com.haooz.chedule.ui.utils.PagerTakeoverGestureState
 import com.haooz.chedule.ui.utils.ScreenCornerRadiiPx
 import com.haooz.chedule.ui.utils.TransitionLayerSnapshot
 import com.haooz.chedule.ui.utils.captureScreenWithNativeChrome
@@ -141,6 +143,15 @@ class CourseScheduleAppState {
     lateinit var pagerState: PagerState
     lateinit var todayPagerState: PagerState
     lateinit var mainPagerState: PagerState
+
+    /** 长距跳转的借位页：让相邻页临时显示目标周，滑一页就到位（见 [PagerJumpNeighbor]） */
+    val weekJumpNeighbor = PagerJumpNeighbor()
+
+    /** 周 pager 的手势接管状态：借位跳周被手势打断时同步平移落页基准（组合期由 MainContent 注入） */
+    var weekPagerGestureState: PagerTakeoverGestureState? = null
+
+    /** 同上，今日页按天 */
+    val todayJumpNeighbor = PagerJumpNeighbor()
     var hostNavigation: HostNavigationState? = null
     var settingsScrollBehavior: SharedScrollBehavior? = null
     var todayScrollBehavior: SharedScrollBehavior? = null
@@ -178,7 +189,13 @@ class CourseScheduleAppState {
     var isTablet: Boolean = false
     var screenWPx: Float = 0f
     var screenHPx: Float = 0f
-    var glowAlpha: Float = 0f
+    /**
+     * 跟手高光/提饱和的淡变进度（0~1）。
+     *
+     * snapshot state：两个消费者（提饱和遮罩、InteractiveHighlight）都在 draw 阶段读，
+     * 失效订阅就落在 draw 上。组合期读它会把整个外壳拖进逐帧重组。
+     */
+    var glowAlpha by mutableFloatStateOf(0f)
     var persistedScheduleThemeMode: ThemeMode = ThemeMode.FOLLOW_APP
     var initialCombWallpaperIsLight: Boolean? = null
 
@@ -200,7 +217,21 @@ class CourseScheduleAppState {
     var showUpdateSettings: Boolean = true
 
     // ── 4. 界面状态与交互逻辑（原主函数体）──────────────────────────────────
-    var selectedTab by mutableIntStateOf(1)
+    /**
+     * 当前选中的主 tab。值存在 [selectedTabState] 里 —— 宿主注入的是**可保存**的
+     * `rememberSaveable` 状态，进程被系统回收后重建时能跟着主 pager 一起恢复。
+     */
+    private var selectedTabState: MutableIntState = mutableIntStateOf(1)
+    var selectedTab: Int
+        get() = selectedTabState.intValue
+        set(value) {
+            selectedTabState.intValue = value
+        }
+
+    fun attachSelectedTabState(state: MutableIntState) {
+        selectedTabState = state
+    }
+
     var showShiftLoading by mutableStateOf(false)
     var shiftLoadingActive by mutableStateOf(false)
     var isExitingShift by mutableStateOf(false)
@@ -261,7 +292,22 @@ class CourseScheduleAppState {
     var gridGeometry by mutableStateOf<ScheduleGridGeometry?>(null)
 
     // (dayOfWeek, startSection)，null=无有效落点
-    var pendingDropTarget by mutableStateOf<Pair<Int, Int>?>(null)
+    //
+    // 普通字段而非 snapshot state：拖拽中每跨一格就变一次，做成 state 会把整个主内容
+    // （4 页 pager + 整张课表）拖进「每跨一格全量重组一次」。读它的都是事件处理与弹窗参数，
+    // 组合期读一次就够；唯一需要逐格重绘的落点遮罩订阅 [dropTargetRevision]。
+    var pendingDropTarget: Pair<Int, Int>? = null
+        private set
+
+    /** 落点变更信号：只给落点遮罩订阅，避免逐格重组课表。 */
+    var dropTargetRevision by mutableIntStateOf(0)
+        private set
+
+    fun setPendingDropTarget(value: Pair<Int, Int>?) {
+        if (pendingDropTarget == value) return
+        pendingDropTarget = value
+        dropTargetRevision++
+    }
     var animateInCourseIds by mutableStateOf(setOf<String>())
     var showRescheduleConflictDialog by mutableStateOf(false)
     var pendingConflictCourse by mutableStateOf<Course?>(null)
@@ -620,7 +666,19 @@ class CourseScheduleAppState {
     var todaySelectedDayOfWeek by mutableIntStateOf(0)
     var todayIsToday by mutableStateOf(true)
     var scrollToTodayTrigger by mutableIntStateOf(0)
-    val currentViewingWeek get() = pagerState.currentPage + 1
+
+    /**
+     * 程序化跳周的目标周（0 = 无覆盖）
+     */
+    var pendingViewingWeek by mutableIntStateOf(0)
+
+    // 基线必须用 currentPage：手动翻页过半页标题/日期行就该跟着换
+    val currentViewingWeek: Int
+        get() {
+            val live = pagerState.currentPage + 1
+            val target = pendingViewingWeek
+            return if (target >= 1 && target != live) target else live
+        }
 
     // dataVersion + courses 引用都进 key：调课 size 可能不变，只靠 size 会让智能周末星期行停在旧值
     val viewingIsHoliday get() = viewModel.isWeekHoliday(currentViewingWeek)
@@ -717,7 +775,7 @@ class CourseScheduleAppState {
             draggingCourseSlots = emptySet()
             draggedCardCourse = null
             dragMotion.reset()
-            pendingDropTarget = null
+            setPendingDropTarget(null)
             isSnapping = false
             // 重置入场初值，避免下次首帧残留 1.0 造成抖动
             floatingScale.snapTo(0.94f)
@@ -911,7 +969,8 @@ class CourseScheduleAppState {
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     edgeAutoPageAnimating = true
                     try {
-                        pagerState.animateScrollToPage(target)
+                        // 与「返回本周」同一根滑入曲线（±1 页，走 JumpLandingSpec）
+                        pagerState.jumpToPageSmoothly(target)
                     } catch (e: CancellationException) {
                         // 第二根手指开始滑 pager（UserInput 优先级更高）会取消这次翻页；
                         // 本 Job 自己没被取消就继续等下一轮，别把持续翻页整条打死。
@@ -933,6 +992,27 @@ class CourseScheduleAppState {
                     edgeAutoPageJob = null
                 }
             }
+        }
+    }
+
+    /**
+     * 程序化跳周（回本周 / 跳周对话框）：**立刻**把「当前周」指向目标周，再滑过去
+     *
+     * 正常结束保持覆盖，等 `settledPage` 追上后由外壳的 LaunchedEffect 撤掉；
+     * 被打断（用户反向滑 / 抢占）立即撤掉，标题回到真实页。
+     */
+    suspend fun jumpToWeek(targetWeek: Int) {
+        val lastPage = (pagerState.pageCount - 1).coerceAtLeast(0)
+        val dest = (targetWeek - 1).coerceIn(0, lastPage)
+        // 目标周按落点页算，避免「总周数」与 pageCount 不一致时标题落到界外
+        pendingViewingWeek = dest + 1
+        try {
+            pagerState.jumpToPageSmoothly(dest, weekJumpNeighbor, weekPagerGestureState)
+        } catch (e: CancellationException) {
+            pendingViewingWeek = 0
+            throw e
+        } finally {
+            if (pagerState.currentPage != dest) pendingViewingWeek = 0
         }
     }
 
@@ -1000,7 +1080,7 @@ class CourseScheduleAppState {
                     draggingCourseSlots = emptySet()
                     draggedCardCourse = null
                     dragMotion.reset()
-                    pendingDropTarget = null
+                    setPendingDropTarget(null)
                     isSnapping = false
                     floatingScale.snapTo(0.94f)
                     floatingOffsetX.floatValue = 0f
@@ -1114,7 +1194,7 @@ class CourseScheduleAppState {
             draggingCourseSlots = emptySet()
             draggedCardCourse = null
             dragMotion.reset()
-            pendingDropTarget = null
+            setPendingDropTarget(null)
             isSnapping = false
             floatingScale.snapTo(0.94f)
             floatingOffsetX.floatValue = 0f
@@ -1158,7 +1238,7 @@ class CourseScheduleAppState {
             floatingCardVisible = false
             draggingCourseSlots = emptySet()
             draggedCardCourse = null
-            pendingDropTarget = null
+            setPendingDropTarget(null)
             isSnapping = false
             isPasteFlight = false
             floatingOffsetX.floatValue = 0f
@@ -1307,7 +1387,7 @@ class CourseScheduleAppState {
                     floatingCardVisible = false
                     draggingCourseSlots = emptySet()
                     draggedCardCourse = null
-                    pendingDropTarget = null
+                    setPendingDropTarget(null)
                     isSnapping = false
                     isPasteFlight = false
                     floatingOffsetX.floatValue = 0f
@@ -1407,9 +1487,11 @@ class CourseScheduleAppState {
         val firstSectionCenterY = cardTopY + sectionH / 2f
         // 放不下的格子不给落点（与粘贴路径同款校验）：起始节次+跨度
         // 超过总节次时松手会写出 endSection > totalSections 的课，渲染溢出/错位。
-        pendingDropTarget = computeDropTarget(centerX, firstSectionCenterY)?.takeIf {
-            it.second + sectionCount - 1 <= totalSections
-        }
+        setPendingDropTarget(
+            computeDropTarget(centerX, firstSectionCenterY)?.takeIf {
+                it.second + sectionCount - 1 <= totalSections
+            }
+        )
     }
 
     fun openCourseDetail(
@@ -1443,7 +1525,19 @@ class CourseScheduleAppState {
             ) {
                 drawLayer(source.layer)
             }
-            TransitionLayerSnapshot(retainedDetailLayer, source.bounds)
+            val snapshot = TransitionLayerSnapshot(retainedDetailLayer, source.bounds)
+            // 再异步冻结一份位图：`drawLayer` 只是**活引用** —— 源行随后就被
+            // hiddenCourseIds 藏掉，退出 morph 重放出来就只剩玻璃背景、没有文字
+            //（进入时源还活着，所以只有退出缺内容）。光栅化后与源图层彻底脱钩。
+            // 进入 morph 先用活引用（和以前一致），位图就绪后原地替换；退出时用的就是它。
+            coroutineScope.launch {
+                val frozen = runCatching { source.layer.toImageBitmap() }.getOrNull()
+                    ?: return@launch
+                if (detailSnapshot === snapshot) {
+                    detailSnapshot = snapshot.copy(frozen = frozen)
+                }
+            }
+            snapshot
         }
         hiddenCourseIds = setOf(courseIdToHide)
         showDetail = true

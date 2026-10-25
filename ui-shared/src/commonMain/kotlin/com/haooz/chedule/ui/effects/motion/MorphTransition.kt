@@ -26,18 +26,16 @@ import com.haooz.chedule.ui.utils.ScreenCornerRadiiPx
 import com.haooz.chedule.ui.utils.toShape
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import top.yukonga.miuix.kmp.utils.rememberNavigationBack
 
 /**
  * 「卡片 ⇄ 全屏」连贯形变（课程详情 / 编辑作息 / 课程编辑共用一套）。
  *
- * 一次形变由三个进度驱动：
- * - `animProgress`（0=卡片，1=全屏）：位移、裁切高度、快照/内容透明度
- * - `animTransY`（0..1）：位移曲线参数，前快后慢，让卡片中心沿抛物线落到屏幕中心
- * - `scaleProgress`（1=全屏，0=卡片）：缩放。预测返回手势单独驱动它，走完整行程
- *
- * 预测返回期间位移锁在 0（锚点固定在屏幕正中心），松手后由 [MorphTransition] 内部
- * 平滑放开 —— 详见 `centerLock` 的注释。
+ * 三个进度驱动：animProgress（0=卡片，1=全屏）管位移、裁切高度、快照/内容透明度；
+ * animTransY（0..1）是位移曲线参数，前快后慢，让卡片中心沿抛物线落到屏幕中心；
+ * scaleProgress（1=全屏，0=卡片）管缩放，预测返回手势单独驱动它、走完整行程。
+ * 预测返回期间位移锁 0（锚点固定屏幕正中心），松手后由内部平滑放开，详见 centerLock 注释。
  */
 
 /** 展开：前快后慢，收尾绵。 */
@@ -53,13 +51,13 @@ private val MorphTransOpenEase = OobeFifthpowerOutEasing
 private val MorphTransExitEase = OobeQuadraticOutEasing
 
 /** 预测返回滑到底时，页面缩到全屏的多少倍。 */
-private const val PREDICTIVE_BACK_SCALE = 0.74f
+private const val PREDICTIVE_BACK_SCALE = 0.4f
 
 /**
- * 预测返回时缩放锚点的横向偏移量。
+ * 预测返回时缩放锚点的横向偏移量（占屏宽比例）。
  * 锚点朝「滑动来向的反面」偏，缩小时页面朝手指来的那侧收。
  */
-private const val PREDICTIVE_ANCHOR_SHIFT = 0.32f
+private const val PREDICTIVE_ANCHOR_SHIFT = 1.0f
 
 /** [NavigationBackState.backSwipeEdge] 的取值，与 navigationevent 的 EDGE_* 一致。 */
 private const val EDGE_LEFT = 0
@@ -91,7 +89,8 @@ data class MorphAnimState(
     val gesture: Float,
     /**
      * 缩放锚点的横向比例（0.5 = 屏幕正中）。
-     * 预测返回按手势来向偏左/偏右，其余时候恒为 0.5，直接喂给 `transformOrigin`。
+     * 手势进行中直接取偏移锚点（不从中心渐进）；松手后的收尾按时间轴回中心
+     * （提交走 p、取消走 gesture），落地时必须回到 0.5。直接喂给 `transformOrigin`。
      */
     val anchorX: Float,
 )
@@ -314,7 +313,15 @@ fun rememberMorphTransition(
                     0f
                 }
                 val targetSp = (PREDICTIVE_BACK_SCALE - cardRatio) / (1f - cardRatio)
-                scaleProgress.snapTo(gestureScaleBase + (targetSp - gestureScaleBase) * progress)
+                // 缩放进度由手指水平位移占屏宽的比例驱动：划一半缩一半、划满一屏缩到底。
+                // 左右边缘的 offsetX 符号相反，取绝对值；无触摸数据时退回 progress。
+                val swipePx = navigationBackState.backSwipeOffsetX()
+                val swipeRatio = if (swipePx != null && screenWidth > 0f) {
+                    (abs(swipePx) / screenWidth).coerceIn(0f, 1f)
+                } else {
+                    progress
+                }
+                scaleProgress.snapTo(gestureScaleBase + (targetSp - gestureScaleBase) * swipeRatio)
             }
     }
 
@@ -335,7 +342,7 @@ fun rememberMorphTransition(
         launch { animTransY.animateTo(1f, tween(TRANS_OPEN_MILLIS, easing = MorphTransOpenEase)) }
     }
 
-    // ⚠ 宿主传进来的几何值都是普通 Float。直接捕获进 derivedStateOf 会被冻结在首次组合
+    // ⚠ 宿主传进来的几何值都是普通 Float，直接捕获进 derivedStateOf 会被冻结在首次组合的值上
     val cardLeftState = rememberUpdatedState(cardLeft)
     val cardTopState = rememberUpdatedState(cardTop)
     val cardWidthState = rememberUpdatedState(cardWidth)
@@ -344,6 +351,10 @@ fun rememberMorphTransition(
     val screenHeightState = rememberUpdatedState(screenHeight)
 
     val animState = remember {
+        // 跟手位移的冻结值：松手后 backSwipeOffsetY 变 null，若直接归零页面会瞬移回原位。
+        // 记住最后一帧的手指数值，收尾期间按权重衰减。普通 var（draw 阶段读写，主线程），
+        // 不用 state —— 在 derivedStateOf 计算块里写 state 会自触发重算。
+        var lastFollowYRaw = 0f
         derivedStateOf {
             val cardLeft = cardLeftState.value
             val cardTop = cardTopState.value
@@ -368,8 +379,8 @@ fun rememberMorphTransition(
 
                 val gesture = gestureBackProgress.value
                 val normalX = (cardLeft + cardWidth / 2f - screenWidth / 2f) * (1f - p)
-                // 横向位移不依赖 scale（手势期间恒定），起点就是当前值，直接按 gesture 收敛即可。
-                // 预测返回提交时走「屏幕中心 → 卡片中心」的直线，不掺形变位移。
+                // 预测返回期间不做平移：横向位移全部来自「固定锚点 + 缩放」（见 anchorX），
+                // 手指水平位移只驱动缩放进度。提交时走「屏幕中心 → 卡片中心」的直线。
                 val translationX = if (closeFromGesture) {
                     (cardLeft + cardWidth / 2f - screenWidth / 2f) * (1f - p)
                 } else {
@@ -389,28 +400,35 @@ fun rememberMorphTransition(
                 val normalYStart = targetCenterY - screenHeight / 2f * (1f - startScale) -
                     (cardHeight + (screenHeight - cardHeight) * p) / 2f
                 val lockedY = normalYStart * (1f - gesture)
-                // 预测返回提交：位移从 0（屏幕中心）线性收到「内容顶部对齐卡片顶部」的位置。
-                // 终点必须和 normalY 在 p=0/scale=cardRatio 时相等 —— 裁切框是从内容顶部算的
-                //（Outline.Rectangle(0,0,w,clipBottom)），按中心对齐会让裁切整体偏上。
-                // 走直线是为了避开 normalY 的曲线与顶部补偿在路径上的叠加（中途会先上窜）。
-                val translationY = if (closeFromGesture) {
-                    (cardTop - screenHeight / 2f * (1f - cardRatio)) * (1f - p)
-                } else {
-                    normalY * (1f - gesture) * centerLockWeight + lockedY * centerLock.value
+                // 提交位移：从屏幕中心直线收到「内容顶部对齐卡片顶部」，终点须与
+                // p=0/scale=cardRatio 时的 normalY 相等（裁切框从内容顶部算，按中心
+                // 对齐会整体偏上）。垂直跟随 = touchY − 首帧 touchY（progress 只归一化
+                // 水平方向），阻尼 0.65×手势进度、按 1/(1+|o|/6.5·range) 衰减防露白。
+                val rawY = navigationBackState.backSwipeOffsetY()
+                if (rawY != null) lastFollowYRaw = rawY
+                val followRange = screenHeight * 0.25f
+                val damping = 0.65f * gesture
+                val followY = lastFollowYRaw * damping / (1f + abs(lastFollowYRaw) / (followRange * 6.5f))
+                val translationY = when {
+                    isGestureActive -> followY
+                    closeFromGesture -> (cardTop - screenHeight / 2f * (1f - cardRatio)) * (1f - p) + followY * p
+                    else -> normalY * (1f - gesture) * centerLockWeight + lockedY * centerLock.value +
+                        followY * gesture
                 }
 
-                // 缩放锚点：右边缘返回 → 偏左；左边缘 → 偏右。
-                // 手势期间按 gesture 从 0.5 渐进偏出去；
-                // 预测返回提交后改跟 p（1→0），与 translationX 的 (1-p) 同一条时间轴收回中心 ——
-                // 跟 gesture 的话它是 140ms 回落、位移是 320ms，两条曲线错位会左右抖。
+                // 缩放锚点：手势首帧按 edge 定好（右边缘返回 → 偏左），期间不变；变的
+                // 是缩放进度（手指水平位移比例驱动）。围绕固定锚点缩放，横向位移天然有限。
+                // 松手后按时间轴收回中心（提交 p、取消 gesture），落地必须回 0.5。
                 val anchorShift = when (gestureEdge) {
                     EDGE_LEFT -> PREDICTIVE_ANCHOR_SHIFT
                     EDGE_RIGHT -> -PREDICTIVE_ANCHOR_SHIFT
                     else -> 0f
                 }
-                // ⚠ 用 p 不是 (1-p)：p=1 松手瞬间要保持偏移，p=0 落地时必须回到 0.5
-                val anchorWeight = if (closeFromGesture) p else gesture
-                val anchorX = 0.5f + anchorShift * anchorWeight
+                val anchorX = when {
+                    isGestureActive -> 0.5f + anchorShift
+                    closeFromGesture -> 0.5f + anchorShift * p
+                    else -> 0.5f + anchorShift * gesture
+                }
 
                 // 手势推进期间裁切跟随"当前展开高度×缩放"（打开未完成时也连续，底部不瞬间归位）；
                 // 松手/取消过渡期按 gesture 平滑插值衔接形变的底部收缩

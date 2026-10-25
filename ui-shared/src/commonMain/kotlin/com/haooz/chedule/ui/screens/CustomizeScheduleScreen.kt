@@ -121,8 +121,6 @@ import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SliderDefaults
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.VerticalDivider
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Album
 import top.yukonga.miuix.kmp.icon.extended.Background
@@ -255,12 +253,6 @@ fun CustomizeScheduleScreen(
         containerColor = Color.Transparent,
         selectedContainerColor = Color.Transparent,
     )
-
-    // 不采样自身图层：含自身的 backdrop 会导致渲染树无限递归（SIGSEGV）
-    val sheetBackdropColor = MiuixTheme.colorScheme.surface
-    val sheetBackdrop = rememberLayerBackdrop {
-        drawRect(sheetBackdropColor)
-    }
 
     val primaryColor = MiuixTheme.colorScheme.primary
     val exitContainerColor = Color(0xFF363636).copy(0.8f)
@@ -430,10 +422,9 @@ fun CustomizeScheduleScreen(
     }
 
     // ── 入场时间轴 ───────────────────────────────────────────────────────
-    // 这一段动画跑的时候，封面快照（alpha=1）正盖满全屏，用户基本看不见；真正的
-    // 要求是**全部元素都在 CUSTOMIZE_COVER_WINDOW_MILLIS 之内落地**。只要有一个
-    // 元素晚于封面撤除才收尾，观感就是「封面都没了，按钮/工具栏还在飞」——即脱节。
-    // 下面每个 ENTER_* 的 (delay + duration) 都必须 ≤ 该窗口，改动前先核对。
+    // 这些动画在封面快照盖满全屏时就开始跑；硬约束：全部元素须在
+    // CUSTOMIZE_COVER_WINDOW_MILLIS（封面撤除时刻）内落地，否则封面没了按钮/工具栏还在飞，
+    // 观感脱节。每个 ENTER_* 的 (delay + duration) 都必须 ≤ 该窗口，改动前先核对。
     LaunchedEffect(Unit) {
         coroutineScope {
             launch {
@@ -683,7 +674,6 @@ fun CustomizeScheduleScreen(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .layerBackdrop(sheetBackdrop)
                 .drawBehind {
                     val snapshotW = snapshot?.width?.toFloat() ?: size.width
                     val snapshotH = snapshot?.height?.toFloat() ?: size.height
@@ -738,10 +728,9 @@ fun CustomizeScheduleScreen(
             val cutoutToBottomGap = (screenH - cutoutBottom).coerceAtLeast(0f)
             val toolNudgeDp = 8.dp
             val toolBottomPadding = with(densityObj) {
-                // ⚠ 末尾那个 2/3 是**还原静止位置**用的，不是随手取的系数。
-                // 旧式（onSizeChanged 挂在 padding 外，量到的是含 padding 的高度）是自指方程
-                // P = (G - H - P)/2 + 8dp，它收敛到的唯一解正好 = 本式的 2/3；修掉振荡后若
-                // 不补这个系数，工具栏会停在公式原值（约 116px 而非原来的 77px），位置就变了。
+                // ⚠ 末尾那个 2/3 是还原静止位置用的，不是随手取的系数：旧式（onSizeChanged
+                // 挂在 padding 外，量到含 padding 的高度）是自指方程 P = (G - H - P)/2 + 8dp，
+                // 其唯一解正好 = 本式 2/3；修掉振荡后不补它，工具栏会停在公式原值（约 116px 而非 77px）。
                 val raw = (cutoutToBottomGap / 2f - toolRowHeightPx / 2f).toDp() + toolNudgeDp
                 val restored = raw * (2f / 3f)
                 if (restored < 0.dp) 0.dp else restored
@@ -752,14 +741,13 @@ fun CustomizeScheduleScreen(
             val targetScale = minOf(targetScaleX, targetScaleY)
 
             val currentScale = 1f + (targetScale - 1f) * enterValue
-            // ⚠ 必须与卡片 cardOffsetY 里的位移项逐项一致：`0.028H` 那一项已由下面
+            // ⚠ 必须与卡片 cardOffsetY 的位移项逐项一致：`0.028H` 已由下面
             // TransformOrigin(0.5f, 0.58f) 的缩放原点承担（0.028/0.35 == 0.08），但
-            // `cutoutOffsetY` / `sheetOffsetY` 这两项原点管不着。留 0f 的话，`animDone`
-            // 交接那一刻卡片会比覆盖层高 |o|*(1-prog)（落位时 o=-10dp → 约 7dp），
-            // 观感就是开洞区域底部往上跳一下。
+            // `cutoutOffsetY` / `sheetOffsetY` 原点管不着；留 0f 会在 animDone 交接时让卡片
+            // 比覆盖层高 |o|*(1-prog)（落位 o=-10dp → 约 7dp），观感是开洞区域底部上跳一下。
             val currentTranslationY =
                 (cutoutOffsetY.value + sheetOffsetY.value) * (1f - cutoutScaleProg)
-            // 横向同理：横向微调也不在 0.5 这个缩放原点里（弹窗没有横向让位，故不含 sheetOffset）
+            // 横向同理（弹窗无横向让位，故不含 sheetOffset）
             val currentTranslationX = cutoutOffsetX.value * (1f - cutoutScaleProg)
 
             Box(
@@ -1251,10 +1239,9 @@ fun CustomizeScheduleScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            // ⚠ onSizeChanged 必须在 padding **之内**：挂在外面量到的是
-                            // 「内容高 + 底部 padding」，而 padding 又由这个高度算出来 →
-                            // 自指方程，收敛因子 -1/2，工具栏会交替上下跳（198→17→107→62…px）。
-                            // 放进来只观测内容高，padding 不再反噬自己。
+                            // ⚠ onSizeChanged 必须在 padding 之内：挂外面量到的是「内容高 + 底部
+                            // padding」，而 padding 又由这个高度算出 → 自指方程（收敛因子 -1/2），
+                            // 工具栏会交替上下跳（198→17→107→62…px）；放进来只观测内容高。
                             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                             .padding(bottom = toolBottomPadding)
                             .onSizeChanged { toolRowHeightPx = it.height.toFloat() }
@@ -1657,7 +1644,6 @@ fun CustomizeScheduleScreen(
                     BlurBottomSheetTablet(
                         show = showEffectSheet,
                         title = "效果",
-                        sheetBackgroundAlpha = 1f,
                         sheetMaxHeight = 320.dp,
                         isBottomAligned = true,
                         onDismissRequest = { showEffectSheet = false },
@@ -1683,7 +1669,6 @@ fun CustomizeScheduleScreen(
                     BlurBottomSheet(
                         show = showEffectSheet,
                         title = "效果",
-                        sheetBackgroundAlpha = 1f,
                         onDismissRequest = { showEffectSheet = false },
                         startAction = { sheetCloseButton({ showEffectSheet = false }, 18.dp) }
                     ) {
@@ -1709,7 +1694,6 @@ fun CustomizeScheduleScreen(
                     BlurBottomSheetTablet(
                         show = showCustomizeSheet,
                         title = "自定义",
-                        sheetBackgroundAlpha = 1f,
                         sheetMaxHeight = 320.dp,
                         isBottomAligned = true,
                         onDismissRequest = { showCustomizeSheet = false },
@@ -1735,7 +1719,6 @@ fun CustomizeScheduleScreen(
                     BlurBottomSheet(
                         show = showCustomizeSheet,
                         title = "自定义",
-                        sheetBackgroundAlpha = 1f,
                         onDismissRequest = { showCustomizeSheet = false },
                         startAction = { sheetCloseButton({ showCustomizeSheet = false }, 16.dp) }
                     ) {
@@ -1996,17 +1979,11 @@ data class CombinationThumbnail(
 )
 
 // ──────────────────────────────────────────────────────────────────────────
-// 外观页入场时间轴
-//
-// 这几个动画在「封面快照还盖着整屏」的时候就开始跑了，所以用户真正看到的只有
-// 它们的收尾。硬约束是：每个元素的 (delay + duration) 都要 ≤
-// [CUSTOMIZE_COVER_WINDOW_MILLIS]（封面撤除时刻），否则封面消失后元素还在动，
-// 观感就是「脱节」。
-//
-// 各元素落地时刻（delay + duration，窗口 552ms）：
-//   卡片错落 380 / 翻页间距 400 / 顶栏按钮 420 / 底部工具栏 420
-// 实测（iPhone 18 Pro Max / iOS 27.0）实际落地还要再晚 40~60ms（组合 + 帧对齐），
-// 故比理论窗口留出 ~100ms 余量。
+// 外观页入场时间轴：动画在封面快照盖着整屏时就开始跑，用户只看到收尾。硬约束：
+// 每个元素 (delay + duration) ≤ CUSTOMIZE_COVER_WINDOW_MILLIS（封面撤除时刻），
+// 否则封面消失后元素还在动，观感「脱节」。各元素落地（窗口 552ms）：
+// 卡片错落 380 / 翻页间距 400 / 顶栏按钮 420 / 底部工具栏 420；
+// 实测（iPhone 18 Pro Max / iOS 27.0）再晚 40~60ms（组合+帧对齐），故留 ~100ms 余量。
 // ──────────────────────────────────────────────────────────────────────────
 
 /** 卡片错落入场时长 */

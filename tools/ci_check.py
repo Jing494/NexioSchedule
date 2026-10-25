@@ -212,9 +212,10 @@ CHECKS = [
         [r"prefs", r"\.edit\s*\{"],
     ),
     (
-        "课表周页只预合成紧邻 1 页（调回 2 会多养两页的组合/测量/布局）",
+        "课表周页滑动期只预合成 1 页，停稳后才扩到 2/3；不得无条件常驻多页",
         F_MAINSCHED,
-        [r"beyondViewportPageCount = 1"],
+        [r"beyondViewportPageCount = if \(state\.isScrollInProgress\) 1 else idleBeyond",
+         r"idleBeyond = if \(dwelling\) 3 else 2"],
         [],
     ),
     (

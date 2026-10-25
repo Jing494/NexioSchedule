@@ -8,7 +8,7 @@ import com.haooz.chedule.widget.WidgetUpdateCache
 /**
  * [ScheduleChangeSink] 的 Android 实现 —— `NexioApplication.onCreate` 注入。
  *
- * 这一层是「平台机制」的边界：下面三个东西都是 Android 专有
+ * 这一层是「平台机制」的边界：下面两个东西都是 Android 专有
  * （`AlarmManager` 提醒服务 / `AppWidgetManager`），
  * iOS 侧要分别用 `UNUserNotificationCenter` / 无 / WidgetKit 各自实现。
  *
@@ -20,7 +20,7 @@ class AndroidScheduleEffects(
 ) : ScheduleChangeSink {
 
     override fun rescheduleReminders() {
-        // 单参重载内部用 `CourseRepository()`（无参构造即单例），与 VM 里那个是同一个实例。
+        // 内部用 `CourseRepository()`（无参构造即单例），与 VM 中同一实例。
         CourseReminderHelper.startReminderService(app)
     }
 

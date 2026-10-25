@@ -32,11 +32,7 @@ internal fun shouldAdvanceForReorganizedWeekend(
 }
 
 /**
- * ⚠ 原来是 `AndroidViewModel(application)`，仅仅为了拿 `Context` 去调
- * `CourseReminderHelper.resolveDaySchedule(context, …)`；而那个 `context` 参数
- * **函数体根本没用**（见 `DayScheduleResolver` 的说明）。
- * 提醒时刻算法抠进 `:core` 后，这里不再需要 `Application` → 退回普通 [ViewModel]，
- * 于是本文件可以进 `:ui-shared`（引用它的页面也随之解锁）。
+ * ⚠ 原是 `AndroidViewModel(application)`，仅为拿 `Context` 调 `CourseReminderHelper.resolveDaySchedule(context, …)`，而那个 `context` 参数函数体根本没用（见 `DayScheduleResolver`）。提醒算法抠进 `:core` 后不再需要 `Application` → 退回普通 [ViewModel]，本文件得以进 `:ui-shared`。
  */
 class SettingsViewModel : ViewModel() {
 
@@ -84,6 +80,7 @@ class SettingsViewModel : ViewModel() {
     /**
      * 智能周末：当前日是否应自动跳到下周课表。
      * 当天有课，或已配置调休且映射日/周有课 → 停留本周；
+     * 周六还要看周日 —— 周日有课说明本周没走完，同样停留本周；
      * 无课可上（含 API 导入未配置 followWeekday、映射日无课）→ 跳下周。
      */
     fun shouldAdvanceToNextWeek(todayDayOfWeek: Int, week: Int): Boolean {
@@ -102,21 +99,26 @@ class SettingsViewModel : ViewModel() {
             }
         }
         val today = todayLocalDate()
+        // 周六/周日两次判定共用一份假期快照：loadAllByYear 无缓存，每次都是全量
+        // SharedPreferences 解析；不共享的话「两天都无课」最坏一次判定跑两遍。
+        // lazy 保证当天有直接课时整段不加载（本方法在主线程 remember 链路上）
+        val holidayEntriesByYear = lazy { HolidayManager.loadAllByYear() }
         val hasCourses = if (isBeforeHolidayExclusionActive(today)) {
             DayScheduleResolver
                 .resolveDaySchedule(today, repository).courses.isNotEmpty()
         } else {
-            repository.hasDisplayableCoursesOnDay(todayDayOfWeek, week)
+            repository.hasDisplayableCoursesOnDay(todayDayOfWeek, week, holidayEntriesByYear)
         }
-        return !hasCourses
+        if (hasCourses) return false
+        // 周六只是本周第六天：周日排了课就说明本周还没结束。
+        // 只判「今天有没有课」的话，「周六空、周日满」会被当成一周已过完
+        if (todayDayOfWeek == 6 && repository.hasDisplayableCoursesOnDay(7, week, holidayEntriesByYear)) return false
+        return true
     }
 
     private fun isBeforeHolidayExclusionActive(date: LocalDate): Boolean {
         val exclusion = HolidayManager.loadBeforeCourseExclusion()
-        // 短路：isEnabledBeforeHolidayDate 的第一个判断就是 enabled，但 Kotlin 实参是急切
-        // 求值的，不挡这一下就会让「没开启该功能」的用户每次都白跑 loadAllByYear
-        // （SharedPreferences 全量解析 + 逐年 Gson 反序列化）。本方法是主线程
-        // remember 里的课表/今日/排班周末判定链路上的一环，节次时间一改就会重跑。
+        // 短路：Kotlin 实参急切求值，不挡这一下会让未开启该功能的用户每次白跑 loadAllByYear（SharedPreferences 全量解析 + 逐年 Gson 反序列化）。本方法在主线程 remember 的周末判定链路上，节次时间一改就重跑。
         if (!exclusion.enabled || !exclusion.isValid()) return false
         return HolidayCourseExclusion.isEnabledBeforeHolidayDate(
             HolidayManager.loadAllByYear(),
@@ -242,9 +244,7 @@ class SettingsViewModel : ViewModel() {
         val newSectionNames = repository.getSectionNames()
         if (_sectionNames.value != newSectionNames) _sectionNames.value = newSectionNames
 
-        // 必须走 getEffectiveTimeConfig()（与上面 _specialBlocks 的初值保持一致）：
-        // 顶层字段只是「当前生效作息」的镜像，跨日期自动切换和新增作息都不会刷新它，
-        // 直读顶层会出现「节次时间用当天生效那套、特殊时段块用上一套」的错位
+        // 必须走 getEffectiveTimeConfig()（与 _specialBlocks 初值一致）：顶层字段只是「当前生效作息」的镜像，跨日期自动切换和新增作息都不会刷新它，直读会出现「节次时间用当天那套、特殊时段块用上一套」的错位。
         val newSpecialBlocks = repository.getEffectiveTimeConfig().safeSpecialBlocks
         if (_specialBlocks.value != newSpecialBlocks) _specialBlocks.value = newSpecialBlocks
 

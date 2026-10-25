@@ -38,6 +38,9 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
+import com.haooz.chedule.ui.activities.main.PagerJumpNeighbor
+import com.haooz.chedule.ui.activities.main.jumpToPageSmoothly
+import com.haooz.chedule.ui.components.text.LocalTextMotionInstant
 import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -73,6 +76,7 @@ import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -98,6 +102,7 @@ import com.kyant.backdrop.edgelight.edgeLight
 import com.haooz.chedule.ui.utils.glassPerfFactor
 import com.haooz.chedule.ui.utils.rememberCardEdgeLight
 import com.haooz.chedule.ui.utils.rememberDefaultEdgeLight
+import com.haooz.chedule.ui.utils.rememberPagerTakeoverGestureState
 import com.haooz.chedule.ui.utils.isAppDarkTheme
 import com.haooz.chedule.ui.utils.millisToNextMinute
 import top.yukonga.miuix.kmp.utils.overScrollVertical
@@ -118,8 +123,6 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.NumberPicker
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -143,9 +146,8 @@ val LocalCardRefraction = staticCompositionLocalOf { CardRefractionLevel.DEFAULT
 
 /**
  * [TodayScreen.todayAssistantCard] 槽位的数据载体（页面算好传给宿主渲染）。
- *
- * 今日助手卡依赖 Android 天气栈（Gson / 定位 / Geocoder），留在 `:androidApp`
- * 的 `TodayAssistant.kt`；本页只负责把它需要的数据打包好，由宿主注入渲染 lambda。
+ * 今日助手卡依赖 Android 天气栈（Gson / 定位 / Geocoder），留在 `:androidApp` 的 `TodayAssistant.kt`；
+ * 本页只负责打包数据，渲染 lambda 由宿主注入。
  */
 class TodayAssistantCardData(
     val courses: List<Course>,
@@ -450,6 +452,8 @@ fun TodayScreen(
     hiddenCourseIds: Set<String> = emptySet(),
     onCourseClick: (courses: List<Course>, cardLeft: Float, cardTop: Float, cardWidth: Float, cardHeight: Float, snapshot: TransitionLayerSnapshot?, courseIdToHide: String, targetWeek: Int) -> Unit = { _, _, _, _, _, _, _, _ -> },
     pagerState: PagerState,
+    /** 长距跳日的借位页：让相邻页临时显示目标日期（见 PagerJumpNeighbor） */
+    jumpNeighbor: PagerJumpNeighbor? = null,
     navBarStyle: String = "standard",
     onScrollYChanged: (Int) -> Unit = {},
     onListScrollInProgress: (Boolean) -> Unit = {},
@@ -515,15 +519,24 @@ fun TodayScreen(
     var selectedDate by remember { mutableStateOf(initialDate) }
     var isToday by remember { mutableStateOf(initialDaysOffset == 0) }
     val scope = rememberCoroutineScope()
-
+    var pendingDatePage by remember { mutableIntStateOf(-1) }
     var showDatePicker by remember { mutableStateOf(false) }
     var datePickerYear by remember { mutableIntStateOf(todayLocalDate().year) }
     var datePickerMonth by remember { mutableIntStateOf(todayLocalDate().monthNumber - 1) }
     var datePickerDay by remember { mutableIntStateOf(todayLocalDate().dayOfMonth) }
+    // 手势接管状态：借位跳日被手势打断时，jumpToPageSmoothly 借它同步平移松手落页基准
+    val takeoverGestureState = rememberPagerTakeoverGestureState()
 
     LaunchedEffect(scrollToTodayTrigger) {
         if (scrollToTodayTrigger > 0 && pagerState.currentPage != MAX_DATE_OFFSET) {
-            pagerState.animateScrollToPage(MAX_DATE_OFFSET)
+            // 相邻一天直接滑；跨多天借位后也只滑一页，全程连续
+            pendingDatePage = MAX_DATE_OFFSET
+            try {
+                pagerState.jumpToPageSmoothly(MAX_DATE_OFFSET, jumpNeighbor, takeoverGestureState)
+            } finally {
+                // 落点不是目标（被打断）就立刻撤掉覆盖，别让标题卡在今天
+                if (pagerState.currentPage != MAX_DATE_OFFSET) pendingDatePage = -1
+            }
         }
     }
 
@@ -538,14 +551,26 @@ fun TodayScreen(
         }
     }
 
-    LaunchedEffect(pagerState.currentPage, holidayDataTick) {
+    // 落页后撤掉「立刻切日期」的覆盖
+    LaunchedEffect(pagerState.currentPage, pendingDatePage) {
+        if (pendingDatePage >= 0 && pagerState.currentPage == pendingDatePage) {
+            pendingDatePage = -1
+        }
+    }
+
+    // 跟手换日期：过半页就换（settledPage 要等 fling 停稳，翻起来标题会看着卡住）。
+    // 程序化跳日期间由 [pendingDatePage] 提前钉住目标，借位也不会闪到中间那天。
+    LaunchedEffect(pagerState.currentPage, pendingDatePage, holidayDataTick) {
         var lastReportedDate: LocalDate? = null
         while (true) {
             val sampledAtMillis = Clock.System.now().toEpochMilliseconds()
             val sampledNow = localDateTimeAt(sampledAtMillis)
             val today = sampledNow.date
             currentLocalDateTime = sampledNow
-            val daysOffset = pagerState.currentPage - MAX_DATE_OFFSET
+            // 程序化跳日期间用目标页，点「今」的那一帧日期就切过去
+            val anchorPage =
+                if (pendingDatePage >= 0) pendingDatePage else pagerState.currentPage
+            val daysOffset = anchorPage - MAX_DATE_OFFSET
             val newDate = today.plusDays(daysOffset.toLong())
             if (newDate != lastReportedDate) {
                 val dateChanged = newDate != selectedDate
@@ -571,10 +596,6 @@ fun TodayScreen(
     val hapticFeedback = LocalHapticFeedback.current
 
     val backgroundColor = MiuixTheme.colorScheme.surface
-    val backdrop = rememberLayerBackdrop {
-        drawRect(backgroundColor)
-        drawContent()
-    }
     // 供今日页卡片 drawBackdrop 采样壁纸：共享层时直接用主层 backdrop，否则录本页壁纸
     val localCardBackdrop = rememberKyantLayerBackdrop {
         drawRect(backgroundColor)
@@ -615,7 +636,6 @@ fun TodayScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .layerBackdrop(backdrop)
         ) {
             if (wallpaperBitmap != null) {
                 Box(
@@ -672,12 +692,21 @@ fun TodayScreen(
 
             HorizontalPager(
                 state = pagerState,
+                // 与课表周 pager 同款预组合：翻日/返回今日时下一日页面在第一帧就要露出，
+                // 现组一整页（resolveDaySchedule + 假期/调休查询 + 卡片）会把那一帧顶爆。
+                beyondViewportPageCount = 1,
                 modifier = Modifier
                     .fillMaxSize()
                     // 与课表周 pager 共用的横竖主导翻页手势；纵向仍归页内 LazyColumn
-                    .pagerAxisTakeoverGesture(pagerState = pagerState),
+                    .pagerAxisTakeoverGesture(pagerState = pagerState, gestureState = takeoverGestureState),
                 userScrollEnabled = false,
-            ) { page ->
+            ) { physicalPage ->
+                // 借位页：长距跳日期间这一页按目标日期出内容，于是跨 N 天也只是一页连续位移
+                val page = jumpNeighbor?.resolve(physicalPage) ?: physicalPage
+                // 借位页是「同一页换数据」，整屏文字直接换，不播交叉模糊
+                CompositionLocalProvider(
+                    LocalTextMotionInstant provides (jumpNeighbor?.isBorrowed(physicalPage) == true)
+                ) {
                 val pageListState = remember(page) { LazyListState() }
                 // 只把当前页的滚动状态报给 Activity（顶栏折叠 / 液态玻璃重录）
                 LaunchedEffect(pageListState, page) {
@@ -700,12 +729,13 @@ fun TodayScreen(
                 val isPageToday = pageDate == currentLocalDate
                 val countdownNow = currentLocalDateTime
                 // Minute ticks and the resume tick both reread in-app holiday changes.
+                // key 用日期而不是整个 LocalDateTime：分钟 tick 不该每分钟重读一次 SP
                 val holidayVersion = remember(
                     dataVersion,
                     classStartTime,
                     holidayDataTick,
                     holidayDataRevision,
-                    countdownNow,
+                    countdownNow.date,
                 ) {
                     HolidayManager.getVersion()
                 }
@@ -742,12 +772,21 @@ fun TodayScreen(
                     }
                 }
                 val pageWeek = displayWeek
-                val coursePeriods = pageCourses.associateWith {
-                    it.periodIndex(sectionTimes, morningSections, afternoonSections)
+                // 分组结果按课程/节次表缓存：原来每次重组都重建 map + 三次过滤
+                val coursePeriods = remember(pageCourses, sectionTimes, morningSections, afternoonSections) {
+                    pageCourses.associateWith {
+                        it.periodIndex(sectionTimes, morningSections, afternoonSections)
+                    }
                 }
-                val morningCourses = pageCourses.filter { coursePeriods[it] == Course.PERIOD_MORNING }
-                val afternoonCourses = pageCourses.filter { coursePeriods[it] == Course.PERIOD_AFTERNOON }
-                val eveningCourses = pageCourses.filter { coursePeriods[it] == Course.PERIOD_EVENING }
+                val morningCourses = remember(pageCourses, coursePeriods) {
+                    pageCourses.filter { coursePeriods[it] == Course.PERIOD_MORNING }
+                }
+                val afternoonCourses = remember(pageCourses, coursePeriods) {
+                    pageCourses.filter { coursePeriods[it] == Course.PERIOD_AFTERNOON }
+                }
+                val eveningCourses = remember(pageCourses, coursePeriods) {
+                    pageCourses.filter { coursePeriods[it] == Course.PERIOD_EVENING }
+                }
 
                 val holidayCountdownSnapshot = remember(
                     isPageToday,
@@ -891,7 +930,7 @@ fun TodayScreen(
                     }
                 }
 
-                val dateText = pageDate.formatChineseDate()
+                val dateText = remember(pageDate) { pageDate.formatChineseDate() }
 
                 if (isTablet) {
                     Row(
@@ -1078,6 +1117,7 @@ fun TodayScreen(
                     }
                 }
             }
+            }
         }
     }
 
@@ -1158,7 +1198,17 @@ fun TodayScreen(
                             val days = now.daysUntil(target)
                             val targetPage = MAX_DATE_OFFSET + days.toInt()
                             scope.launch {
-                                pagerState.animateScrollToPage(targetPage)
+                                // 选日期可能跨几十上百天：借位后只滑一页，不逐页组合中间每一天
+                                val dest = targetPage.coerceIn(
+                                    0, (pagerState.pageCount - 1).coerceAtLeast(0)
+                                )
+                                // 标题日期立刻切到目标日
+                                pendingDatePage = dest
+                                try {
+                                    pagerState.jumpToPageSmoothly(dest, jumpNeighbor, takeoverGestureState)
+                                } finally {
+                                    if (pagerState.currentPage != dest) pendingDatePage = -1
+                                }
                             }
                             showDatePicker = false
                         },
@@ -1705,7 +1755,8 @@ private fun QuoteCard(
         )
     }
     var hour by remember { mutableIntStateOf(nowLocalTime().hour) }
-    // 与助手同频：场景/整点切换时立刻换池
+    // 与助手同频：场景/整点切换时立刻换池。
+    // 按「睡到下一分钟」而不是每秒轮询 —— 这个循环每页一个，且 computeQuoteScene 会做时间解析+排序
     LaunchedEffect(isPageToday, todayCourses, sectionTimes) {
         while (true) {
             val nextScene = computeQuoteScene(isPageToday, todayCourses, sectionTimes)
@@ -2044,9 +2095,16 @@ private fun CourseItemWithClick(
     showClassroom: Boolean = true,
     showTeacher: Boolean = true
 ) {
-    var itemBounds by remember { mutableStateOf<Rect?>(null) }
+    // 只存布局坐标，root 位置点击时现算。原来用 mutableStateOf<Rect> 接 onGloballyPositioned：
+    // 滚动时每次 placement 都写入不等的新 Rect → 每帧一次行重组（列表滚动的隐形大头）
+    val itemCoords = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val isHidden = course.id in hiddenCourseIds
     val cardLayer = rememberGraphicsLayer()
+    val scope = rememberCoroutineScope()
+    // 只有真要打开详情时才把这一行录进图层：record 是每帧一次离屏重绘，一行一层；
+    // 有壁纸路径下上层改用 section 裁剪，这份录制 100% 白费。
+    val captureToken = remember { mutableIntStateOf(0) }
+    val recordedToken = remember { intArrayOf(0) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2057,31 +2115,44 @@ private fun CourseItemWithClick(
             modifier = Modifier
                 .fillMaxWidth()
                 .drawWithContent {
-                    // Keep the card recording independent of its hidden source ancestor.
-                    if (!isHidden) {
+                    // 录好的那几帧走图层，其余时候直画（行内状态字会变，不能一直放旧快照）
+                    if (!isHidden && captureToken.intValue != 0) {
                         cardLayer.record { this@drawWithContent.drawContent() }
+                        recordedToken[0] = captureToken.intValue
+                        drawLayer(cardLayer)
+                    } else {
+                        drawContent()
                     }
-                    drawLayer(cardLayer)
                 }
-                // ⚠ 无壁纸时这里必须用 surfaceContainer，不能用 background：外层 BlurCard 在无壁纸时
-                //   退化成 miuix `Card()`，卡片色正是 surfaceContainer（Card.kt 的 defaultColors）。
-                //   原先写 background 在内置亮/暗方案下是**恰好相等的空操作**（两者都是 #FFFFFF / #242424），
-                //   莫奈下才分家：background 取 MD3 tone 98/6、surfaceContainer 取 tone 94/12，
-                //   差 4 个明度阶 —— 课程条目会比今日助手卡 / 分区卡偏一个色。
+                // ⚠ 无壁纸时必须用 surfaceContainer，不能用 background：外层 BlurCard 此时退化成
+                //   miuix `Card()`，卡片色正是 surfaceContainer（Card.kt defaultColors）。内置方案下
+                //   两者恰好相等（#FFFFFF / #242424），莫奈下才分家：background 取 tone 98/6、
+                //   surfaceContainer 取 tone 94/12，差 4 个明度阶，写错会偏色。
                 .then(if (hasWallpaper) Modifier else Modifier.background(MiuixTheme.colorScheme.surfaceContainer))
-                .onGloballyPositioned { coordinates ->
-                    val position = coordinates.localToRoot(Offset.Zero)
-                    val size = coordinates.size
-                    itemBounds = Rect(
-                        left = position.x, top = position.y,
-                        right = position.x + size.width, bottom = position.y + size.height
-                    )
-                }
+                .onGloballyPositioned { itemCoords[0] = it }
                 .clickable {
-                    val bounds = itemBounds
-                    if (bounds != null) {
+                    val coordinates = itemCoords[0]
+                    if (coordinates != null && coordinates.isAttached && captureToken.intValue == 0) {
+                        val position = coordinates.localToRoot(Offset.Zero)
+                        val size = coordinates.size
                         val sameNameCourses = allCourses.filter { it.name == course.name }
-                        onCourseClick(sameNameCourses, bounds.left, bounds.top, bounds.width, bounds.height, TransitionLayerSnapshot(cardLayer), course.id, pageWeek)
+                        captureToken.intValue += 1
+                        val token = captureToken.intValue
+                        scope.launch {
+                            // 等这一行真录进图层（draw 期回写 recordedToken）再抛快照
+                            while (recordedToken[0] < token) withFrameNanos { }
+                            onCourseClick(
+                                sameNameCourses,
+                                position.x,
+                                position.y,
+                                size.width.toFloat(),
+                                size.height.toFloat(),
+                                TransitionLayerSnapshot(cardLayer),
+                                course.id,
+                                pageWeek,
+                            )
+                            captureToken.intValue = 0
+                        }
                     }
                 }
         ) {
