@@ -73,6 +73,7 @@ import com.haooz.chedule.ui.navigation.NAV_PARALLAX
 import com.haooz.chedule.ui.navigation.NavDirection
 import com.haooz.chedule.ui.navigation.PreferenceSettingsRoute
 import com.haooz.chedule.ui.navigation.PrivacyPolicyRoute
+import com.haooz.chedule.ui.navigation.ReminderTestRoute
 import com.haooz.chedule.ui.navigation.ScheduleSettingsRoute
 import com.haooz.chedule.ui.navigation.UpdatePreferencesRoute
 import com.haooz.chedule.ui.navigation.UpdateSettingsRoute
@@ -144,6 +145,9 @@ private fun DefaultTabletSettingsPaneRouteContent(router: AppRouter, route: AppR
             ),
         )
         AppRoute.ScheduleBackup -> BackupCenterRoute(router = router)
+        // 本 fork：通知/超级岛测试页（上游没有这一页）。平板右栏同样能用兜底渲染；
+        // 场景表仍由宿主注入，未注入时页面显示空状态而不是白屏。
+        AppRoute.ReminderTest -> ReminderTestRoute(router)
         // Settings 会套娃；Weather / WebImport 无兜底实现
         AppRoute.Settings,
         AppRoute.Weather,

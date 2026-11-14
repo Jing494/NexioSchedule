@@ -117,8 +117,10 @@ val changelogData = listOf(
         version = "v1.6.7.28-gh28",
         date = "2026-10-24",
         changes = listOf(
-            "移除手表互联功能与 wear 变体，不再提供手表/手环推送",
-            "更新检查改为单变体，仍保留安装前签名校验"
+            L("移除手表互联功能与 wear 变体，不再提供手表/手环推送",
+                "Remove watch connectivity and the wear variant; no more watch/band push"),
+            L("更新检查改为单变体，仍保留安装前签名校验",
+                "Update check now targets a single variant, keeping the pre-install signature check"),
         )
     ),
     ChangelogEntry(

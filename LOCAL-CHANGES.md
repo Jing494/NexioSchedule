@@ -635,3 +635,69 @@ gh28 起只发普通包，gh27 的 wear 附件从 GitHub/Gitee 删除。
 - TodayAssistantCard 的 tick 循环补回 now/current/next（上游把判定收进 statusAt）。
 - ci_check #19 跟随上游 WeekPagerHost：滑动期 beyond=1，停稳 2/3。
 - 发布 v1.6.7.29-gh29（versionCode 16729），Gitee 同步 ffca20e6。
+
+
+---
+
+## 二十一、跟上游 1.7.1-1115（2659d244，2026-11-14）—— **历次最大的一次**
+
+**规模**：上游 218 笔 / 1085 文件（+457465 −31568）；本 fork 侧 98 提交。冲突 37 个文件
+（29 处 UU + 8 处 modify/delete），约 59 个 hunk。
+
+### 上游这轮动的是地基
+| 变更 | 对本 fork 的影响 |
+|---|---|
+| **删掉 `:backdrop` 模块**，柔光玻璃抽成外部库 `com.github.HaoZai000.softglass`（JitPack + 本地复合构建） | 76 处 `com.kyant.backdrop` 引用全部改走 softglass |
+| **边光（EdgeLight）整套约 950 行被产品性下线** | 本 fork 的 `fadeAlpha` 淡出失去落点 → 降级系数改挂 softglass 样式 |
+| `ui-shared` 新增 **`src/portable`** 源集 | CourseCard / DayColumn 搬过去（旧路径取上游） |
+| `core` 数据层**拆子包**：`data/repo|holiday|platform|model|util|storage|backup|school|ai` | 全仓 10 个文件的扁平 import 按符号归位；50 行重复 import 去重 |
+| **备份实现从 CourseRepository 拆到 `BackupTransfer`** | 本 fork「备份带全部用户设置」的故意分歧整体移植（导出+恢复两侧） |
+| 上游**加回**蓝牙导出手表（PR106：`BleScheduleSender` / `WatchSyncControllerAndroid` / `WatchSyncSheet`） | 本 fork 维持移除：新代码再删一次 |
+
+### 本 fork 定下的三条口径
+1. **边光接受上游移除**：`GlassPerf.withGlassPerf()` 在绘制期把系数乘进 `SoftGlassStyle`
+   —— 模糊按系数缩、`refractionScale` 按系数缩，**edgeWidth / 描边宽度恒定**
+   （宽度跟着缩会让高光环向卡片边缘收拢 + 层几何每帧变，v30 踩过）。收敛成**一处**，
+   静态壁纸路径（`styleProvider`）与实时录制路径（`effects`）都走它。
+2. **手表继续移除**（用户 2026-10-24 决定，本轮沿用）。
+3. **整页重写的文件以上游为基底**重落本地特性，而不是硬保我方版本：
+   `TodayScreen` / `MainScheduleScreen` 都是这样处理的。
+
+### 冲突解法摘要（rerere 已记录，下次跟版会复用）
+| 文件 | 处置 |
+|---|---|
+| `NexioApplication.kt` | 取上游（SP→nexio.db 的预热已整体换代）+ 保留 fork 的通道初始化；删 `initWearableSync` |
+| `CourseReminderHelper.kt` | `showReminderNotification` 保留 fork 的 `channelId` 形参、图标取上游新资源；测试通知保留 fork 的场景化签名、文案改走 `AndroidNotifStr` |
+| `TodayScreen.kt` | 玻璃段取上游；`HolidayBalanceCard` 按新 `BlurCard` 签名重落两处；状态循环保留 fork 的 `startClock/endClock`；QuoteCard 保留整分节拍 |
+| `TodayAssistantCard.kt` | 保留 fork 的 `current/next`（tick 需要）+ 整分节拍，接上游的 `tipSalt` |
+| `CourseCard/DayColumn` | 旧路径取上游删除（已搬到 portable）；降级逻辑并入 `withGlassPerf` |
+| `SettingsScreen` | 取上游（平板 `androidPane` 已被上游路由取代），再补回 fork 的测试页入口 |
+| `AndroidSettingsScreen` | 取上游 `searchState` 传参，另补 `reminderController` |
+| `BackupAndMigrationScreen` | 日历/手环/手表三段全删（含 `WatchSyncSheet` 挂载与 import） |
+| `CourseReminderScreen` | 两侧都要：fork 的两个 pending 常量 + 上游的 `ReminderPermissionRow`；文案走上游 i18n，`selected` 用 fork 的 `effective` |
+| `AppRoutes/AppRouteContent` | fork 的两个「立即发一条测试」回调保留；手表的三个注入不接回 |
+
+### 门禁：46 条全绿（**重指路径，不是删门禁**）
+13 条因架构变更失效，逐条按新布局重指：
+- **路径**：`CourseCard/DayColumn` → `ui-shared/src/portable/…`；`ReminderController` → `data/platform/`；
+  备份三条 → `data/repo/BackupTransfer.kt`
+- **语义迁移**：#31「地址为空必须重查」上游已在 `UpdateChecker.resolveApkUrl` 内实现；
+  #04/#05 折射口径收进 `withGlassPerf`；#19 预合成窗口变量名随 `WeekPagerHost` 更新
+  （`beyondPageCount` / `snapshot.dwelling`）
+
+### 编译验证（本地无 Linux，全程靠 CI）
+第 1 轮 dry_run：门禁 ✓ / **编译 21 条错误**，全在两个来源：
+1. `ReturnDayReminder.kt`（:core androidMain，包名仍是 `data`）用**同包**引用
+   `HolidayManager`/`HolidayEntry`/`CourseRepository` —— 拆包后同包假设不成立，补 3 条 import。
+2. `BackupTransfer.kt` 把常量写成 `private const val` —— **类内不允许 const**，改 `private val`。
+
+> 教训（值得固化成下一轮的第一步）：mass-import 迁移**不能只看 import 行**，
+> 还要看"原本靠同包免 import"的那批引用。用「符号 → 实际 package」反查全仓
+> （621 文件）比人眼扫快得多。
+
+### 版本
+```
+merge-base 21919ead（1.6.7-1025）→ 上游 2659d244（1.7.1-1115）
+分支 sync/upstream-2659d244 → 合并提交 222c542b，编译修复 f5f322b0
+```
+

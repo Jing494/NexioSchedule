@@ -734,14 +734,16 @@ fun CourseScheduleApp(
              * 每次滑动开始/结束都要完整重跑一遍。真正读系数的地方在**绘制期**（各卡 effects lambda /
              * DrawModifierNode.draw），所以过渡每帧只失效绘制层，不产生重组。
              */
+            // 1.7.x 起各 pager 都换成了自研 PageSwitchState（不是 Compose 的 PagerState），
+            // 判定口径统一成 isAnimating：它覆盖「拖动中 + 落页动画中」两段。
             LaunchedEffect(
-                scheduleScrollState, pagerState, todayPagerState, mainPagerState, todayListScrollInProgress
+                scheduleScrollState, weekPageState, todayPageState, mainTabSwitchState, todayListScrollInProgress
             ) {
                 snapshotFlow {
                     scheduleScrollState.isScrollInProgress ||
-                        pagerState.isScrollInProgress ||
-                        todayPagerState.isScrollInProgress ||
-                        mainPagerState.isScrollInProgress ||
+                        weekPageState.isAnimating ||
+                        todayPageState.isAnimating ||
+                        mainTabSwitchState.isAnimating ||
                         todayListScrollInProgress.value
                 }
                     .distinctUntilChanged()

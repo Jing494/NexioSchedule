@@ -125,6 +125,8 @@ fun BackupAndMigrationScreen(
         { source, _ -> Result.failure(IllegalStateException(BackupStr.platformNotSupportedN(source.displayName))) },
     /** 口令分享导出（上传 + 出图 + 系统分享，Android 专有，宿主注入）。 */
     onShareSchedule: (scheduleName: String, onSharingChanged: (Boolean) -> Unit) -> Unit = { _, _ -> },
+    /** 是否展示「口令分享导出」（需要出图 + 系统分享能力）。 */
+    showShareCodeExport: Boolean = true,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()

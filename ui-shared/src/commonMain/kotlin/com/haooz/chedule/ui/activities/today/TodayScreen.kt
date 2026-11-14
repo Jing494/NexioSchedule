@@ -105,8 +105,6 @@ import com.haooz.chedule.ui.components.text.LocalTextMotionInstant
 import com.haooz.chedule.ui.components.text.material.Text as Text
 import com.haooz.chedule.ui.utils.isAppDarkTheme
 import com.haooz.chedule.ui.utils.millisToNextMinute
-import com.haooz.chedule.ui.utils.pagerAxisTakeoverGesture
-import com.haooz.chedule.ui.utils.rememberPagerTakeoverGestureState
 import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBarDefaults
 import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
 import top.yukonga.miuix.kmp.layout.collapsibleTopInset
