@@ -1477,6 +1477,8 @@ fun BackupAndMigrationRoute(
     -> Result<ThirdPartySharePayload> =
         { source, _ -> Result.failure(IllegalStateException(ChromeStr.platformUnsupported(source.displayName))) },
     onShareSchedule: (scheduleName: String, onSharingChanged: (Boolean) -> Unit) -> Unit = { _, _ -> },
+    /** 是否展示「口令分享导出」（需要出图 + 系统分享能力）。 */
+    showShareCodeExport: Boolean = true,
 ) {
     val switchable = switchableModes.size > 1
     val pageCount = switchableModes.size.coerceAtLeast(1)
@@ -1513,16 +1515,41 @@ fun BackupAndMigrationRoute(
             }
         } else null,
     ) { scrollBehavior, backdrop ->
-        BackupAndMigrationScreen(
-            scrollBehavior = scrollBehavior,
-            liquidGlassBackdrop = backdrop,
-            mode = mode,
-            scheduleFileController = scheduleFileController,
-            onHolidayDataChanged = onHolidayDataChanged,
-            onFetchShareCode = onFetchShareCode,
-            onImportThirdParty = onImportThirdParty,
-            onShareSchedule = onShareSchedule,
-        )
+        // 两页与单模式页共用参数表
+        val screen: @Composable (ScheduleDataManageMode, Dp) -> Unit = { pageMode, topExtra ->
+            BackupAndMigrationScreen(
+                scrollBehavior = scrollBehavior,
+                liquidGlassBackdrop = backdrop,
+                mode = pageMode,
+                topExtra = topExtra,
+                scheduleFileController = scheduleFileController,
+                onHolidayDataChanged = onHolidayDataChanged,
+                onFetchShareCode = onFetchShareCode,
+                onImportThirdParty = onImportThirdParty,
+                onShareSchedule = onShareSchedule,
+                // 本 fork 已移除手表互联：日历同步 / 手环推送 / 手表蓝牙这三个入口
+                // 连同它们的形参一起从 Screen 里删掉了，这里**不能**再传（传了编译不过）。
+                showShareCodeExport = showShareCodeExport,
+            )
+        }
+        if (switchable) {
+            HorizontalPageSwitch(
+                state = pageSwitch,
+                pageCount = pageCount,
+                modifier = Modifier.fillMaxSize(),
+                // 手势接管：停住滑块
+                onGestureStart = { pillFreezeKey++ },
+                // 松手回灌落点并吸附滑块
+                onGestureEnd = { page ->
+                    selectedTab = page
+                    pillAlignKey++
+                },
+            ) { page ->
+                screen(switchableModes[page], 64.dp)
+            }
+        } else {
+            screen(mode, 0.dp)
+        }
     }
 }
 
