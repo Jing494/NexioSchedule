@@ -76,7 +76,8 @@ internal class BackupTransfer(private val host: RepoHost) {
     )
 
     /** 其它 prefs 文件在备份里用 prefs@<文件>@<键> 命名空间，键撞名也不会互相覆盖。 */
-    private const val BACKUP_PREFS_TAG = "prefs@"
+    // 类内不能用 const val（只能放顶层 / object / companion）；这里就是个私有常量字面量。
+    private val BACKUP_PREFS_TAG = "prefs@"
 
     /** 唯一不进备份的本地状态：迁移标记由恢复流程按 preserveFolderMembership 重新决定。 */
     private fun isExcludedLocalState(key: String): Boolean = key == KEY_DEFAULT_FOLDER_MIGRATED

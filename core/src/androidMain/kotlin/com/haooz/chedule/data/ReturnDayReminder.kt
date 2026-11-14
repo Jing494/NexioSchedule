@@ -1,6 +1,9 @@
 package com.haooz.chedule.data
 
 import android.content.Context
+import com.haooz.chedule.data.holiday.HolidayEntry
+import com.haooz.chedule.data.holiday.HolidayManager
+import com.haooz.chedule.data.repo.CourseRepository
 import kotlinx.datetime.LocalDate as KxLocalDate
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
