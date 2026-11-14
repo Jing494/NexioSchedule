@@ -1882,7 +1882,7 @@ object CourseReminderHelper {
         startMillis: Long,
         endMillis: Long,
     ) {
-        context.getSharedPreferences("countdown_state", Context.MODE_PRIVATE).edit {
+        AppStorage.store("countdown_state").edit {
             putBoolean("active", true)
                 .putBoolean("test_mode", true)
                 .putBoolean("in_class_active", false)
@@ -2417,7 +2417,7 @@ object CourseReminderHelper {
         val repository = CourseRepository()
         val today = java.time.LocalDate.now()
         val todayKey = today.toString()
-        val state = context.getSharedPreferences(RETURN_DAY_STATE_PREFS, Context.MODE_PRIVATE)
+        val state = AppStorage.store(RETURN_DAY_STATE_PREFS)
 
         val span = ReturnDayReminder.currentHolidaySpan(context, today)
         val balanceTarget = java.time.LocalTime.of(
@@ -2428,7 +2428,7 @@ object CourseReminderHelper {
             repository.getReturnDayBalanceEnabled() &&
             balanceLeadDaysAllow(repository, span) &&
             !java.time.LocalTime.now().isBefore(balanceTarget) &&
-            state.getString(KEY_RETURN_BALANCE_DATE, null) != todayKey
+            state.getStringOrNull(KEY_RETURN_BALANCE_DATE) != todayKey
         ) {
             val (title, body) = balanceNotificationText(context, repository, span)
             showReminderNotification(
@@ -2448,7 +2448,7 @@ object CourseReminderHelper {
                 repository.getReturnDayPrepMinute(),
             )
             if (!java.time.LocalTime.now().isBefore(prepTarget) &&
-                state.getString(KEY_RETURN_PREP_DATE, null) != todayKey
+                state.getStringOrNull(KEY_RETURN_PREP_DATE) != todayKey
             ) {
                 showReminderNotification(
                     context,
@@ -2591,7 +2591,7 @@ object CourseReminderHelper {
         }
         val trigger = at.timeInMillis
         val now = System.currentTimeMillis()
-        val state = context.getSharedPreferences(RETURN_DAY_STATE_PREFS, Context.MODE_PRIVATE)
+        val state = AppStorage.store(RETURN_DAY_STATE_PREFS)
         val sameTrigger = state.getLong(triggerKey, -1L) == trigger
         val recentEnough = now - state.getLong(heartbeatKey, 0L) < 6 * 60 * 60 * 1000L
         if (sameTrigger && recentEnough) return
@@ -2631,7 +2631,7 @@ object CourseReminderHelper {
         )
         alarmManager.cancel(pendingIntent)
         // 清掉去抖状态：开关重新打开时必须能立刻排上
-        context.getSharedPreferences(RETURN_DAY_STATE_PREFS, Context.MODE_PRIVATE)
+        AppStorage.store(RETURN_DAY_STATE_PREFS)
             .edit { remove(triggerKey); remove(heartbeatKey) }
     }
 
@@ -2664,7 +2664,7 @@ object CourseReminderHelper {
         val now = System.currentTimeMillis()
         // 窗口放到 24 小时：返校提醒是**前一晚**推的，此时距次日傍晚开课可能超过 12 小时。
         if (now >= startMillis || startMillis - now > 24 * 60 * 60 * 1000L) return
-        val state = context.getSharedPreferences(RETURN_DAY_STATE_PREFS, Context.MODE_PRIVATE)
+        val state = AppStorage.store(RETURN_DAY_STATE_PREFS)
         if (now - state.getLong(KEY_RETURN_LIVE_PUSH, 0L) < 15 * 60 * 1000L) return
         val span = ReturnDayReminder.currentHolidaySpan(context, targetDate)
         showReturnDayLiveNotification(
@@ -2749,7 +2749,7 @@ object CourseReminderHelper {
                 CourseRepository().getLiveProgressStyle()
         if (useProgressStyle) {
             val styleBuilder = Notification.Builder(context, CHANNEL_LIVE_ID)
-                .setSmallIcon(R.mipmap.ic_launcher)
+                .setSmallIcon(R.drawable.ic_notification_calendar)
                 .setContentTitle(title)
                 .setContentText(content)
                 .setContentIntent(contentIntent)
@@ -2784,7 +2784,7 @@ object CourseReminderHelper {
             return
         }
         val baseBuilder = NotificationCompat.Builder(context, CHANNEL_LIVE_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_calendar)
             .setContentTitle(title)
             .setContentText(content)
             .setStyle(NotificationCompat.BigTextStyle().bigText(content))

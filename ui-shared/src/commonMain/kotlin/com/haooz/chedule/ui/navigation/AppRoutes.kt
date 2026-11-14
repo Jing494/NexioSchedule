@@ -1,7 +1,5 @@
 package com.haooz.chedule.ui.navigation
 
-import com.haooz.chedule.ui.components.NoopWatchSyncController
-import com.haooz.chedule.ui.components.WatchSyncController
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
