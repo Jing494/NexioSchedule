@@ -11,6 +11,20 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+/**
+ * 备份范围：**本 fork 与上游的故意分歧**（见 LOCAL-CHANGES §三）。
+ *
+ * 上游把「全量备份」定义成"课表数据 + 节假日/调休"，有意把提醒 / 勿扰 / 外观
+ * 这些应用功能设置挡在外面；本 fork 选择**带上全部用户设置** —— 换设备或重装后，
+ * 课前提醒 / 超级岛开关 / 勿扰 / 假期余额 / 返校准备清单 / 小部件档位 / 搭配外观
+ * 不该静默回到默认值（当初就是"恢复了但设置全变了、还不报错"才改的）。
+ *
+ * ⚠ 上游同名测试断言的正是**相反**的语义（"设备本地设置不该进备份"）。
+ * 每次跟上游都要**保住这个文件**，否则行为会被测试倒逼回去。
+ * 口径仍然成立的两条硬约束（也是上游那版测试想保护的）：
+ * - 瞬时/缓存/凭据类**必须**排除（见 [excludedKeys]）；
+ * - 导入备份**不丢本机设置**、也不该把凭据类写回去。
+ */
 class BackupScopeTest {
 
     private lateinit var repository: CourseRepository
@@ -41,12 +55,21 @@ class BackupScopeTest {
     }
 
     @Test
-    fun `导出只含课表内容`() {
+    fun `导出含课表内容与全部用户设置`() {
         val backup = repository.exportAllPreferences()
         assertTrue("schedule_备份范围_courses" in backup, "课程必须进备份")
         assertTrue("schedule_names" in backup, "课表名必须进备份")
-        deviceKeys.forEach { key ->
-            assertFalse(key in backup, "$key 是设备本地设置，不该进备份")
+        // ★ fork 语义：这些**要**进备份（上游那版断言的是 assertFalse）
+        userSettingKeys.forEach { key ->
+            assertTrue(key in backup, "$key 是用户设置，本 fork 要把它们带走")
+        }
+    }
+
+    @Test
+    fun `瞬时状态缓存与凭据不进备份`() {
+        val backup = repository.exportAllPreferences()
+        excludedKeys.forEach { key ->
+            assertFalse(key in backup, "$key 不该进备份（瞬时 / 缓存 / 凭据）")
         }
     }
 
@@ -62,12 +85,18 @@ class BackupScopeTest {
     }
 
     private companion object {
-        val deviceKeys = listOf(
+        /** 本 fork 认为**必须**跟着备份走的用户设置。 */
+        val userSettingKeys = listOf(
             "pre_class_reminder", "pre_class_reminder_minutes",
             "next_day_reminder", "next_day_reminder_hour", "next_day_reminder_minute",
             "island_notification", "class_dnd_enabled", "class_dnd_mode",
             "widget_padding_mode", "default_homepage", "shift_mode_enabled",
-            "shift_selected_schedules", "appearance_style", "wallpaper_uri",
+            "shift_selected_schedules",
+        )
+
+        /** 瞬时 / 缓存 / 凭据：两端都同意**不**进备份。 */
+        val excludedKeys = listOf(
+            "default_folder_migrated",
         )
     }
 }
