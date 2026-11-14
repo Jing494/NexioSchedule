@@ -12,108 +12,137 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.ui.text.style.TextAlign
-import com.haooz.chedule.ui.components.CardExpand
-import com.haooz.chedule.ui.components.cardRevealLayer
-import com.haooz.chedule.ui.components.rememberCardRevealState
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick as onSemanticsClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpOffset
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.haooz.chedule.data.platform.ioDispatcher
+import com.haooz.chedule.data.platform.showToast
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.repo.CourseRepository
+import com.haooz.chedule.data.storage.ScheduleFolder
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.i18n.SwitchStr
+import com.haooz.chedule.i18n.orDefaultName
+import com.haooz.chedule.ui.basic.LiquidTopBarButton
+import com.haooz.chedule.ui.components.CardExpand
+import com.haooz.chedule.ui.components.cardRevealLayer
+import com.haooz.chedule.ui.components.rememberCardRevealState
+import com.haooz.chedule.ui.components.text.material.Text as Text
+import com.haooz.chedule.ui.effects.liquidglass.InteractiveHighlight
+import com.haooz.chedule.ui.navigation.NAV_BG_DIM
+import com.haooz.chedule.ui.navigation.NAV_ENTER_DURATION
+import com.haooz.chedule.ui.navigation.NAV_ENTER_EASING
+import com.haooz.chedule.ui.navigation.NAV_EXIT_DURATION
+import com.haooz.chedule.ui.navigation.NAV_EXIT_EASING
+import com.haooz.chedule.ui.navigation.NAV_PARALLAX
+import com.haooz.chedule.ui.screens.SemesterSchedulePreviewScreen
+import com.haooz.softglass.backdrop.GlassBackdrop
+import com.haooz.softglass.glass.BarFill
+import com.haooz.softglass.glass.BrightLargeTone
+import com.haooz.softglass.glass.SOFT_GLASS_LIVE_SHADER
+import com.haooz.chedule.ui.glass.ScheduleSoftGlassStyle
+import com.haooz.softglass.glass.applySoftGlass
+import com.haooz.chedule.ui.utils.AppMaterialSettings
 import com.haooz.chedule.ui.utils.LocalNativeDocumentChrome
-import com.haooz.chedule.ui.utils.hostVerticalBarEdge
 import com.haooz.chedule.ui.utils.NativeDocumentAction
 import com.haooz.chedule.ui.utils.NativeDocumentActionEffect
 import com.haooz.chedule.ui.utils.NativeDocumentLeadingActionEffect
-import com.haooz.chedule.ui.utils.NativeDocumentSecondaryActionEffect
 import com.haooz.chedule.ui.utils.NativeDocumentOverlayEffect
-import com.haooz.chedule.data.CourseRepository
-import com.haooz.chedule.data.ScheduleFolder
-import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBar
-import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBarDefaults
-import com.haooz.chedule.ui.basic.LiquidTopBarButton
-import top.yukonga.miuix.kmp.layout.ProgressiveBlurTopBar
-import top.yukonga.miuix.kmp.layout.collapsibleTopInset
-import top.yukonga.miuix.kmp.layout.rememberSharedScrollBehavior
-import com.kyant.backdrop.edgelight.edgeLight
-import com.haooz.chedule.ui.utils.rememberDefaultEdgeLight
-import com.haooz.chedule.ui.effects.liquidglass.InteractiveHighlight
+import com.haooz.chedule.ui.utils.NativeDocumentSecondaryActionEffect
+import com.haooz.chedule.ui.utils.TransitionLayerSnapshot
+import com.haooz.chedule.ui.utils.bottomFloatingPadding
+import com.haooz.chedule.ui.utils.clipDuringTransition
+import com.haooz.chedule.ui.utils.hostVerticalBarEdge
 import com.haooz.chedule.ui.utils.isAppDarkTheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.isRenderEffectSupported
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
-import com.kyant.capsule.ContinuousCapsule
+import com.haooz.chedule.ui.utils.rememberScreenCornerRadiiPx
+import com.haooz.chedule.ui.utils.toShape
+import com.haooz.softglass.backdrop.backdrops.layerBackdrop as liquidGlassLayerBackdrop
+import com.haooz.softglass.backdrop.drawBackdrop
+import com.haooz.softglass.backdrop.effects.blur
+import com.haooz.softglass.backdrop.effects.runtimeShaderEffect
+import com.haooz.softglass.platform.isRenderEffectSupported
+import com.haooz.softglass.shape.ContinuousCapsule
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlin.math.sign
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -135,23 +164,32 @@ import top.yukonga.miuix.kmp.icon.extended.Folder
 import top.yukonga.miuix.kmp.icon.extended.FolderFill
 import top.yukonga.miuix.kmp.icon.extended.Forward
 import top.yukonga.miuix.kmp.icon.extended.MoveFile
+import top.yukonga.miuix.kmp.icon.extended.Show
+import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBar
+import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBarDefaults
+import top.yukonga.miuix.kmp.layout.ProgressiveBlurTopBar
+import top.yukonga.miuix.kmp.layout.collapsibleTopInset
+import top.yukonga.miuix.kmp.layout.isTabletWidth
+import top.yukonga.miuix.kmp.layout.rememberSharedScrollBehavior
+import top.yukonga.miuix.kmp.layout.rememberTopBarMaterialState
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.CheckboxLocation
 import top.yukonga.miuix.kmp.preference.CheckboxPreference
-import com.haooz.chedule.ui.utils.bottomFloatingPadding
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import top.yukonga.miuix.kmp.utils.NavigationBackHandlerFor
+import top.yukonga.miuix.kmp.utils.PressFeedbackType
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import kotlin.math.abs
-import kotlin.math.sign
-import kotlin.time.Duration.Companion.milliseconds
-import androidx.compose.ui.graphics.Color as ComposeColor
-import com.kyant.backdrop.backdrops.layerBackdrop as liquidGlassLayerBackdrop
-import com.haooz.chedule.data.showToast
-import com.haooz.chedule.ui.utils.TransitionLayerSnapshot
-import androidx.compose.ui.graphics.layer.drawLayer
-import top.yukonga.miuix.kmp.layout.isTabletWidth
+
+/** 切换课表页底部胶囊的柔光 shader 缓存键：尺寸与其他玻璃件不同，不能共用 uniform。 */
+private const val LIVE_SWITCH_BAR_GLASS_KEY = "NexioSoftGlassLiveSwitchBar"
+
+/** 学期课表预览的入参快照：退出动画期间页面数据仍按打开时渲染 */
+private data class SemesterPreviewTarget(
+    val name: String,
+    val courses: List<Course>,
+    val sections: Triple<Int, Int, Int>,
+)
 
 @Composable
 fun SwitchScheduleScreen(
@@ -170,6 +208,8 @@ fun SwitchScheduleScreen(
     onShareSchedule: (scheduleName: String, onSharingChanged: (Boolean) -> Unit) -> Unit = { _, _ -> },
     /** 分享前置检查（课表是否为空）：宿主注入（buildShareScheduleMap 依赖 Gson=R2，留在宿主） */
     isScheduleShareable: (scheduleName: String) -> Boolean = { true },
+    /** 保存学期课表图片：宿主注入；`null` 时预览界面不显示下载按钮（非 Android 宿主） */
+    onSaveScheduleImage: ((ImageBitmap) -> Unit)? = null,
     /** 内嵌时由外部指定内容顶距，替代按整屏状态栏+折叠标题推算 */
     contentTopPadding: androidx.compose.ui.unit.Dp? = null,
     /** 列表纵向滚动量回调，供内嵌顶栏遮罩使用 */
@@ -260,11 +300,11 @@ fun SwitchScheduleScreen(
     }
     var scheduleSummaries by remember {
         mutableStateOf(
-            initialScheduleSummaries?.toMutableMap() ?: mutableMapOf()
+            initialScheduleSummaries?.toMutableMap() ?: mutableMapOf<String, String>()
         )
     }
     LaunchedEffect(initialScheduleSummaries) {
-        scheduleSummaries = initialScheduleSummaries?.toMutableMap() ?: mutableMapOf()
+        scheduleSummaries = initialScheduleSummaries?.toMutableMap() ?: mutableMapOf<String, String>()
     }
     // 文件夹：只存「课表名引用」，课表全局顺序仍由 scheduleNames 决定
     var folders by remember { mutableStateOf(repository.getScheduleFolders()) }
@@ -301,6 +341,12 @@ fun SwitchScheduleScreen(
     var isSharingSchedule by remember { mutableStateOf(false) }
     var showShareConfirmDialog by remember { mutableStateOf(false) }
     var shareConfirmScheduleName by remember { mutableStateOf<String?>(null) }
+    // —— 学期课表预览（手机端入口）：点课表行右侧「预览」打开 ——
+    var previewScheduleName by remember { mutableStateOf<String?>(null) }
+
+    fun closePreview() {
+        previewScheduleName = null
+    }
 
     fun performShareSchedule(scheduleName: String) {
         if (isSharingSchedule) return
@@ -370,6 +416,9 @@ fun SwitchScheduleScreen(
                 }
             },
             onClick = { selectSchedule(scheduleName, cardBounds) },
+            onPreview = if (!embedded) {
+                { previewScheduleName = scheduleName }
+            } else null,
             onLongClick = {
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 if (!isEditMode) {
@@ -390,7 +439,7 @@ fun SwitchScheduleScreen(
         itemModifier: Modifier
     ) {
         FolderCardRow(
-            folderName = folder.name,
+            folderName = folder.name.orDefaultName(SwitchStr.defaultFolderName),
             scheduleCount = folder.schedules.count { it in scheduleNames },
             expanded = folder.id in expandedFolderIds,
             isEditMode = isEditMode,
@@ -429,7 +478,7 @@ fun SwitchScheduleScreen(
     val editFocusRequester = remember { FocusRequester() }
     // 注意：这里不要再挂一个未被消费的 layerBackdrop —— 它会把整页内容每帧额外离屏录制一遍，
     // 而录制结果没有任何 drawBackdrop 使用，等于白烧一整条渲染管线。
-    val liquidGlassBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
+    val liquidGlassBackdrop = com.haooz.softglass.backdrop.backdrops.rememberLayerBackdrop()
     val isTablet = isTabletWidth()
     val tabletHorizontalPadding = if (isTablet) 20.dp else 16.dp
 
@@ -471,12 +520,22 @@ fun SwitchScheduleScreen(
     )
 
     NavigationBackHandlerFor(
-        enabled = !isEditMode && !embedded,
+        enabled = !isEditMode && !embedded && previewScheduleName == null,
         onBackCompleted = { dismissKeepCurrent() },
         onBackCancelled = { }
     )
 
-    val displayTitle = if (isEditMode) "编辑课表" else "全部课表"
+    NavigationBackHandlerFor(
+        enabled = previewScheduleName != null && !isEditMode,
+        onBackCompleted = { closePreview() },
+        onBackCancelled = { }
+    )
+
+    val displayTitle = when {
+        isEditMode -> SwitchStr.editSchedule()
+        else -> SwitchStr.allSchedules()
+    }
+    val isPreviewing = previewScheduleName != null
 
     val modalActive = showAddDialog || showEditDialog || showDeleteDialog ||
         showAddFolderDialog || showEditFolderDialog || showMoveDialog ||
@@ -490,22 +549,28 @@ fun SwitchScheduleScreen(
         NativeDocumentOverlayEffect(isEditMode || modalActive)
         NativeDocumentLeadingActionEffect(NativeDocumentAction(
             symbol = if (isEditMode) "xmark" else "chevron.backward",
-            label = if (isEditMode) "关闭编辑" else "返回",
+            label = if (isEditMode) SwitchStr.closeEdit() else CommonStr.back(),
             enabled = !modalActive,
-            onClick = { if (isEditMode) exitEditMode() else dismissKeepCurrent() },
+            onClick = {
+                when {
+                    isPreviewing -> closePreview()
+                    isEditMode -> exitEditMode()
+                    else -> dismissKeepCurrent()
+                }
+            },
         ))
         NativeDocumentActionEffect(NativeDocumentAction(
-            symbol = if (isEditMode) "" else "plus",
-            label = "添加课表",
-            enabled = !isEditMode && !modalActive,
+            symbol = if (isEditMode || isPreviewing) "" else "plus",
+            label = SwitchStr.addSchedule(),
+            enabled = !isEditMode && !isPreviewing && !modalActive,
             onClick = {
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                 showAddDialog = true
             },
         ))
-        NativeDocumentSecondaryActionEffect(if (isEditMode) null else NativeDocumentAction(
+        NativeDocumentSecondaryActionEffect(if (isEditMode || isPreviewing) null else NativeDocumentAction(
             symbol = "folder.badge.plus",
-            label = "新建文件夹",
+            label = SwitchStr.newFolder(),
             enabled = !modalActive,
             onClick = {
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -514,12 +579,67 @@ fun SwitchScheduleScreen(
         ))
     }
 
+    // 学期课表预览：按标准路由转场（栈顶右侧推入 / 退出，底层视差 + 压暗）
+    val previewProgress = remember { Animatable(0f) }
+    var previewTarget by remember { mutableStateOf<SemesterPreviewTarget?>(null) }
+    LaunchedEffect(previewScheduleName) {
+        val name = previewScheduleName
+        if (name != null) {
+            // 读盘放 IO：课程与节次配置都要读仓储，放主线程会在点按当帧卡住转场
+            val loaded = withContext(ioDispatcher) {
+                SemesterPreviewTarget(
+                    name = name,
+                    courses = repository.getCoursesForSchedule(name),
+                    sections = Triple(
+                        repository.getMorningSections(name),
+                        repository.getAfternoonSections(name),
+                        repository.getEveningSections(name),
+                    ),
+                )
+            }
+            if (previewScheduleName != name) return@LaunchedEffect
+            previewTarget = loaded
+            // 等一帧让预览页完成首次组合与布局，再开始推入
+            withFrameNanos { }
+            previewProgress.animateTo(
+                1f,
+                tween(NAV_ENTER_DURATION, easing = NAV_ENTER_EASING),
+            )
+        } else {
+            previewProgress.animateTo(
+                0f,
+                tween(NAV_EXIT_DURATION, easing = NAV_EXIT_EASING),
+            )
+            previewTarget = null
+        }
+    }
+    val previewCornerRadii = rememberScreenCornerRadiiPx()
+    val previewClipShape = remember(previewCornerRadii, density) {
+        if (previewCornerRadii.maxRadius > 0f) previewCornerRadii.toShape(density) else null
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
+        // 预览打开时主页整体左移，模拟路由下层视差
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints)
+                    layout(placeable.width, placeable.height) {
+                        placeable.place(
+                            (-NAV_PARALLAX * previewProgress.value * placeable.width).roundToInt(),
+                            0,
+                        )
+                    }
+                },
+        ) {
         Scaffold(
             modifier = Modifier.consumeWindowInsets(PaddingValues(top = nativeBarInset)),
             topBar = {
                 // 内嵌分栏：标题/操作由外层顶栏承载，这里不画系统式顶栏
                 if (!embedded) {
+                // 本页唯一材质状态：按钮玻璃走全站同一判据（本页遮罩常驻，不接 maskAlpha）
+                val material = rememberTopBarMaterialState(scrollBehavior)
                 ProgressiveBlurTopBar(
                     backdrop = liquidGlassBackdrop,
                     topInsetAdjustment = nativeBarInset,
@@ -530,6 +650,7 @@ fun SwitchScheduleScreen(
                         largeTitle = displayTitle,
                         modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
                         scrollBehavior = scrollBehavior,
+                        materialState = material,
                         contentPadding = {},
                         startAction = if (nativeNavigation) null else { backdropAlpha, shadowAlpha ->
                             LiquidTopBarButton(
@@ -542,7 +663,7 @@ fun SwitchScheduleScreen(
                                 },
                                 backdrop = liquidGlassBackdrop,
                                 icon = if (isEditMode) MiuixIcons.Normal.Close else MiuixIcons.ChevronBackward,
-                                contentDescription = if (isEditMode) "关闭" else "返回",
+                                contentDescription = if (isEditMode) CommonStr.close() else CommonStr.back(),
                                 performHapticFeedback = false,
                                 iconSize = if (isEditMode) 24.dp else 25.dp,
                                 iconOffset = if (isEditMode) DpOffset.Zero else DpOffset(
@@ -562,7 +683,7 @@ fun SwitchScheduleScreen(
                                     },
                                     backdrop = liquidGlassBackdrop,
                                     icon = MiuixIcons.Add,
-                                    contentDescription = "添加",
+                                    contentDescription = CommonStr.add(),
                                     iconSize = 24.dp,
                                     backdropAlpha = backdropAlpha,
                                     shadowAlpha = shadowAlpha,
@@ -575,7 +696,7 @@ fun SwitchScheduleScreen(
                                     },
                                     backdrop = liquidGlassBackdrop,
                                     icon = MiuixIcons.AddFolder,
-                                    contentDescription = "新建文件夹",
+                                    contentDescription = SwitchStr.newFolder(),
                                     iconSize = 26.dp,
                                     backdropAlpha = backdropAlpha,
                                     shadowAlpha = shadowAlpha,
@@ -631,12 +752,48 @@ fun SwitchScheduleScreen(
                         )
                     }
                     // 胶囊底色：莫奈取色下跟随 surfaceContainer（与首页底栏、教务导入胶囊同一套）；
-                    // 非莫奈保持原硬编码（亮 #FFFFFF/0.6、暗 #121212/0.54）
+                    // 非莫奈保持原硬编码（亮 #FFFFFF/0.6、暗 #121212/0.54）；无材质档实色
                     val containerColor = if (MiuixTheme.isDynamicColor) {
                         MiuixTheme.colorScheme.surfaceContainer
-                            .copy(alpha = if (isAppDarkTheme()) 0.54f else 0.6f)
-                    } else if (!isAppDarkTheme()) Color(0xFFFFFFFF).copy(0.6f)
-                    else Color(0xFF121212).copy(0.54f)
+                            .copy(alpha = com.haooz.chedule.ui.utils.AppMaterialSettings.solidSurfaceAlpha(if (isAppDarkTheme()) 0.54f else 0.6f))
+                    } else if (!isAppDarkTheme()) Color(0xFFFFFFFF)
+                        .copy(com.haooz.chedule.ui.utils.AppMaterialSettings.solidSurfaceAlpha(0.6f))
+                    else Color(0xFF121212).copy(com.haooz.chedule.ui.utils.AppMaterialSettings.solidSurfaceAlpha(0.54f))
+
+                    // 柔光玻璃：材质、档位、调色全由材质层给出；模糊走档位值，无材质档整体关。
+                    // effects / shape / onDrawSurface 按引用比较，lambda 每帧新建会每帧重录采样层。
+                    val bottomBarGlassBlur = AppMaterialSettings.glassBlurDp()
+                    val bottomBarGlassOn = AppMaterialSettings.glassEffectsEnabled()
+                    val bottomBarGlassStyle = AppMaterialSettings.chromeGlassStyle(
+                        base = ScheduleSoftGlassStyle,
+                        isDark = isAppDarkTheme(),
+                        // 底部胶囊是「贴底 bar」类玻璃：走 BarFill + 大控件材质。
+                        fill = BarFill,
+                        tone = BrightLargeTone,
+                    )
+                    val bottomBarShapeBlock: () -> Shape = remember { { ContinuousCapsule() } }
+                    val bottomBarEffects: com.haooz.softglass.backdrop.GlassEffectScope.() -> Unit =
+                        remember(bottomBarGlassBlur, bottomBarGlassOn, bottomBarGlassStyle) {
+                            {
+                                if (bottomBarGlassOn) {
+                                    blur(bottomBarGlassBlur.dp.toPx())
+                                    runtimeShaderEffect(
+                                        key = LIVE_SWITCH_BAR_GLASS_KEY,
+                                        shaderString = SOFT_GLASS_LIVE_SHADER,
+                                        uniformShaderName = "content",
+                                    ) {
+                                        applySoftGlass(
+                                            style = bottomBarGlassStyle,
+                                            width = size.width,
+                                            height = size.height,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    val bottomBarOnDrawSurface: DrawScope.() -> Unit = remember(containerColor) {
+                        { drawRect(containerColor) }
+                    }
 
                     // 按压高光：整条胶囊按哪亮哪。触发挂整条胶囊；下面的总手势会消费事件，
                     // 但 gestureModifier 是 observeConsumed=true 的纯视觉观察者，照常跟手。
@@ -688,18 +845,10 @@ fun SwitchScheduleScreen(
                                 }
                                 .drawBackdrop(
                                     backdrop = liquidGlassBackdrop,
-                                    shape = { ContinuousCapsule() },
-                                    effects = {
-                                        vibrancy()
-                                        blur(4f.dp.toPx())
-                                        lens(6f.dp.toPx(), 36f.dp.toPx())
-                                    },
-                                    highlight = null,
-                                    onDrawSurface = { drawRect(containerColor) }
-                                )
-                                .edgeLight(
-                                    shape = ContinuousCapsule(),
-                                    edgeLight = rememberDefaultEdgeLight(baseColor = containerColor),
+                                    shape = bottomBarShapeBlock,
+                                    effects = bottomBarEffects,
+                                    // 柔光自己画玻璃色与方向光；无材质档不跑 shader，必须留容器色
+                                    onDrawSurface = if (bottomBarGlassOn) null else bottomBarOnDrawSurface,
                                 )
                                 // 高光画在材质之上、条目之下（条目在 drawContent 里更靠内），
                                 // 且被 drawBackdrop 的 clipPath 裁进胶囊外形
@@ -785,7 +934,7 @@ fun SwitchScheduleScreen(
                                     icon = MiuixIcons.Forward,
                                     state = dragSelect,
                                     index = 0,
-                                    label = "分享",
+                                    label = SwitchStr.share(),
                                     enabled = selectedFolders.isEmpty() && selectedSchedules.size == 1 && !isSharingSchedule,
                                     onClick = {
                                         com.haooz.chedule.ui.utils.FeatureLog.switchSchedule("share_dialog")
@@ -793,7 +942,7 @@ fun SwitchScheduleScreen(
                                         val selected = selectedSchedules.firstOrNull()
                                         if (selected != null && !isSharingSchedule) {
                                             if (!isScheduleShareable(selected)) {
-                                                showToast("「$selected」课表为空，无法分享")
+                                                showToast(SwitchStr.cannotShareEmpty(selected))
                                             } else {
                                                 shareConfirmScheduleName = selected
                                                 showShareConfirmDialog = true
@@ -805,7 +954,7 @@ fun SwitchScheduleScreen(
                                     icon = MiuixIcons.Edit,
                                     state = dragSelect,
                                     index = 1,
-                                    label = "编辑",
+                                    label = CommonStr.edit(),
                                     enabled = checkedCount == 1,
                                     onClick = {
                                         hapticFeedback.performHapticFeedback(HapticFeedbackType.KeyboardTap)
@@ -815,7 +964,7 @@ fun SwitchScheduleScreen(
                                             val folder = folders.find { it.id == folderId }
                                             if (folder != null) {
                                                 editingFolderId = folder.id
-                                                editFolderName = folder.name
+                                                editFolderName = folder.name.orDefaultName(SwitchStr.defaultFolderName)
                                                 showEditFolderDialog = true
                                             }
                                             return@BottomBarItem
@@ -832,7 +981,7 @@ fun SwitchScheduleScreen(
                                     icon = MiuixIcons.MoveFile,
                                     state = dragSelect,
                                     index = 2,
-                                    label = "移动",
+                                    label = SwitchStr.move(),
                                     enabled = selectedSchedules.isNotEmpty() && selectedFolders.isEmpty(),
                                     onClick = {
                                         com.haooz.chedule.ui.utils.FeatureLog.switchSchedule("move_dialog")
@@ -844,7 +993,7 @@ fun SwitchScheduleScreen(
                                     icon = MiuixIcons.Delete,
                                     state = dragSelect,
                                     index = 3,
-                                    label = "删除",
+                                    label = CommonStr.delete(),
                                     enabled = checkedCount >= 1,
                                     onClick = {
                                         hapticFeedback.performHapticFeedback(HapticFeedbackType.KeyboardTap)
@@ -886,7 +1035,11 @@ fun SwitchScheduleScreen(
                             drawContent()
                         }
                     }
-                    .liquidGlassLayerBackdrop(liquidGlassBackdrop)
+                    .then(
+                        // 无材质档：玻璃全关，采样录屏层不挂
+                        if (com.haooz.chedule.ui.utils.AppMaterialSettings.isNoneTier()) Modifier
+                        else Modifier.liquidGlassLayerBackdrop(liquidGlassBackdrop)
+                    )
             ) {
                 // 注意：这里不要再 collect firstVisibleItemScrollOffset 写 state ——
                 // 那会让整页在滚动时每像素重组一次（listScrollY 之前根本没被读取，纯属白烧）。
@@ -990,7 +1143,7 @@ fun SwitchScheduleScreen(
                                                 folder.schedules.filter { it in scheduleNames }
                                             CardExpand(visible = children.isEmpty()) {
                                                 Text(
-                                                    text = "文件夹内暂无课表",
+                                                    text = SwitchStr.folderEmpty(),
                                                     fontSize = 14.sp,
                                                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                                     modifier = Modifier.padding(
@@ -1035,8 +1188,8 @@ fun SwitchScheduleScreen(
             }
 
             OverlayDialog(
-                title = "分享课表",
-                summary = "将课表「${shareConfirmScheduleName.orEmpty()}」上传生成分享口令？\n口令 30 分钟内有效",
+                title = SwitchStr.shareScheduleTitle(),
+                summary = SwitchStr.shareConfirmSummary(shareConfirmScheduleName.orEmpty()),
                 show = showShareConfirmDialog,
                 liquidGlassBackdrop = liquidGlassBackdrop,
                 onDismissRequest = {
@@ -1051,7 +1204,7 @@ fun SwitchScheduleScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     TextButton(
-                        text = "取消",
+                        text = CommonStr.cancel(),
                         onClick = {
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                             showShareConfirmDialog = false
@@ -1060,7 +1213,7 @@ fun SwitchScheduleScreen(
                         modifier = Modifier.weight(1f)
                     )
                     TextButton(
-                        text = "确认分享",
+                        text = SwitchStr.confirmShare(),
                         onClick = {
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                             val name = shareConfirmScheduleName
@@ -1077,7 +1230,7 @@ fun SwitchScheduleScreen(
             }
 
             OverlayDialog(
-                title = "新建课表",
+                title = SwitchStr.newSchedule(),
                 show = showAddDialog,
                 liquidGlassBackdrop = liquidGlassBackdrop,
                 onDismissRequest = {
@@ -1092,7 +1245,7 @@ fun SwitchScheduleScreen(
                     NativeMiuixTextField(
                         value = newScheduleName,
                         onValueChange = { newScheduleName = it },
-                        label = "课表名称",
+                        label = SwitchStr.scheduleNameLabel(),
                         modifier = Modifier.fillMaxWidth(),
                         requestFocus = showAddDialog
                     )
@@ -1103,7 +1256,7 @@ fun SwitchScheduleScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         TextButton(
-                            text = "取消",
+                            text = CommonStr.cancel(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 showAddDialog = false
@@ -1112,12 +1265,12 @@ fun SwitchScheduleScreen(
                             modifier = Modifier.weight(1f)
                         )
                         TextButton(
-                            text = "确定",
+                            text = CommonStr.ok(),
                             enabled = newScheduleName.isNotBlank(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 if (scheduleNames.contains(newScheduleName)) {
-                                    showToast("已存在同名课表")
+                                    showToast(SwitchStr.duplicateSchedule())
                                     return@TextButton
                                 }
                                 val name = newScheduleName
@@ -1139,7 +1292,7 @@ fun SwitchScheduleScreen(
             }
 
             OverlayDialog(
-                title = "编辑课表",
+                title = SwitchStr.editSchedule(),
                 show = showEditDialog,
                 liquidGlassBackdrop = liquidGlassBackdrop,
                 onDismissRequest = {
@@ -1154,7 +1307,7 @@ fun SwitchScheduleScreen(
                     NativeMiuixTextField(
                         value = editScheduleName,
                         onValueChange = { editScheduleName = it },
-                        label = "课表名称",
+                        label = SwitchStr.scheduleNameLabel(),
                         modifier = Modifier.fillMaxWidth(),
                         requestFocus = showEditDialog
                     )
@@ -1165,7 +1318,7 @@ fun SwitchScheduleScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         TextButton(
-                            text = "取消",
+                            text = CommonStr.cancel(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 showEditDialog = false
@@ -1174,11 +1327,11 @@ fun SwitchScheduleScreen(
                             modifier = Modifier.weight(1f)
                         )
                         TextButton(
-                            text = "确定",
+                            text = CommonStr.ok(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 if (editScheduleName.isBlank()) {
-                                    showToast("请输入课表名称")
+                                    showToast(SwitchStr.nameRequired())
                                     return@TextButton
                                 }
                                 if (editScheduleName == editingScheduleName) {
@@ -1187,7 +1340,7 @@ fun SwitchScheduleScreen(
                                     return@TextButton
                                 }
                                 if (scheduleNames.contains(editScheduleName)) {
-                                    showToast("已存在同名课表")
+                                    showToast(SwitchStr.duplicateSchedule())
                                     return@TextButton
                                 }
                                 val oldName = editingScheduleName
@@ -1215,16 +1368,16 @@ fun SwitchScheduleScreen(
             val deleteFolderCount = selectedFolders.size
             val deleteScheduleCount = selectedSchedules.size
             val deleteDialogTitle = when {
-                deleteFolderCount > 0 && deleteScheduleCount > 0 -> "删除课表与文件夹"
-                deleteFolderCount > 0 -> "解散文件夹"
-                else -> "删除课表"
+                deleteFolderCount > 0 && deleteScheduleCount > 0 -> SwitchStr.deleteSchedulesAndFolders()
+                deleteFolderCount > 0 -> SwitchStr.disbandFolder()
+                else -> SwitchStr.deleteSchedule()
             }
             val deleteDialogText = when {
                 deleteFolderCount > 0 && deleteScheduleCount > 0 ->
-                    "选中的 $deleteScheduleCount 个课表将被删除；选中的 $deleteFolderCount 个文件夹将解散，其中课表移回「全部课表」。"
+                    SwitchStr.deleteMixedConfirm(deleteScheduleCount, deleteFolderCount)
                 deleteFolderCount > 0 ->
-                    "选中的文件夹将被解散，其中课表移回「全部课表」，课表不会被删除。"
-                else -> "确定要删除选中的课表吗？"
+                    SwitchStr.disbandOnlyConfirm()
+                else -> SwitchStr.deleteSchedulesConfirm()
             }
             OverlayDialog(
                 title = deleteDialogTitle,
@@ -1250,7 +1403,7 @@ fun SwitchScheduleScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         TextButton(
-                            text = "取消",
+                            text = CommonStr.cancel(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 showDeleteDialog = false
@@ -1258,7 +1411,7 @@ fun SwitchScheduleScreen(
                             modifier = Modifier.weight(1f)
                         )
                         TextButton(
-                            text = if (deleteScheduleCount > 0) "删除" else "解散",
+                            text = if (deleteScheduleCount > 0) CommonStr.delete() else SwitchStr.disband(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 val selectedNames = selectedSchedules.toList()
@@ -1295,7 +1448,7 @@ fun SwitchScheduleScreen(
             }
 
             OverlayDialog(
-                title = "新建文件夹",
+                title = SwitchStr.newFolder(),
                 show = showAddFolderDialog,
                 liquidGlassBackdrop = liquidGlassBackdrop,
                 onDismissRequest = {
@@ -1310,7 +1463,7 @@ fun SwitchScheduleScreen(
                     NativeMiuixTextField(
                         value = newFolderName,
                         onValueChange = { newFolderName = it },
-                        label = "文件夹名称",
+                        label = SwitchStr.folderNameLabel(),
                         modifier = Modifier.fillMaxWidth(),
                         requestFocus = showAddFolderDialog
                     )
@@ -1321,7 +1474,7 @@ fun SwitchScheduleScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         TextButton(
-                            text = "取消",
+                            text = CommonStr.cancel(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 showAddFolderDialog = false
@@ -1330,12 +1483,12 @@ fun SwitchScheduleScreen(
                             modifier = Modifier.weight(1f)
                         )
                         TextButton(
-                            text = "确定",
+                            text = CommonStr.ok(),
                             enabled = newFolderName.isNotBlank(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 if (folders.any { it.name == newFolderName }) {
-                                    showToast("已存在同名文件夹")
+                                    showToast(SwitchStr.duplicateFolder())
                                     return@TextButton
                                 }
                                 val name = newFolderName
@@ -1357,7 +1510,7 @@ fun SwitchScheduleScreen(
             }
 
             OverlayDialog(
-                title = "重命名文件夹",
+                title = SwitchStr.renameFolder(),
                 show = showEditFolderDialog,
                 liquidGlassBackdrop = liquidGlassBackdrop,
                 onDismissRequest = {
@@ -1372,7 +1525,7 @@ fun SwitchScheduleScreen(
                     NativeMiuixTextField(
                         value = editFolderName,
                         onValueChange = { editFolderName = it },
-                        label = "文件夹名称",
+                        label = SwitchStr.folderNameLabel(),
                         modifier = Modifier.fillMaxWidth(),
                         requestFocus = showEditFolderDialog
                     )
@@ -1383,7 +1536,7 @@ fun SwitchScheduleScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         TextButton(
-                            text = "取消",
+                            text = CommonStr.cancel(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 showEditFolderDialog = false
@@ -1392,7 +1545,7 @@ fun SwitchScheduleScreen(
                             modifier = Modifier.weight(1f)
                         )
                         TextButton(
-                            text = "确定",
+                            text = CommonStr.ok(),
                             enabled = editFolderName.isNotBlank(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -1402,7 +1555,7 @@ fun SwitchScheduleScreen(
                                     return@TextButton
                                 }
                                 if (folders.any { it.name == editFolderName && it.id != editingFolderId }) {
-                                    showToast("已存在同名文件夹")
+                                    showToast(SwitchStr.duplicateFolder())
                                     return@TextButton
                                 }
                                 com.haooz.chedule.ui.utils.FeatureLog.switchSchedule(
@@ -1421,8 +1574,8 @@ fun SwitchScheduleScreen(
             }
 
             OverlayDialog(
-                title = "移动到",
-                summary = "已选中 ${selectedSchedules.size} 个课表",
+                title = SwitchStr.moveTo(),
+                summary = SwitchStr.moveSelectedCount(selectedSchedules.size),
                 show = showMoveDialog,
                 liquidGlassBackdrop = liquidGlassBackdrop,
                 onDismissRequest = { showMoveDialog = false }
@@ -1432,8 +1585,8 @@ fun SwitchScheduleScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     MoveTargetRow(
-                        title = "全部课表",
-                        subtitle = "移出文件夹，回到根目录",
+                        title = SwitchStr.allSchedules(),
+                        subtitle = SwitchStr.moveToRoot(),
                         icon = MiuixIcons.MoveFile,
                         onClick = {
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -1444,8 +1597,8 @@ fun SwitchScheduleScreen(
                     )
                     folders.forEach { folder ->
                         MoveTargetRow(
-                            title = folder.name,
-                            subtitle = "${folder.schedules.size} 个课表",
+                            title = folder.name.orDefaultName(SwitchStr.defaultFolderName),
+                            subtitle = SwitchStr.scheduleCountN(folder.schedules.size),
                             icon = MiuixIcons.Folder,
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -1460,6 +1613,44 @@ fun SwitchScheduleScreen(
                         )
                     }
                 }
+            }
+        }
+        }
+
+        // 预览层：标准路由式转场（底层压暗 + 栈顶右侧滑入）
+        val target = previewTarget
+        if (target != null) {
+            val p = previewProgress.value
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .drawBehind {
+                        if (p > 0f) drawRect(Color.Black.copy(alpha = NAV_BG_DIM * p))
+                    },
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints)
+                        layout(placeable.width, placeable.height) {
+                            placeable.place(
+                                ((1f - p) * placeable.width).roundToInt(),
+                                0,
+                            )
+                        }
+                    }
+                    .clipDuringTransition(previewClipShape) { p > 0f && p < 1f },
+            ) {
+                SemesterSchedulePreviewScreen(
+                    scheduleName = target.name,
+                    courses = target.courses,
+                    morningSections = target.sections.first,
+                    afternoonSections = target.sections.second,
+                    eveningSections = target.sections.third,
+                    onBack = { closePreview() },
+                    onSaveImage = onSaveScheduleImage,
+                )
             }
         }
     }
@@ -1479,6 +1670,7 @@ private fun ScheduleCardRow(
     itemModifier: Modifier,
     onBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit,
     onClick: () -> Unit,
+    onPreview: (() -> Unit)? = null,
     onLongClick: () -> Unit
 ) {
     // 入场/退场统一走 CardRevealSpec；当前课表不参与入场动画，与进场形变锚点对齐
@@ -1545,10 +1737,28 @@ private fun ScheduleCardRow(
                     if (isCurrent) {
                         Icon(
                             imageVector = MiuixIcons.Basic.Check,
-                            contentDescription = "当前课表",
+                            contentDescription = SwitchStr.currentSchedule(),
                             tint = MiuixTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
+                    }
+                    if (onPreview != null) {
+                        // 预览入口：点它只打开学期课表预览，不切换课表
+                        // 固定放在行尾，当前课表的对勾在它左侧，按钮位置不随勾选变化
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .clickable(onClick = onPreview),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = MiuixIcons.Show,
+                                contentDescription = SwitchStr.preview(),
+                                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.size(21.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -1600,7 +1810,7 @@ private fun FolderCardRow(
                 ) {
                     Icon(
                         imageVector = MiuixIcons.FolderFill,
-                        contentDescription = "文件夹",
+                        contentDescription = SwitchStr.folder(),
                         tint = MiuixTheme.colorScheme.primary,
                         modifier = Modifier.size(22.dp)
                     )
@@ -1613,7 +1823,7 @@ private fun FolderCardRow(
                             color = MiuixTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "$scheduleCount 个课表",
+                            text = SwitchStr.scheduleCountN(scheduleCount),
                             fontSize = 14.sp,
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                         )
@@ -1642,7 +1852,7 @@ private fun FolderCardRow(
                 ) {
                     Icon(
                         imageVector = if (expanded) MiuixIcons.FolderFill else MiuixIcons.Folder,
-                        contentDescription = "文件夹",
+                        contentDescription = SwitchStr.folder(),
                         tint = MiuixTheme.colorScheme.primary,
                         modifier = Modifier.size(22.dp)
                     )
@@ -1655,7 +1865,7 @@ private fun FolderCardRow(
                             color = MiuixTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "$scheduleCount 个课表",
+                            text = SwitchStr.scheduleCountN(scheduleCount),
                             fontSize = 14.sp,
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                         )
@@ -1871,3 +2081,4 @@ private fun RowScope.BottomBarItem(
         )
     }
 }
+

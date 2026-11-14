@@ -13,9 +13,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
@@ -24,14 +21,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import com.haooz.chedule.ui.components.CardExpand
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -54,8 +52,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
@@ -63,22 +61,41 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.haooz.chedule.data.platform.DiagnosticRecorder
+import com.haooz.chedule.data.platform.NoopDiagnosticRecorder
+import com.haooz.chedule.data.platform.PrivacyConsent
+import com.haooz.chedule.data.platform.ioDispatcher
+import com.haooz.chedule.data.platform.showToast
+import com.haooz.chedule.i18n.AboutStr
+import com.haooz.chedule.i18n.AppLanguage
+import com.haooz.chedule.i18n.LanguagePref
+import com.haooz.chedule.i18n.LanguageStore
+import com.haooz.chedule.ui.basic.OverlayDropdownMenu
+import com.haooz.chedule.i18n.CommonStr
 import com.haooz.chedule.ui.basic.LiquidTopBarButton
-import com.haooz.chedule.ui.navigation.AppRoute
-import com.haooz.chedule.ui.data.changelogData
+import com.haooz.chedule.ui.components.CardExpand
+import com.haooz.chedule.ui.components.text.material.Text as Text
 import com.haooz.chedule.ui.effects.background.BgEffectBackground
 import com.haooz.chedule.ui.effects.miuix.rememberBlurBackdrop
+import com.haooz.chedule.ui.navigation.AppRoute
+import com.haooz.chedule.ui.utils.AppMaterialSettings
 import com.haooz.chedule.ui.utils.LocalNativeDocumentChrome
 import com.haooz.chedule.ui.utils.hostVerticalBarEdge
 import com.haooz.chedule.ui.utils.isAppDarkTheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.layerBackdrop as liquidGlassLayerBackdrop
-import com.kyant.capsule.ContinuousRoundedRectangle
+import com.haooz.chedule.uishared.resources.Res
+import com.haooz.chedule.uishared.resources.ic_gitee
+import com.haooz.chedule.uishared.resources.ic_github
+import com.haooz.softglass.backdrop.GlassBackdrop
+import com.haooz.softglass.backdrop.backdrops.layerBackdrop as liquidGlassLayerBackdrop
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.jetbrains.compose.resources.painterResource
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.DropdownDefaults
+import top.yukonga.miuix.kmp.basic.DropdownEntry
+import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -94,28 +111,14 @@ import top.yukonga.miuix.kmp.icon.extended.ChevronBackward
 import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBar
 import top.yukonga.miuix.kmp.layout.ProgressiveBlurTopBar
+import top.yukonga.miuix.kmp.layout.isTabletWidth
 import top.yukonga.miuix.kmp.layout.rememberSharedScrollBehavior
+import top.yukonga.miuix.kmp.layout.rememberTopBarMaterialState
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import com.haooz.chedule.data.DiagnosticRecorder
-import com.haooz.chedule.data.NoopDiagnosticRecorder
-import com.haooz.chedule.data.showToast
-import com.haooz.chedule.data.ioDispatcher
-import top.yukonga.miuix.kmp.layout.isTabletWidth
-import org.jetbrains.compose.resources.painterResource
-import com.haooz.chedule.uishared.resources.Res
-import com.haooz.chedule.uishared.resources.ic_github
-import com.haooz.chedule.uishared.resources.ic_gitee
-
-/**
- * 关于页展示的最近几条更新日志。
- *
- * 提到文件级：`changelogData.take(3)` 每次组合都新建一个 List，而调用点用它当
- * 展开状态表的长度依据。
- */
-private val RecentChangelog = changelogData.take(3)
 
 /** 顶部留白高度（图标/名称/版本号区域下方） */
 private val LogoSpacerHeight = 340.dp
@@ -123,10 +126,10 @@ private val LogoSpacerHeight = 340.dp
 @Composable
 fun AboutScreen(
     onBack: () -> Unit,
-    liquidGlassBackdrop: com.kyant.backdrop.backdrops.LayerBackdrop,
+    liquidGlassBackdrop: com.haooz.softglass.backdrop.backdrops.LayerBackdrop,
     embedded: Boolean = false,
     /** 弹窗的玻璃采样层：内嵌时传全屏层，使弹窗能采样到左侧内容 */
-    dialogBackdrop: Backdrop? = null,
+    dialogBackdrop: GlassBackdrop? = null,
     /**
      * 打开子页面（更新日志 / 开源协议 / 隐私政策）。
      *
@@ -135,14 +138,12 @@ fun AboutScreen(
      * - 平板设置页内嵌（还没路由化）→ `startActivity(AboutActivity + 初始路由)`
      *
      * 默认空实现是为了让签名向后兼容；**两处调用点都显式传了**，别依赖默认值。
-     * ⚠ 注意这里只接管这三页；「交流与反馈」「赞赏作者」仍是独立 Activity，
-     * 继续走 `startActivity`。
      */
     onNavigate: (AppRoute) -> Unit = {},
     /** 应用版本号（宿主从 packageManager 取）；桌面/iOS 用各自来源 */
-    appVersion: String = "未知版本",
+    appVersion: String = AboutStr.unknownVersion(),
     /** 应用名 */
-    appName: String = "Nexio课程表",
+    appName: String = AboutStr.appName(),
     /** 应用图标（已裁边的 ImageBitmap）；null 不显示（回退为首字母文本） */
     appIcon: ImageBitmap? = null,
     /** 撤回隐私同意后退出应用（Android = activity.finishAffinity）；桌面/iOS 空实现 */
@@ -156,12 +157,12 @@ fun AboutScreen(
     val nativeBarInset = (nativeChrome?.barInset ?: 0.0).dp
     val tintArgb = MiuixTheme.colorScheme.primary.toArgb().toLong()
     SideEffect {
-        nativeChrome?.title = "关于应用"
+        nativeChrome?.title = AboutStr.aboutApp()
         nativeChrome?.tintArgb = tintArgb
     }
 
     // 弹窗默认跟随自身玻璃层；内嵌时由外层指定全屏层
-    val dialogGlass: Backdrop = dialogBackdrop ?: liquidGlassBackdrop
+    val dialogGlass: GlassBackdrop = dialogBackdrop ?: liquidGlassBackdrop
     val hapticFeedback = LocalHapticFeedback.current
     val scrollBehavior = rememberSharedScrollBehavior()
     val uriHandler = LocalUriHandler.current
@@ -171,6 +172,9 @@ fun AboutScreen(
     val tabletHorizontalPadding = if (isTablet) 4.dp else 0.dp
 
     val backdrop = rememberBlurBackdrop()
+    // 无材质档玻璃全关：卡片退回标准实色，纹理模糊一并停用（采样层此时没挂，采不到东西）
+    val noneTier = AppMaterialSettings.isNoneTier()
+    val glassCards = backdrop != null && !noneTier
     val lazyListState = rememberLazyListState()
     val uiScope = rememberCoroutineScope()
     var recordingActive by remember { mutableStateOf(diagnosticRecorder.isRecording) }
@@ -253,6 +257,8 @@ fun AboutScreen(
         }
     }
 
+    // 材质出现时机与全站统一（滚过 10dp）；那套 340dp 进度只留给背景动效
+    val material = rememberTopBarMaterialState(scrollBehavior)
     Scaffold(
         modifier = Modifier.consumeWindowInsets(PaddingValues(top = nativeBarInset)),
         topBar = {
@@ -261,22 +267,24 @@ fun AboutScreen(
                 backdrop = liquidGlassBackdrop,
                 topInsetAdjustment = nativeBarInset,
                 noTopStatusBar = hostVerticalBarEdge(),
+                // 无材质档没有模糊层：遮罩跟着返回按钮的材质一起出现
+                maskAlpha = material.alpha,
             ) {
                 CollapsibleTopAppBar(
-                    title = "关于应用",
-                    largeTitle = "关于应用",
+                    title = AboutStr.aboutApp(),
+                    largeTitle = AboutStr.aboutApp(),
                     showLargeTitle = false,
                     showSmallTitle = scrollProgress > 0.5f,
-                    showShadow = scrollProgress >= 1f,
                     modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
                     scrollBehavior = scrollBehavior,
+                    materialState = material,
                     contentPadding = {},
                     startAction = if (embedded || nativeChrome != null) null else { backdropAlpha, shadowAlpha ->
                         LiquidTopBarButton(
                             onClick = { onBack() },
                             backdrop = liquidGlassBackdrop,
                             icon = MiuixIcons.ChevronBackward,
-                            contentDescription = "返回",
+                            contentDescription = CommonStr.back(),
                             performHapticFeedback = false,
                             iconSize = 24.dp,
                             iconOffset = DpOffset(x = (-2).dp, y = 0.dp),
@@ -293,14 +301,19 @@ fun AboutScreen(
                 .fillMaxSize()
                 .background(MiuixTheme.colorScheme.background)
                 .then(
-                    Modifier.liquidGlassLayerBackdrop(liquidGlassBackdrop)
+                    // 无材质档：玻璃全关，采样录屏层不挂
+                    if (noneTier) Modifier
+                    else Modifier.liquidGlassLayerBackdrop(liquidGlassBackdrop)
                 )
         ) {
             BgEffectBackground(
                 dynamicBackground = dynamicBackground,
                 isFullSize = true,
                 modifier = Modifier.fillMaxSize(),
-                bgModifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier,
+                // 背景特效采的是内容模糊录屏层，无材质档一并停录
+                bgModifier = if (backdrop != null && !noneTier) {
+                    Modifier.layerBackdrop(backdrop)
+                } else Modifier,
                 alpha = { 1f - scrollProgress },
             ) {
                 Column(
@@ -353,7 +366,7 @@ fun AboutScreen(
                                 scaleY = 1 - (nameProgress * 0.05f)
                             }
                             .then(
-                                if (backdrop != null) {
+                                if (glassCards) {
                                     Modifier.textureBlur(
                                         backdrop = backdrop,
                                         shape = ContinuousRoundedRectangle(16.dp),
@@ -419,7 +432,7 @@ fun AboutScreen(
                             modifier = Modifier
                                 .padding(start = 16.dp, end = 16.dp, top = 16.dp)
                                 .then(
-                                    if (backdrop != null) {
+                                    if (glassCards) {
                                         Modifier.textureBlur(
                                             backdrop = backdrop,
                                             shape = ContinuousRoundedRectangle(20.dp),
@@ -430,205 +443,94 @@ fun AboutScreen(
                                         Modifier
                                     },
                                 ),
-                            colors = CardDefaults.defaultColors(
-                                if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.background,
-                                Color.Transparent,
-                            ),
+                            colors = if (glassCards) {
+                                CardDefaults.defaultColors(Color.Transparent, Color.Transparent)
+                            } else {
+                                // 无材质档：卡片标准实色
+                                CardDefaults.defaultColors()
+                            },
                         ) {
                             Column(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                if (!embedded) {
-                                    ArrowPreference(
-                                        title = "交流与反馈",
-                                        onClick = {
-                                            onNavigate(AppRoute.Communication)
-                                        }
+                                // 直接读 AppLanguage 的快照状态：切换后本行的选中态即时刷新
+                                val languagePref = AppLanguage.pref
+                                val languageEntry = DropdownEntry(
+                                    items = listOf(
+                                        DropdownItem(
+                                            text = CommonStr.followSystem(),
+                                            selected = languagePref == LanguagePref.SYSTEM,
+                                            onClick = {
+                                                AppLanguage.set(LanguagePref.SYSTEM)
+                                                LanguageStore.save(LanguagePref.SYSTEM)
+                                            }
+                                        ),
+                                        DropdownItem(
+                                            text = CommonStr.simplifiedChinese(),
+                                            selected = languagePref == LanguagePref.ZH,
+                                            onClick = {
+                                                AppLanguage.set(LanguagePref.ZH)
+                                                LanguageStore.save(LanguagePref.ZH)
+                                            }
+                                        ),
+                                        DropdownItem(
+                                            text = CommonStr.english(),
+                                            selected = languagePref == LanguagePref.EN,
+                                            onClick = {
+                                                AppLanguage.set(LanguagePref.EN)
+                                                LanguageStore.save(LanguagePref.EN)
+                                            }
+                                        ),
                                     )
-                                }
+                                )
+                                OverlayDropdownMenu(
+                                    title = CommonStr.appLanguage(),
+                                    entry = languageEntry,
+                                    collapseOnSelection = true,
+                                    liquidGlassBackdrop = dialogGlass,
+                                    dropdownColors = DropdownDefaults.dropdownColors(
+                                        containerColor = Color.Transparent,
+                                        selectedContainerColor = Color.Transparent,
+                                    ),
+                                )
                                 ArrowPreference(
-                                    title = "项目仓库",
+                                    title = AboutStr.projectRepo(),
                                     onClick = {
                                         showRepoDialog = true
                                     }
                                 )
-                                if (!embedded) {
-                                    ArrowPreference(
-                                        title = "捐赠支持",
-                                        endActions = {
-                                            Text(
-                                                text = "请作者喝杯咖啡",
-                                                fontSize = 14.sp,
-                                                color = MiuixTheme.colorScheme.onSurfaceVariantActions
-                                            )
-                                        },
-                                        onClick = {
-                                            onNavigate(AppRoute.AppreciateAuthor)
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    item(key = "changelog") {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Card(
-                            modifier = Modifier
-                                .padding(horizontal = 16.dp)
-                                .then(
-                                    if (backdrop != null) {
-                                        Modifier.textureBlur(
-                                            backdrop = backdrop,
-                                            shape = ContinuousRoundedRectangle(20.dp),
-                                            blurRadius = 60f,
-                                            colors = BlurDefaults.blurColors(blendColors = cardBlend),
+                                ArrowPreference(
+                                    title = AboutStr.license(),
+                                    endActions = {
+                                        Text(
+                                            text = "AGPL-3.0",
+                                            fontSize = 14.5.sp,
+                                            color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                            textAlign = TextAlign.End,
                                         )
-                                    } else {
-                                        Modifier
                                     },
-                                ),
-                            colors = CardDefaults.defaultColors(
-                                if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.background,
-                                Color.Transparent,
-                            ),
-                        ) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            onNavigate(AppRoute.Changelog)
-                                        }
-                                        .padding(
-                                            start = 16.dp,
-                                            end = 13.dp,
-                                            top = 17.dp,
-                                            bottom = 12.dp
-                                        ),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "更新日志",
-                                        fontSize = 17.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MiuixTheme.colorScheme.onSurface
-                                    )
-                                    Icon(
-                                        imageVector = MiuixIcons.Basic.ArrowRight,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = MiuixTheme.colorScheme.onSurfaceVariantActions
-                                    )
-                                }
-                                val recentChangelog = RecentChangelog
-                                // 一次 remember 拿整张状态表：原来在 List{} 的 lambda 里逐个 remember，
-                                // 位置依赖 size，changelog 一变就会把展开态错位到别的版本上
-                                val expandedStates = remember {
-                                    List(RecentChangelog.size) { index -> mutableStateOf(index == 0) }
-                                }
-                                val rotations = List(recentChangelog.size) { index ->
-                                    val rotation by animateFloatAsState(
-                                        targetValue = if (expandedStates[index].value) 90f else -90f,
-                                        animationSpec = tween(durationMillis = 200),
-                                        label = "changelogRotation$index"
-                                    )
-                                    rotation
-                                }
-                                recentChangelog.forEachIndexed { index, entry ->
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                expandedStates[index].value =
-                                                    !expandedStates[index].value
-                                            }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(
-                                                    start = 20.dp,
-                                                    end = 18.dp,
-                                                    top = if (index == 0) 12.dp else 17.dp,
-                                                    bottom = 17.dp
-                                                ),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = entry.version,
-                                                fontSize = 17.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = MiuixTheme.colorScheme.onSurface,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            Text(
-                                                text = entry.date,
-                                                fontSize = 14.sp,
-                                                color = MiuixTheme.colorScheme.onSurfaceVariantActions
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Icon(
-                                                imageVector = MiuixIcons.ChevronForward,
-                                                contentDescription = null,
-                                                modifier = Modifier
-                                                    .size(16.dp)
-                                                    .graphicsLayer {
-                                                        rotationZ = rotations[index]
-                                                    },
-                                                tint = MiuixTheme.colorScheme.onSurfaceVariantActions
-                                            )
-                                        }
-                                        CardExpand(visible = expandedStates[index].value) {
-                                            Column(
-                                                modifier = Modifier.padding(
-                                                    start = 18.dp,
-                                                    end = 18.dp,
-                                                    bottom = 14.dp
-                                                )
-                                            ) {
-                                                entry.changes.forEach { change ->
-                                                    Row(modifier = Modifier.padding(bottom = 2.dp)) {
-                                                        Text(
-                                                            text = "• ",
-                                                            fontSize = 14.sp,
-                                                            lineHeight = 22.sp,
-                                                            color = MiuixTheme.colorScheme.onSurfaceVariantActions
-                                                        )
-                                                        Text(
-                                                            text = change,
-                                                            fontSize = 14.sp,
-                                                            lineHeight = 22.sp,
-                                                            color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                                                            modifier = Modifier.weight(1f)
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    if (index < recentChangelog.lastIndex) {
-                                        Spacer(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 18.dp)
-                                                .height(0.5.dp)
-                                                .background(
-                                                    MiuixTheme.colorScheme.onSurfaceVariantActions.copy(
-                                                        alpha = 0.07f
-                                                    )
-                                                )
+                                    onClick = { onNavigate(AppRoute.License) },
+                                )
+                                ArrowPreference(
+                                    title = AboutStr.privacyPolicy(),
+                                    endActions = {
+                                        Text(
+                                            text = AboutStr.revokeConsent(),
+                                            fontSize = 14.5.sp,
+                                            color = Color(0xFFF44336),
+                                            textAlign = TextAlign.End,
+                                            modifier = Modifier.clickable {
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
+                                                showRevokeDialog = true
+                                            },
                                         )
-                                    }
-                                }
+                                    },
+                                    onClick = { onNavigate(AppRoute.PrivacyPolicy) },
+                                )
                             }
                         }
                     }
+
                     item(key = "thanks") {
                         Column(
                             modifier = Modifier
@@ -651,7 +553,7 @@ fun AboutScreen(
                                     .clip(ContinuousRoundedRectangle(20.dp))
                                     .clickable { expanded = !expanded }
                                     .then(
-                                        if (backdrop != null) {
+                                        if (glassCards) {
                                             Modifier.textureBlur(
                                                 backdrop = backdrop,
                                                 shape = ContinuousRoundedRectangle(20.dp),
@@ -662,10 +564,12 @@ fun AboutScreen(
                                             Modifier
                                         },
                                     ),
-                                colors = CardDefaults.defaultColors(
-                                    if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.background,
-                                    Color.Transparent,
-                                ),
+                                colors = if (glassCards) {
+                                    CardDefaults.defaultColors(Color.Transparent, Color.Transparent)
+                                } else {
+                                    // 无材质档：卡片标准实色
+                                    CardDefaults.defaultColors()
+                                },
                             ) {
                                 Column(
                                     modifier = Modifier
@@ -683,7 +587,7 @@ fun AboutScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = "特别致谢",
+                                            text = AboutStr.specialThanks(),
                                             fontSize = 17.sp,
                                             fontWeight = FontWeight.Medium,
                                             color = MiuixTheme.colorScheme.onSurface
@@ -721,30 +625,6 @@ fun AboutScreen(
                                                 )
                                                 Text(
                                                     text = "Yukonga",
-                                                    fontSize = 15.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = MiuixTheme.colorScheme.onSurfaceVariantActions
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.height(12.dp))
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(horizontal = 2.dp),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = "Capsule",
-                                                    fontSize = 15.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = MiuixTheme.colorScheme.primary,
-                                                    modifier = Modifier.clickable {
-                                                        uriHandler.openUri("https://github.com/Kyant0/Capsule")
-                                                    }
-                                                )
-                                                Text(
-                                                    text = "Kyant0",
                                                     fontSize = 15.sp,
                                                     fontWeight = FontWeight.Medium,
                                                     color = MiuixTheme.colorScheme.onSurfaceVariantActions
@@ -831,16 +711,16 @@ fun AboutScreen(
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Text(
-                                                    text = "Backdrop",
+                                                    text = "SoftGlass",
                                                     fontSize = 15.sp,
                                                     fontWeight = FontWeight.Medium,
                                                     color = MiuixTheme.colorScheme.primary,
                                                     modifier = Modifier.clickable {
-                                                        uriHandler.openUri("https://github.com/Kyant0/AndroidLiquidGlass")
+                                                        uriHandler.openUri("https://github.com/HaoZai000/softglass")
                                                     }
                                                 )
                                                 Text(
-                                                    text = "Kyant0",
+                                                    text = "HaoZai000",
                                                     fontSize = 15.sp,
                                                     fontWeight = FontWeight.Medium,
                                                     color = MiuixTheme.colorScheme.onSurfaceVariantActions
@@ -857,7 +737,7 @@ fun AboutScreen(
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp)
                                     .then(
-                                        if (backdrop != null) {
+                                        if (glassCards) {
                                             Modifier.textureBlur(
                                                 backdrop = backdrop,
                                                 shape = ContinuousRoundedRectangle(20.dp),
@@ -868,10 +748,12 @@ fun AboutScreen(
                                             Modifier
                                         }
                                     ),
-                                colors = CardDefaults.defaultColors(
-                                    if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.background,
-                                    Color.Transparent,
-                                ),
+                                colors = if (glassCards) {
+                                    CardDefaults.defaultColors(Color.Transparent, Color.Transparent)
+                                } else {
+                                    // 无材质档：卡片标准实色
+                                    CardDefaults.defaultColors()
+                                },
                             ) {
                                 Column(
                                     modifier = Modifier
@@ -879,7 +761,7 @@ fun AboutScreen(
                                         .padding(horizontal = 18.dp, vertical = 16.dp)
                                 ) {
                                     Text(
-                                        text = "功能日志录制",
+                                        text = AboutStr.diagRecording(),
                                         fontSize = 17.sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MiuixTheme.colorScheme.onSurface
@@ -892,16 +774,16 @@ fun AboutScreen(
                                     val statusText = when {
                                         recordingActive ->
                                             // 跨平台替代 String.format("%02d")（checkKmpPurity 拦截 + Locale 字形问题）
-                                            "录制中… 剩余 ${mm}:${ss.toString().padStart(2, '0')} \n正在记入日志，崩溃/被杀自动结束"
+                                            AboutStr.recordingRemaining("${mm}:${ss.toString().padStart(2, '0')}")
                                         canShareRecording ->
                                             when (diagnosticRecorder.readyReason) {
-                                                "crash" -> "检测到崩溃，日志已自动保存，可直接分享"
-                                                "process_killed" -> "上次进程被杀，已自动结束录制，可分享"
-                                                "timeout_30min" -> "录制已达 30 分钟上限，可分享"
-                                                else -> "录制已结束，可分享给开发者"
+                                                "crash" -> AboutStr.diagCrashSaved()
+                                                "process_killed" -> AboutStr.diagKilled()
+                                                "timeout_30min" -> AboutStr.diagTimeout()
+                                                else -> AboutStr.diagEnded()
                                             }
                                         else ->
-                                            "点击开始录制后请复现问题，结束后点分享。\n日志仅存本机，需你主动分享才会离开设备"
+                                            AboutStr.diagIdleHint()
                                     }
                                     Text(
                                         text = statusText,
@@ -914,7 +796,7 @@ fun AboutScreen(
                                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
                                         TextButton(
-                                            text = if (recordingActive) "结束录制" else "开始录制",
+                                            text = if (recordingActive) AboutStr.diagStop() else AboutStr.diagStart(),
                                             onClick = {
                                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                                 exportingCrashLog = true
@@ -932,10 +814,10 @@ fun AboutScreen(
                                                     recordingElapsedSec =
                                                         (diagnosticRecorder.recordingElapsedMs() / 1000L).toInt()
                                                     showToast(when {
-                                                            !ok && recordingActive -> "录制已在进行"
-                                                            ok && recordingActive -> "已开始录制，最长 30 分钟"
-                                                            ok && !recordingActive -> "录制已结束，可分享"
-                                                            else -> "操作失败，请重试"
+                                                            !ok && recordingActive -> AboutStr.diagAlreadyRecording()
+                                                            ok && recordingActive -> AboutStr.diagStarted()
+                                                            ok && !recordingActive -> AboutStr.diagEndedShort()
+                                                            else -> AboutStr.opFailedRetry()
                                                         })
                                                 }
                                             },
@@ -948,7 +830,7 @@ fun AboutScreen(
                                             }
                                         )
                                         TextButton(
-                                            text = "分享",
+                                            text = AboutStr.share(),
                                             onClick = {
                                                 if (!canShareRecording) return@TextButton
                                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -958,7 +840,7 @@ fun AboutScreen(
                                                         diagnosticRecorder.shareReadyRecording()
                                                     }
                                                     exportingCrashLog = false
-                                                    showToast(if (ok) "已打开分享，请把日志发给开发者" else "分享失败，请重试")
+                                                    showToast(if (ok) AboutStr.shareOpened() else AboutStr.shareFailedRetry())
                                                 }
                                             },
                                             modifier = Modifier.weight(1f),
@@ -984,53 +866,14 @@ fun AboutScreen(
                                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "© 2026 Nexio课程表 · ",
-                                            fontSize = 13.sp,
-                                            color = MiuixTheme.colorScheme.onSurfaceVariantActions
-                                        )
-                                        // 开源协议入口：应用内展示 AGPL-3.0 全文，与隐私政策入口同构
-                                        Text(
-                                            text = "开源协议",
-                                            fontSize = 13.sp,
-                                            color = MiuixTheme.colorScheme.primary,
-                                            modifier = Modifier
-                                                .clickable {
-                                                    onNavigate(AppRoute.License)
-                                                }
-                                                .padding(start = 4.dp)
-                                        )
-                                    }
-                                    // 隐私政策入口 + 撤回同意：用户可随时查阅政策或撤回授权
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(20.dp),
-                                        modifier = Modifier.padding(top = 6.dp)
-                                    ) {
-                                        Text(
-                                            text = "《隐私政策》",
-                                            fontSize = 13.sp,
-                                            color = MiuixTheme.colorScheme.primary,
-                                            modifier = Modifier.clickable {
-                                                onNavigate(AppRoute.PrivacyPolicy)
-                                            }
-                                        )
-                                        Text(
-                                            text = "撤回同意",
-                                            fontSize = 13.sp,
-                                            color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                                            modifier = Modifier.clickable {
-                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
-                                                showRevokeDialog = true
-                                            }
-                                        )
-                                    }
+                                    Text(
+                                        text = AboutStr.copyright().trimEnd(' ', '·'),
+                                        fontSize = 13.sp,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantActions
+                                    )
                                     // APP 备案号：按工信部要求在「关于」页面显著位置展示
                                     Text(
-                                        text = "闽ICP备2026037367号-2A",
+                                        text = AboutStr.icpNumber(),
                                         fontSize = 13.sp,
                                         color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                                         modifier = Modifier.padding(top = 6.dp)
@@ -1045,7 +888,7 @@ fun AboutScreen(
 
 
         OverlayDialog(
-            title = "项目仓库",
+            title = AboutStr.projectRepo(),
             show = showRepoDialog,
             liquidGlassBackdrop = dialogGlass,
             onDismissRequest = { showRepoDialog = false }
@@ -1109,7 +952,7 @@ fun AboutScreen(
                 }
                 Spacer(modifier = Modifier.height(20.dp))
                 TextButton(
-                    text = "完成",
+                    text = CommonStr.done(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         showRepoDialog = false
@@ -1121,8 +964,8 @@ fun AboutScreen(
 
         // 撤回隐私政策同意：确认后清空同意状态并关闭整个应用
         OverlayDialog(
-            title = "撤回隐私政策同意",
-            summary = "撤回后将关闭应用，且需要重新同意隐私政策才能继续使用。确定撤回吗？",
+            title = AboutStr.revokeDialogTitle(),
+            summary = AboutStr.revokeDialogSummary(),
             show = showRevokeDialog,
             liquidGlassBackdrop = dialogGlass,
             onDismissRequest = { showRevokeDialog = false }
@@ -1134,7 +977,7 @@ fun AboutScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 TextButton(
-                    text = "取消",
+                    text = CommonStr.cancel(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         showRevokeDialog = false
@@ -1142,10 +985,10 @@ fun AboutScreen(
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(
-                    text = "撤回并退出",
+                    text = AboutStr.revokeAndExit(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
-                        com.haooz.chedule.data.PrivacyConsent.revoke()
+                        PrivacyConsent.revoke()
                         showRevokeDialog = false
                         onExitApp()
                     },

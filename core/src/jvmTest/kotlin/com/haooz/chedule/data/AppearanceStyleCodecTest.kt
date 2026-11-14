@@ -1,5 +1,10 @@
 package com.haooz.chedule.data
 
+import com.haooz.chedule.data.appearance.AppearanceStyle
+import com.haooz.chedule.data.appearance.AppearanceStyleCodec
+import com.haooz.chedule.data.appearance.CardContentAlignment
+import com.haooz.chedule.data.appearance.CardRefractionLevel
+import com.haooz.chedule.data.appearance.CardTextColor
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -7,10 +12,10 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * [AppearanceStyleCodec] 与 **真实 Gson** 的差分基准（数据兼容红线的直接证明）。
+ * [com.haooz.chedule.data.appearance.AppearanceStyleCodec] 与 **真实 Gson** 的差分基准（数据兼容红线的直接证明）。
  *
  * 存量用户 `appearance_settings` 里的外观快照是 `Gson().toJson(CombinationStyle)`
- * 写的（键名 = 字段名，枚举存 ordinal，null 字段跳过）。读写换成 [AppearanceStyleCodec]
+ * 写的（键名 = 字段名，枚举存 ordinal，null 字段跳过）。读写换成 [com.haooz.chedule.data.appearance.AppearanceStyleCodec]
  * （kotlinx-serialization 手写映射）后**输出必须与 Gson 一致**，光靠手写字面量不够，
  * 所以拉真实 Gson 对拍。
  *
@@ -56,6 +61,8 @@ class AppearanceStyleCodecTest {
         assertEquals(-0.1f, decoded.wallpaperBrightness)
         assertEquals(true, decoded.wallpaperIsLight)
         assertEquals(false, decoded.showBreakDividers)
+        // 新加的网格线开关：老快照缺键必须回落「关」，不能凭默认把线画出来
+        assertEquals(false, decoded.showWeekGridLines)
         assertEquals(1.2f, decoded.cardTextScale)
         assertEquals(false, decoded.showClassroom)
         assertEquals(true, decoded.showTeacher)
@@ -91,6 +98,7 @@ class AppearanceStyleCodecTest {
             cardHeight = 45f, cardCornerRadius = 16f,
             wallpaperBrightness = 0.25f, wallpaperIsLight = false,
             showBreakDividers = false,
+            showWeekGridLines = true,
             cardContentAlignment = CardContentAlignment.CENTER_START,
             cardTextColor = CardTextColor.SOLID,
             cardTextScale = 0.85f, showClassroom = false, showTeacher = false,

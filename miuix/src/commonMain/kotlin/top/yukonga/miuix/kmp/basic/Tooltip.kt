@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -73,18 +72,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
+import kotlin.jvm.JvmInline
+import kotlin.math.max
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
-import top.yukonga.miuix.kmp.squircle.squircleBackground
+import com.haooz.softglass.shape.continuousBackground
 import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import kotlin.jvm.JvmInline
-import kotlin.math.max
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * The preferred position of a tooltip relative to its anchor. The tooltip flips to the opposite
@@ -594,10 +594,10 @@ private fun TooltipScope.TooltipSurface(
                     bottom = if (drawCaret && !caretOnTop) caretSize.height else 0.dp,
                 )
                 .dropShadow(
-                    shape = RoundedCornerShape(cornerRadius),
+                    shape = ContinuousRoundedRectangle(cornerRadius),
                     shadow = Shadow(radius = 10.dp, color = Color.Black, alpha = 0.1f),
                 )
-                .squircleBackground(color = containerColor, cornerRadius = cornerRadius)
+                .continuousBackground(color = containerColor, cornerRadius = cornerRadius)
                 .padding(insideMargin),
         ) {
             content()

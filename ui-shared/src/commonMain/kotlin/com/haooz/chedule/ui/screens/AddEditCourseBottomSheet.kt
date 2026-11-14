@@ -1,7 +1,6 @@
 /** 添加课程底部弹窗 */
 package com.haooz.chedule.ui.screens
 
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,20 +8,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import com.haooz.chedule.ui.components.CardExpand
-import com.haooz.chedule.ui.components.CardReveal
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -36,7 +29,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.state.ToggleableState
@@ -46,15 +38,22 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.haooz.chedule.data.Course
-import com.haooz.chedule.data.showToast
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.model.truncateNote
+import com.haooz.chedule.data.platform.randomUuidV4
+import com.haooz.chedule.data.platform.showToast
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.i18n.CourseEditStr
+import com.haooz.chedule.i18n.NoteStr
 import com.haooz.chedule.ui.basic.LiquidTopBarButton
+import com.haooz.chedule.ui.components.CardExpand
+import com.haooz.chedule.ui.components.CardReveal
 import com.haooz.chedule.ui.components.WeekRangeSelectGrid
+import com.haooz.chedule.ui.components.text.material.Text as Text
 import com.haooz.chedule.ui.utils.isAppDarkTheme
 import com.haooz.chedule.ui.utils.rememberImeDismiss
 import com.haooz.chedule.ui.utils.rememberOpenKey
-import top.yukonga.miuix.kmp.utils.overScrollVertical
-import com.kyant.backdrop.Backdrop
+import com.haooz.softglass.backdrop.GlassBackdrop
 import kotlinx.datetime.Clock
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -66,6 +65,7 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Ok
+import top.yukonga.miuix.kmp.layout.isTabletWidth
 import top.yukonga.miuix.kmp.overlay.BackdropHolder
 import top.yukonga.miuix.kmp.overlay.BlurBottomSheet
 import top.yukonga.miuix.kmp.overlay.BlurBottomSheetTablet
@@ -74,17 +74,17 @@ import top.yukonga.miuix.kmp.overlay.LocalSheetContentBackdrop
 import top.yukonga.miuix.kmp.overlay.LocalSheetTopBarMaterial
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.squircle.squircleClip
+import com.haooz.softglass.shape.continuousClip
+import com.haooz.chedule.ui.components.sheetContentBottomInset
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import top.yukonga.miuix.kmp.layout.isTabletWidth
-import com.haooz.chedule.data.randomUuidV4
 
 @Composable
 fun AddEditCourseBottomSheet(
     show: Boolean,
     courses: List<Course>,
-    liquidGlassBackdrop: Backdrop? = null,
+    liquidGlassBackdrop: GlassBackdrop? = null,
     onDismissRequest: () -> Unit,
     onConfirm: (Course) -> Unit,
     editCourse: Course? = null,
@@ -116,6 +116,10 @@ fun AddEditCourseBottomSheet(
     }
     val teacherState = remember(openKey) {
         mutableStateOf(editCourse?.teacher ?: defaultTeacher)
+    }
+    // 备注：这张表单里只能写「所有周」那条，单周备注归详情弹窗管（不在这里给范围选择）
+    val noteState = remember(openKey) {
+        mutableStateOf(editCourse?.note ?: "")
     }
 
     var dayOfWeek by remember(openKey) { mutableIntStateOf(editCourse?.dayOfWeek ?: 0) }
@@ -246,6 +250,17 @@ fun AddEditCourseBottomSheet(
             val isContiguous = selectedWeeks.size == (maxWeek - minWeek + 1)
             val weeksToSave = if (isContiguous) emptyList() else sortedWeeks
 
+            // 备注框写的是「所有周」那条。只要文本变了就视为「重设全部周备注」——
+            // 详情弹窗里按周写过的单周备注一并清掉，否则改完这里某些周还是旧文案，
+            // 看起来就是「保存没生效」。没改文本则原样保留单周备注。
+            val newNote = noteState.value.trim().truncateNote()
+            val noteChanged = newNote != (editCourse?.note ?: "")
+            val weekNotesToSave = if (noteChanged) {
+                emptyMap()
+            } else {
+                editCourse?.weekNotes ?: emptyMap()
+            }
+
             val course = Course(
                 id = editCourse?.id ?: randomUuidV4(),
                 name = editCourse?.name ?: courses.firstOrNull()?.name ?: "",
@@ -265,7 +280,9 @@ fun AddEditCourseBottomSheet(
                 customEndTime = if (isCustomTime) customEndTime else null,
                 // System.currentTimeMillis() 是 JVM 专有（Kotlin/Native 没有），
                 // 改用 kotlinx-datetime —— 返回值同为 epoch millis，与 :core 的 Course.lastModified 口径一致
-                lastModified = Clock.System.now().toEpochMilliseconds()
+                lastModified = Clock.System.now().toEpochMilliseconds(),
+                note = newNote,
+                weekNotes = weekNotesToSave,
             )
             // 先收键盘再回调：onConfirm 会立刻触发关闭/跳转，晚一步键盘就托在动画上
             dismissKeyboard()
@@ -273,7 +290,7 @@ fun AddEditCourseBottomSheet(
             onDismissRequest()
         } else {
             // 一节课都没选就点确定：以前是静默不动（看起来像点了没反应）
-            showToast("请先选择上课周次")
+            showToast(CourseEditStr.selectWeeksFirst())
         }
     }
 
@@ -286,7 +303,7 @@ fun AddEditCourseBottomSheet(
             },
             backdrop = LocalSheetContentBackdrop.current ?: liquidGlassBackdrop!!,
             icon = MiuixIcons.Normal.Close,
-            contentDescription = "关闭",
+            contentDescription = CommonStr.close(),
             modifier = Modifier.padding(start = if (isTablet) 16.dp else 18.dp),
             iconSize = 24.dp,
             backdropAlpha = material.backdropAlpha,
@@ -300,7 +317,7 @@ fun AddEditCourseBottomSheet(
             onClick = onConfirmClick,
             backdrop = LocalSheetContentBackdrop.current ?: liquidGlassBackdrop!!,
             icon = MiuixIcons.Ok,
-            contentDescription = "确定",
+            contentDescription = CommonStr.ok(),
             modifier = Modifier.padding(end = if (isTablet) 16.dp else 18.dp),
             iconSize = 25.dp,
             backdropAlpha = material.backdropAlpha,
@@ -308,7 +325,6 @@ fun AddEditCourseBottomSheet(
         )
     }
 
-    val statusBarsPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val sheetContent: @Composable () -> Unit = {
         Column(
             modifier = Modifier
@@ -322,7 +338,8 @@ fun AddEditCourseBottomSheet(
                     hapticFeedbackType = HapticFeedbackType.TextHandleMove
                 )
                 .verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp),
+                .padding(start = 16.dp, end = 16.dp)
+                .sheetContentBottomInset(isTablet),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Spacer(modifier = Modifier.height(if (isTablet) 56.dp else 58.dp))
@@ -332,18 +349,27 @@ fun AddEditCourseBottomSheet(
                 colors = sheetCardColors,
             ) {
                 SheetTextFieldRow(
-                    label = "地点",
+                    label = CourseEditStr.location(),
                     state = classroomState,
-                    hint = "非必填",
+                    hint = CommonStr.notRequired(),
                     topPadding = 17.dp,
                     bottomPadding = 14.dp,
                 )
                 SheetTextFieldRow(
-                    label = "教师",
+                    label = CourseEditStr.teacher(),
                     state = teacherState,
-                    hint = "非必填",
+                    hint = CommonStr.notRequired(),
+                    topPadding = 14.dp,
+                    bottomPadding = 14.dp,
+                )
+                SheetTextFieldRow(
+                    label = NoteStr.noteLabel(),
+                    state = noteState,
+                    // 与地点/教师同一套「非必填」提示；占位示例留给详情弹窗那块便签，一行里两种口气太乱
+                    hint = CommonStr.notRequired(),
                     topPadding = 14.dp,
                     bottomPadding = 17.dp,
+                    limitNoteLength = true,
                 )
             }
             }
@@ -366,7 +392,7 @@ fun AddEditCourseBottomSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "上课星期",
+                            text = CourseEditStr.classDay(),
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Medium,
                             color = MiuixTheme.colorScheme.onSurface,
@@ -378,7 +404,7 @@ fun AddEditCourseBottomSheet(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "自定义时间",
+                            text = CourseEditStr.customTime(),
                             fontSize = 15.sp,
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                         )
@@ -387,8 +413,7 @@ fun AddEditCourseBottomSheet(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        val dayLabels =
-                            remember { listOf("一", "二", "三", "四", "五", "六", "日") }
+                        val dayLabels = CourseEditStr.dayLabels
                         for (day in 1..7) {
                             val isSelected = day == dayOfWeek
                             val bgColor = if (isSelected) MiuixTheme.colorScheme.primary
@@ -403,7 +428,7 @@ fun AddEditCourseBottomSheet(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(32.dp)
-                                    .squircleClip(10.dp)
+                                    .continuousClip(10.dp)
                                     .background(bgColor)
                                     .clickable(
                                         interactionSource = null,
@@ -415,7 +440,7 @@ fun AddEditCourseBottomSheet(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = dayLabels[day - 1],
+                                    text = dayLabels[day - 1](),
                                     fontSize = 14.sp,
                                     color = textColor,
                                     textAlign = TextAlign.Center,
@@ -434,7 +459,7 @@ fun AddEditCourseBottomSheet(
             ) {
                 CardExpand(visible = isCustomTime) {
                     ArrowPreference(
-                        title = "上课时间",
+                        title = CourseEditStr.classTime(),
                         endActions = {
                             Text(
                                 text = "$customStartTime - $customEndTime",
@@ -456,10 +481,10 @@ fun AddEditCourseBottomSheet(
                 }
                 CardExpand(visible = !isCustomTime) {
                     ArrowPreference(
-                        title = "上课节次",
+                        title = CourseEditStr.classPeriods(),
                         endActions = {
                             Text(
-                                text = if (startSection > 0) "第${startSection} - ${endSection}节" else "未设置",
+                                text = if (startSection > 0) CourseEditStr.periodsRange(startSection, endSection) else CommonStr.notSet(),
                                 fontSize = 14.5.sp,
                                 color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                                 textAlign = TextAlign.End,
@@ -496,7 +521,7 @@ fun AddEditCourseBottomSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "上课周次",
+                            text = CourseEditStr.classWeeks(),
                             modifier = Modifier.weight(1f),
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Medium,
@@ -524,7 +549,7 @@ fun AddEditCourseBottomSheet(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "全部",
+                                    text = CourseEditStr.all(),
                                     fontSize = 15.sp,
                                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                                 )
@@ -556,7 +581,7 @@ fun AddEditCourseBottomSheet(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "单周",
+                                    text = CourseEditStr.oddWeeks(),
                                     fontSize = 15.sp,
                                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                                 )
@@ -588,7 +613,7 @@ fun AddEditCourseBottomSheet(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "双周",
+                                    text = CourseEditStr.evenWeeks(),
                                     fontSize = 15.sp,
                                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                                 )
@@ -618,16 +643,14 @@ fun AddEditCourseBottomSheet(
                 }
             }
             }
-            Spacer(modifier = Modifier.height(if (isTablet) 4.dp else statusBarsPadding + 60.dp))
         }
     }
 
     if (isTablet) {
         BlurBottomSheetTablet(
             show = show,
-            title = if (isEditMode) "编辑课程" else "添加课程",
+            title = if (isEditMode) CourseEditStr.editCourse() else CourseEditStr.addCourse(),
             dimBackground = true,
-            enableContentHeightSnap = true,
             onDismissRequest = onDismissRequest,
             onSheetContentBackdropCreated = { sheetContentBackdropHolder.value = it },
             startAction = startAction,
@@ -638,11 +661,9 @@ fun AddEditCourseBottomSheet(
     } else {
         BlurBottomSheet(
             show = show,
-            title = if (isEditMode) "编辑课程" else "添加课程",
+            title = if (isEditMode) CourseEditStr.editCourse() else CourseEditStr.addCourse(),
             dimBackground = true,
-            enableContentHeightSnap = true,
             onDismissRequest = onDismissRequest,
-            sheetOffsetDp = statusBarsPadding + 5.dp,
             onSheetContentBackdropCreated = { sheetContentBackdropHolder.value = it },
             startAction = startAction,
             endAction = endAction,
@@ -652,7 +673,7 @@ fun AddEditCourseBottomSheet(
     }
 
     OverlayDialog(
-        title = "选择上课节次",
+        title = CourseEditStr.selectSectionTitle(),
         show = showSectionDialog,
         liquidGlassBackdrop = sheetContentBackdropHolder.value ?: liquidGlassBackdrop,
         onDismissRequest = { showSectionDialog = false }
@@ -676,7 +697,7 @@ fun AddEditCourseBottomSheet(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        text = "开始",
+                        text = CourseEditStr.start(),
                         style = MiuixTheme.textStyles.footnote1,
                         color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                         modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
@@ -694,7 +715,7 @@ fun AddEditCourseBottomSheet(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        text = "结束",
+                        text = CourseEditStr.end(),
                         style = MiuixTheme.textStyles.footnote1,
                         color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                         modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
@@ -716,7 +737,7 @@ fun AddEditCourseBottomSheet(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 TextButton(
-                    text = "取消",
+                    text = CommonStr.cancel(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         showSectionDialog = false
@@ -724,7 +745,7 @@ fun AddEditCourseBottomSheet(
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(
-                    text = "确定",
+                    text = CommonStr.ok(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         if (tempStartSection <= tempEndSection) {
@@ -741,7 +762,7 @@ fun AddEditCourseBottomSheet(
     }
 
     OverlayDialog(
-        title = "选择上课时间",
+        title = CourseEditStr.selectTimeTitle(),
         show = showTimeDialog,
         liquidGlassBackdrop = sheetContentBackdropHolder.value ?: liquidGlassBackdrop,
         onDismissRequest = { showTimeDialog = false }
@@ -762,7 +783,7 @@ fun AddEditCourseBottomSheet(
             )
             if (timeError) {
                 Text(
-                    text = "开始与结束时间不能相同",
+                    text = CourseEditStr.timeSameError(),
                     style = MiuixTheme.textStyles.footnote1,
                     color = Color(0xFFF44336),
                     modifier = Modifier.padding(top = 8.dp)
@@ -776,7 +797,7 @@ fun AddEditCourseBottomSheet(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 TextButton(
-                    text = "取消",
+                    text = CommonStr.cancel(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         showTimeDialog = false
@@ -785,7 +806,7 @@ fun AddEditCourseBottomSheet(
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(
-                    text = "确定",
+                    text = CommonStr.ok(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         val startMinutes = tempStartHour * 60 + tempStartMinute
@@ -822,29 +843,50 @@ private fun SheetTextFieldRow(
     hint: String,
     topPadding: Dp,
     bottomPadding: Dp,
+    /** true 时按 [Course.NOTE_MAX_LENGTH] 截断输入（备注用），地点/教师不截 */
+    limitNoteLength: Boolean = false,
+    /** 输入框下方的常驻说明（右对齐小字）。hint 只在空值时可见，规则说明得靠它 */
+    caption: String? = null,
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = topPadding, bottom = bottomPadding),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(start = 16.dp, end = 16.dp, top = topPadding, bottom = bottomPadding)
     ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Medium,
-            color = MiuixTheme.colorScheme.onSurface
-        )
-        NativeTextField(
-            value = state.value,
-            onValueChange = { state.value = it },
-            modifier = Modifier.fillMaxWidth(0.65f),
-            hint = hint,
-            singleLine = true,
-            textAlign = TextAlign.End,
-            textStyle = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                modifier = Modifier.weight(1f),
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.onSurface
+            )
+            NativeTextField(
+                value = state.value,
+                onValueChange = { input ->
+                    state.value = if (limitNoteLength) input.truncateNote() else input
+                },
+                modifier = Modifier.fillMaxWidth(0.65f),
+                hint = hint,
+                singleLine = true,
+                textAlign = TextAlign.End,
+                textStyle = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium)
+            )
+        }
+        if (caption != null) {
+            Text(
+                text = caption,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                textAlign = TextAlign.End,
+            )
+        }
     }
 }
 

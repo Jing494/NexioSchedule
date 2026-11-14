@@ -11,27 +11,28 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModelStore
-import androidx.lifecycle.ViewModelStoreOwner
-import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import com.haooz.chedule.data.AppFiles
-import com.haooz.chedule.data.AppInfo
-import com.haooz.chedule.data.AppStorage
-import com.haooz.chedule.data.FileAppFile
-import com.haooz.chedule.data.FileKeyValueStore
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import com.haooz.chedule.data.platform.AppFiles
+import com.haooz.chedule.data.platform.AppInfo
+import com.haooz.chedule.data.platform.FileAppFile
+import com.haooz.chedule.data.storage.AppStorage
+import com.haooz.chedule.data.storage.CourseStorage
+import com.haooz.chedule.data.storage.DesktopSqlStorage
+import com.haooz.chedule.i18n.DesktopStr
 import com.haooz.chedule.ui.activities.AppreciateAuthorScreen
 import com.haooz.chedule.ui.activities.ChangelogScreen
 import com.haooz.chedule.ui.activities.CommunicationScreen
@@ -39,20 +40,20 @@ import com.haooz.chedule.ui.activities.CourseTimeSettingsScreen
 import com.haooz.chedule.ui.activities.LicenseScreen
 import com.haooz.chedule.ui.activities.PrivacyPolicyScreen
 import com.haooz.chedule.ui.activities.WebDavSettingsScreen
+import com.haooz.chedule.ui.activities.WidgetIntroScreen
 import com.haooz.chedule.ui.components.DocumentPageScaffold
+import com.haooz.chedule.ui.components.text.miuix.Text as Text
 import com.haooz.chedule.ui.screens.AddCourseDialog
 import com.haooz.chedule.ui.screens.CourseDetailScreen
 import com.haooz.chedule.ui.screens.CourseEditScreen
-import com.haooz.chedule.ui.activities.WidgetIntroScreen
 import com.haooz.chedule.ui.screens.SchoolSelectionScreen
 import com.haooz.chedule.ui.theme.CourseScheduleTheme
-import com.haooz.chedule.ui.utils.ScreenCornerRadiiPx
 import com.haooz.chedule.ui.utils.AppMaterialSettings
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.haooz.chedule.ui.utils.ScreenCornerRadiiPx
+import com.haooz.softglass.backdrop.backdrops.rememberLayerBackdrop
 import java.io.File
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Scaffold
-import com.haooz.chedule.ui.components.text.miuix.Text as Text
 import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -61,13 +62,19 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  */
 fun main() {
     // ── 启动注入（对应 Android 的 NexioApplication.onCreate 的四个 init）──────────
-    // 1. 存储：按名字分文件（17 个偏好名，绝不合并），JSON + 类型标签持久化
+    // 1. 存储：与 Android / iOS 同一个 nexio.db（键值表 + 课程行表同库同事务）
     val dataDir = File(
         System.getProperty("user.home"),
-        ".nexio-chedule",   // 桌面数据目录；Android 的 17 个偏好文件名原样沿用
+        ".nexio-chedule",   // 桌面数据目录；Android 的 17 个偏好名原样沿用为命名空间
     )
     dataDir.mkdirs()
-    AppStorage.init { name -> FileKeyValueStore(File(dataDir, "$name.json")) }
+    DesktopSqlStorage.init(dataDir)
+    AppStorage.init { name -> DesktopSqlStorage.store(name) }
+    CourseStorage.install { DesktopSqlStorage.courseRows() }
+    // 桌面从第一天就是 nexio.db：没有 blob 存量可搬，直接记为已迁移
+    runCatching { DesktopSqlStorage.courseRows().markFullyMigrated() }
+    // 语言镜像尽早就位：core 数据类的显示变体（DisplayLang）依赖它；与 CourseScheduleApp 里的恢复同值
+    com.haooz.chedule.i18n.AppLanguage.init(com.haooz.chedule.i18n.LanguageStore.load())
 
     // 2. 版本号：桌面读不到 PackageManager，直接给（上报的 app_version 用）
     AppInfo.init("1.6.4-desktop")
@@ -77,7 +84,7 @@ fun main() {
         root = FileAppFile(dataDir),
         readAsset = { path ->
             val stream = object {}.javaClass.classLoader.getResourceAsStream(path)
-                ?: throw IllegalArgumentException("内置资源缺失: $path")
+                ?: throw IllegalArgumentException(DesktopStr.missingResource(path))
             stream.use { it.readBytes() }
         },
     )
@@ -88,7 +95,7 @@ fun main() {
     application {
         Window(
             onCloseRequest = ::exitApplication,
-            title = "Nexio 课程表",
+            title = com.haooz.chedule.i18n.DesktopStr.appTitle(),
             state = rememberWindowState(width = 1200.dp, height = 800.dp),
         ) {
             CourseScheduleTheme {
@@ -102,20 +109,36 @@ fun main() {
  * 页面栈（极简：首页 + 若干详情页，够当前验证阶段用）。
  * ⚠ 与 `:ui-shared` 的 `AppRoute` 是两份路由知识：本壳未包 AppRoute，因 SchoolSelection（桌面无 WebView 导入，直接暴露选校页）与 AddCourse（弹窗演示）本就无对应路由，且路由→内容映射带着 Android 触点搬不动。代价：Android 侧增改路由时这里不告警，每迁一批页面记得补入口，正式路由替换后本注释删除。
  */
-private enum class DesktopPage(val title: String) {
-    Home("Nexio 课程表 · 桌面验证"),
-    Changelog("更新日志"),
-    License("开源协议"),
-    PrivacyPolicy("隐私政策"),
-    Communication("交流与反馈"),
-    SchoolSelection("教务导入 · 选择学校"),
-    CourseTimeSettings("课程时间管理"),
-    AppreciateAuthor("赞赏作者"),
-    AddCourse("添加课程（弹窗）"),
-    WidgetIntro("桌面小部件介绍"),
-    WebDavSettings("WebDAV 云备份"),
-    CourseDetail("课程详情（转场页）"),
-    CourseEdit("课程编辑（转场页）"),
+private enum class DesktopPage {
+    Home,
+    Changelog,
+    License,
+    PrivacyPolicy,
+    Communication,
+    SchoolSelection,
+    CourseTimeSettings,
+    AppreciateAuthor,
+    AddCourse,
+    WidgetIntro,
+    WebDavSettings,
+    CourseDetail,
+    CourseEdit;
+
+    fun displayTitle(): String = when (this) {
+        Home -> com.haooz.chedule.i18n.DesktopStr.home()
+        Changelog -> com.haooz.chedule.i18n.DesktopStr.changelog()
+        License -> com.haooz.chedule.i18n.DesktopStr.license()
+        PrivacyPolicy -> com.haooz.chedule.i18n.DesktopStr.privacyPolicy()
+        Communication -> com.haooz.chedule.i18n.DesktopStr.communication()
+        SchoolSelection -> com.haooz.chedule.i18n.DesktopStr.schoolSelection()
+        CourseTimeSettings -> com.haooz.chedule.i18n.DesktopStr.courseTimeSettings()
+        AppreciateAuthor -> com.haooz.chedule.i18n.DesktopStr.appreciateAuthor()
+        AddCourse -> com.haooz.chedule.i18n.DesktopStr.addCourse()
+        WidgetIntro -> com.haooz.chedule.i18n.DesktopStr.widgetIntro()
+        WebDavSettings -> com.haooz.chedule.i18n.DesktopStr.webDavSettings()
+        CourseDetail -> com.haooz.chedule.i18n.DesktopStr.courseDetail()
+        CourseEdit -> com.haooz.chedule.i18n.DesktopStr.courseEdit()
+    }
 }
 
 @Composable
@@ -135,7 +158,7 @@ private fun DesktopShell() {
             } else {
                 // 与 Android 路由页同一脚手架（DocumentPageScaffold：折叠大标题顶栏 + 液态玻璃圆形返回按钮 + 采样层），正是「多平台视觉一致性」的验证点——同一份组件代码在桌面渲染。
                 PageContainer(
-                    title = page.title,
+                    title = page.displayTitle(),
                     onBack = { page = DesktopPage.Home },
                 ) { scrollBehavior ->
                     when (page) {
@@ -148,13 +171,14 @@ private fun DesktopShell() {
                             scrollBehavior = scrollBehavior,
                             onAdapterSelected = { _, _ -> },
                         )
-                        // 课程时间管理（onEditRoutine 指向宿主路由，桌面端给空实现）
+                        // 上课时间（onEditRoutine 指向宿主路由，桌面端给空实现）
+                        // 没有二级页 ⇒ morphActive 保持 null，点作息行不隐藏源行
                         DesktopPage.CourseTimeSettings -> CourseTimeSettingsScreen(
                             onEditRoutine = { _, _, _ -> },
                             scrollBehavior = scrollBehavior,
                         )
                         DesktopPage.Home -> Unit // 上面已分流，不可达
-                        // WebDAV 云备份（节假日副作用回调桌面端给空实现）
+                        // WebDAV 云同步（节假日副作用回调桌面端给空实现）
                         DesktopPage.WebDavSettings -> WebDavSettingsScreen(
                             scrollBehavior = scrollBehavior,
                         )
@@ -229,12 +253,11 @@ private fun HomeContent(onOpen: (DesktopPage) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            text = "已迁移到 :ui-shared 的页面",
+            text = com.haooz.chedule.i18n.DesktopStr.migratedPages(),
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
         )
         Text(
-            text = "以下每个入口渲染的都是与 Android 端共用的同一份代码。" +
-                "迁移批次推进时，这里会同步增加入口。",
+            text = com.haooz.chedule.i18n.DesktopStr.migratedPagesDesc(),
             color = MiuixTheme.colorScheme.onSurfaceVariantActions,
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
         )
@@ -245,7 +268,7 @@ private fun HomeContent(onOpen: (DesktopPage) -> Unit) {
                     onClick = { onOpen(target) },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(text = target.title)
+                    Text(text = target.displayTitle())
                 }
             }
     }

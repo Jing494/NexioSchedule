@@ -2,14 +2,17 @@
 
 package com.haooz.chedule.ui.utils
 
-import com.haooz.chedule.data.NexioLog
-import com.haooz.chedule.data.optBoolean
-import com.haooz.chedule.data.optJsonArray
-import com.haooz.chedule.data.optJsonObject
-import com.haooz.chedule.data.optString
-import com.haooz.chedule.data.parseJsonArray
-import com.haooz.chedule.data.parseJsonObject
+import com.haooz.chedule.data.util.optBoolean
+import com.haooz.chedule.data.util.optJsonArray
+import com.haooz.chedule.data.util.optJsonObject
+import com.haooz.chedule.data.util.optString
+import com.haooz.chedule.data.platform.NexioLog
+import com.haooz.chedule.data.util.parseJsonArray
+import com.haooz.chedule.data.util.parseJsonObject
+import com.haooz.chedule.i18n.L
 import com.haooz.chedule.ui.web.JS_PROMISE_BRIDGE
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -17,8 +20,8 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import platform.CoreGraphics.CGRectMake
-import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSError
+import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSURL
 import platform.WebKit.WKNavigation
 import platform.WebKit.WKNavigationDelegateProtocol
@@ -28,13 +31,11 @@ import platform.WebKit.WKUserContentController
 import platform.WebKit.WKWebView
 import platform.WebKit.WKWebViewConfiguration
 import platform.darwin.NSObject
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
  * iOS 的 WakeUp 课表导入：**无头 WKWebView 跑云端适配脚本**，对应 Android
  * `ThirdPartyShareImporter.importWakeUp`（无头 `WebView` + `@JavascriptInterface`）。
- * 脚本本体由 [IosShareImport] 用共享 `ScriptRepository` 下载好再传入 —— 下载是跨平台能力，
+ * 脚本本体由 [ShareCodeImport] 用共享 `ScriptRepository` 下载好再传入 —— 下载是跨平台能力，
  * 不与 WKWebView 绑在一起。
  *
  * ## 桥接差异（本文件唯一难的地方）
@@ -223,13 +224,13 @@ internal object IosWakeUpImport {
          *
          * ⚠ 自带 20s 超时并把 `TimeoutCancellationException` 换成可读文案：网络不通时
          * `didFinishNavigation` 不会来，不兜底就干等到外层 45s 超时、抛没人看得懂的
-         * "Timed out waiting for ..."（文案风格与 IosShareImport 一致）。
+         * "Timed out waiting for ..."（文案风格与 ShareCodeImport 一致）。
          */
         suspend fun awaitPageLoad() {
             try {
                 withTimeout(PAGE_LOAD_TIMEOUT_MS) { pageLoaded.await() }
             } catch (e: TimeoutCancellationException) {
-                throw IllegalStateException("页面加载超时，请检查网络后重试")
+                throw IllegalStateException(L("页面加载超时，请检查网络后重试", "Page load timed out. Check your network and try again.")())
             }
         }
 
@@ -279,15 +280,15 @@ internal object IosWakeUpImport {
                     }
                 }
                 "notifyTaskCompletion" -> complete()
-                "onImportFailed" -> fail(args.getOrNull(0) as? String ?: "导入失败")
+                "onImportFailed" -> fail(args.getOrNull(0) as? String ?: L("导入失败", "Import failed")())
                 "saveImportedCourses" -> {
                     val promiseId = args.getOrNull(1) as? String
                     val parsed = runCatching { parseCourses(args.getOrNull(0) as? String) }
                         .onFailure { NexioLog.e(TAG, "课程解析失败", it) }
                         .getOrDefault(emptyList())
                     if (parsed.isEmpty()) {
-                        fail("未解析到课程数据")
-                        rejectPromise(promiseId, "未解析到课程数据")
+                        fail(L("未解析到课程数据", "No course data could be parsed")())
+                        rejectPromise(promiseId, L("未解析到课程数据", "No course data could be parsed")())
                         return
                     }
                     courses = parsed
@@ -311,7 +312,7 @@ internal object IosWakeUpImport {
                 "saveComboSchedule" -> resolvePromise(args.getOrNull(1) as? String, "true")
                 "showAlert" -> {
                     val content = args.getOrNull(1) as? String
-                    fail(content?.takeIf { it.isNotBlank() } ?: "导入失败")
+                    fail(content?.takeIf { it.isNotBlank() } ?: L("导入失败", "Import failed")())
                     resolvePromise(args.getOrNull(3) as? String, "true")
                 }
                 "showPrompt" -> resolvePromise(args.getOrNull(4) as? String, "'${escapeJs(shareKey)}'")
@@ -350,7 +351,7 @@ internal object IosWakeUpImport {
             if (settled) return
             val list = courses
             if (list.isNullOrEmpty()) {
-                fail("未解析到课程数据")
+                fail(L("未解析到课程数据", "No course data could be parsed")())
                 return
             }
             settled = true

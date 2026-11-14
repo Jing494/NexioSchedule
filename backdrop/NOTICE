@@ -1,9 +1,0 @@
-This module is a modified fork of io.github.kyant0:backdrop 2.0.1.
-
-Original: https://github.com/Kyant0/AndroidLiquidGlass (Apache License 2.0)
-Copyright 2025 Kyant.
-
-Modifications for NexioSchedule: local fixes, glass/material tiering, performance
-guards and Nexio-specific integrations. See the repository history for details.
-
-Licensed under the Apache License, Version 2.0 (see LICENSE in this directory).

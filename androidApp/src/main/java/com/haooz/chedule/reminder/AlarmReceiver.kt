@@ -1,27 +1,31 @@
 /** 课程提醒闹钟接收器 */
 package com.haooz.chedule.reminder
 
-import com.haooz.chedule.data.HolidayEntry
-
-import com.haooz.chedule.data.plusDays
-import com.haooz.chedule.data.todayLocalDate
-import kotlinx.datetime.daysUntil
-
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.haooz.chedule.data.NexioLog
-import com.haooz.chedule.data.CourseRepository
-import com.haooz.chedule.data.HolidayCountdown
-import com.haooz.chedule.data.HolidayManager
+import com.haooz.chedule.data.repo.CourseRepository
+import com.haooz.chedule.data.holiday.HolidayCountdown
+import com.haooz.chedule.data.holiday.HolidayManager
+import com.haooz.chedule.data.platform.NexioLog
 import com.haooz.chedule.data.ReturnDayReminder
+import com.haooz.chedule.data.holiday.HolidayEntry
+import com.haooz.chedule.data.util.plusDays
+import com.haooz.chedule.data.util.todayLocalDate
+import com.haooz.chedule.i18n.AndroidNotifStr
+import com.haooz.chedule.i18n.AndroidWidgetStr
+import com.haooz.chedule.i18n.AppLanguage
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.daysUntil
 
 class AlarmReceiver : BroadcastReceiver() {
 
     /** 放假提示标题：有假期名就带上，缺失时退化成通用文案 */
     private fun holidayStartTitle(name: String): String =
-        if (name.isBlank()) "明天开始放假" else "明天起${name}放假"
+        if (name.isBlank()) AndroidNotifStr.holidayStartsGeneric() else AndroidNotifStr.holidayStartsWithName(name)
 
     /**
      * 放假提示正文：从放假日算起的剩余假期天数 + 复课日。
@@ -32,21 +36,24 @@ class AlarmReceiver : BroadcastReceiver() {
         entriesByYear: Map<Int, List<HolidayEntry>>,
         startDate: LocalDate,
     ): String {
-        val block = HolidayCountdown.holidayBlockAt(entriesByYear, startDate) ?: return "明天不用上课"
+        val block = HolidayCountdown.holidayBlockAt(entriesByYear, startDate) ?: return AndroidNotifStr.noClassTomorrow()
         val resume = block.endDate.plusDays(1)
         val days = startDate.daysUntil(block.endDate) + 1L
-        return "共${days}天，${resume.monthNumber}月${resume.dayOfMonth}日恢复上课"
+        return AndroidNotifStr.holidayResumeN(days, resume.monthNumber, resume.dayOfMonth)
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         val type = intent.getIntExtra(CourseReminderHelper.EXTRA_REMINDER_TYPE, 0)
-        NexioLog.d("CourseReminder", "AlarmReceiver: type=$type ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}")
+        NexioLog.d("CourseReminder", "AlarmReceiver: type=$type ${
+            SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(
+                Date()
+            )}")
         val repository = CourseRepository()
         val useIsland = repository.getIslandNotification() && IslandNotificationHelper.isIslandSupported(context)
 
         when (type) {
             CourseReminderHelper.TYPE_PRE_CLASS -> {
-                val courseName = intent.getStringExtra(CourseReminderHelper.EXTRA_COURSE_NAME) ?: "课程"
+                val courseName = intent.getStringExtra(CourseReminderHelper.EXTRA_COURSE_NAME) ?: AndroidNotifStr.defaultCourseName()
                 val section = intent.getStringExtra(CourseReminderHelper.EXTRA_COURSE_SECTION) ?: ""
                 val startTime = intent.getStringExtra(CourseReminderHelper.EXTRA_COURSE_START_TIME) ?: ""
                 val courseId = intent.getStringExtra(CourseReminderHelper.EXTRA_COURSE_ID) ?: ""

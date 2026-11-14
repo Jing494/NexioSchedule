@@ -25,12 +25,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import com.haooz.chedule.ui.components.CardExpand
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -48,6 +45,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -58,23 +56,30 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.haooz.chedule.data.AppStorage
-import com.haooz.chedule.data.HolidayManager
-import com.haooz.chedule.data.ClassroomLabel
-import com.haooz.chedule.data.HttpTimeouts
+import com.haooz.chedule.data.storage.AppStorage
+import com.haooz.chedule.data.model.ClassroomLabel
+import com.haooz.chedule.data.holiday.HolidayManager
+import com.haooz.chedule.data.platform.HttpTimeouts
 import com.haooz.chedule.data.ai.AiClient
 import com.haooz.chedule.data.ai.AiResult
-import com.haooz.chedule.data.createHttpService
-import com.haooz.chedule.data.ClassroomLabelRule
-import com.haooz.chedule.data.CourseRepository
-import com.haooz.chedule.data.NoopReminderController
-import com.haooz.chedule.data.ReminderController
-import com.haooz.chedule.data.showToast
+import com.haooz.chedule.data.model.ClassroomLabelRule
+import com.haooz.chedule.data.platform.NoopReminderController
+import com.haooz.chedule.data.platform.ReminderController
+import com.haooz.chedule.data.platform.createHttpService
+import com.haooz.chedule.data.platform.showToast
+import com.haooz.chedule.data.repo.CourseRepository
+import com.haooz.chedule.i18n.AppLanguage
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.i18n.ReminderStr
 import com.haooz.chedule.ui.basic.AiSparkleIcon
 import com.haooz.chedule.ui.basic.OverlayDropdownMenu
+import com.haooz.chedule.ui.components.CardExpand
+import com.haooz.chedule.ui.components.pageTopExtra
+import com.haooz.chedule.ui.components.text.material.Text as Text
 import com.haooz.chedule.ui.utils.isAppDarkTheme
 import com.haooz.chedule.viewmodel.SettingsViewModel
 import com.haooz.chedule.viewmodel.settingsViewModel
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -89,12 +94,11 @@ import top.yukonga.miuix.kmp.basic.ProgressIndicatorDefaults
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.basic.ArrowRight
 import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBarDefaults
 import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
 import top.yukonga.miuix.kmp.layout.collapsibleTopInset
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.basic.ArrowRight
-import top.yukonga.miuix.kmp.icon.extended.Edit
 import top.yukonga.miuix.kmp.layout.isTabletWidth
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -102,8 +106,6 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import com.kyant.capsule.ContinuousRoundedRectangle
-import androidx.compose.ui.graphics.Color as ComposeColor
 
 /** 课程提醒页详细流程日志：仅「开始录制」后写入 */
 private fun rlog(event: String, detail: String = "") {
@@ -219,7 +221,7 @@ private fun ClassroomPreviewRow(
                 },
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(ContinuousRoundedRectangle(6.dp))
                     .clickable { onStartEdit() }
                     .padding(horizontal = 2.dp, vertical = 2.dp),
                 textAlign = TextAlign.End,
@@ -241,16 +243,37 @@ private fun pad2(hour: Int, minute: Int): String = "${pad2(hour)}:${pad2(minute)
 private const val PENDING_RESTORE_DND = "pending_restore_class_dnd"
 private const val PENDING_RESTORE_IN_CLASS = "pending_restore_in_class"
 
+/**
+ * 「平台权限」区里可以按平台隐藏的条目。
+ *
+ * 没有对应系统概念的平台（鸿蒙没有精确闹钟授权、电池优化白名单、免打扰改写、自启动）
+ * 不该显示一个永远「已授权」或点了没反应的入口。
+ */
+enum class ReminderPermissionRow {
+    EXACT_ALARM,
+    BATTERY_OPTIMIZATION,
+    DND,
+    AUTOSTART,
+}
+
 @Composable
 fun CourseReminderScreen(
     settingsViewModel: SettingsViewModel = settingsViewModel(),
     scrollBehavior: SharedScrollBehavior? = null,
-    liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = null,
+    liquidGlassBackdrop: com.haooz.softglass.backdrop.GlassBackdrop? = null,
     /** 提醒控制器（Android = AndroidReminderController 包装）；桌面/iOS 用 NoopReminderController */
     reminderController: ReminderController = NoopReminderController,
+    /** 本平台没有对应系统概念的权限行，默认全部展示（Android/iOS 行为不变） */
+    hiddenPermissionRows: Set<ReminderPermissionRow> = emptySet(),
 ) {
     val preClassReminder by settingsViewModel.preClassReminder.collectAsState()
     val preClassReminderMinutes by settingsViewModel.preClassReminderMinutes.collectAsState()
+    val preClassReminderStartSection by settingsViewModel.preClassReminderStartSection.collectAsState()
+    val preClassReminderEndSection by settingsViewModel.preClassReminderEndSection.collectAsState()
+    val morningSections by settingsViewModel.morningSections.collectAsState()
+    val afternoonSections by settingsViewModel.afternoonSections.collectAsState()
+    val eveningSections by settingsViewModel.eveningSections.collectAsState()
+    val totalSections = (morningSections + afternoonSections + eveningSections).coerceAtLeast(1)
     val nextDayReminder by settingsViewModel.nextDayReminder.collectAsState()
     val nextDayReminderHour by settingsViewModel.nextDayReminderHour.collectAsState()
     val nextDayReminderMinute by settingsViewModel.nextDayReminderMinute.collectAsState()
@@ -264,6 +287,14 @@ fun CourseReminderScreen(
     var showMinutesDialog by remember { mutableStateOf(false) }
     var showTimeDialog by remember { mutableStateOf(false) }
     var tempMinutes by remember { mutableIntStateOf(preClassReminderMinutes) }
+    var showSectionRangeDialog by remember { mutableStateOf(false) }
+    // 结束节为 0 表示「到最后」，UI 上落到最后一节
+    var tempStartSection by remember { mutableIntStateOf(preClassReminderStartSection) }
+    var tempEndSection by remember(totalSections) {
+        mutableIntStateOf(
+            if (preClassReminderEndSection <= 0) totalSections else preClassReminderEndSection
+        )
+    }
     var tempHour by remember { mutableIntStateOf(nextDayReminderHour) }
     var tempMinute by remember { mutableIntStateOf(nextDayReminderMinute) }
 
@@ -378,6 +409,7 @@ fun CourseReminderScreen(
     var tempInClassLeadMinutes by remember { mutableIntStateOf(inClassLeadMinutes) }
 
     val masterEnabled = preClassReminder || nextDayReminder
+    val dndSupported = reminderController.supportsDnd()
     // 总开关关闭时联动关掉子开关：勿扰 + 课中提醒（与下节课/次日提醒置 false 同一策略）
     val disableMasterDependentSwitches = {
         // 先记住「这次是被总开关联动关掉的」，总开关再打开时按原样恢复
@@ -503,7 +535,7 @@ fun CourseReminderScreen(
         } else {
             pendingPermissionAction = null
             rlog("permission_notification_denied")
-            showToast("需要通知权限才能使用课程提醒功能")
+            showToast(ReminderStr.notificationPermissionRequired())
         }
     }
 
@@ -538,7 +570,7 @@ fun CourseReminderScreen(
                     contentPadding = PaddingValues(
                         start = tabletHorizontalPadding,
                         top = paddingValues.calculateTopPadding() + CollapsibleTopAppBarDefaults.CollapsedHeight +
-                            (if (isTablet) 24.dp else 12.dp),
+                            pageTopExtra(isTablet, hasSmallTitle = false),
                         end = tabletHorizontalPadding,
                         bottom = 120.dp
                     ),
@@ -554,7 +586,7 @@ fun CourseReminderScreen(
                         ) {
                             val masterEnabled = preClassReminder || nextDayReminder
                             SwitchPreference(
-                                title = "开启提醒",
+                                title = ReminderStr.enableReminders(),
                                 checked = masterEnabled,
                                 onCheckedChange = {
                                     val hasPermission = reminderController.hasNotificationPermission()
@@ -594,8 +626,8 @@ fun CourseReminderScreen(
                             insideMargin = PaddingValues(0.dp)
                         ) {
                             SwitchPreference(
-                                title = "下节课提醒",
-                                summary = "提供下节上课时间、地点等信息，和上课勿扰等操作建议",
+                                title = ReminderStr.preClassReminder(),
+                                summary = ReminderStr.preClassReminderSummary(),
                                 checked = preClassReminder,
                                 enabled = masterEnabled,
                                 onCheckedChange = {
@@ -614,10 +646,10 @@ fun CourseReminderScreen(
                             )
                             CardExpand(visible = preClassReminder) {
                                 ArrowPreference(
-                                    title = "提前提醒时间",
+                                    title = ReminderStr.reminderLeadTime(),
                                     endActions = {
                                         Text(
-                                            text = "${preClassReminderMinutes}分钟",
+                                            text = ReminderStr.minutesN(preClassReminderMinutes),
                                             fontSize = 14.5.sp,
                                             color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                                             textAlign = TextAlign.End,
@@ -630,10 +662,51 @@ fun CourseReminderScreen(
                                         showMinutesDialog = true
                                     }
                                 )
+                                // 提醒节次范围：只提醒指定节次，晚休之后的课可以不再打扰
+                                val reminderAllSections = preClassReminderStartSection <= 1 &&
+                                    (preClassReminderEndSection <= 0 || preClassReminderEndSection >= totalSections)
+                                val reminderSectionLabel = when {
+                                    reminderAllSections -> ReminderStr.allSections()
+                                    preClassReminderEndSection <= 0 || preClassReminderEndSection >= totalSections ->
+                                        ReminderStr.sectionRangeFromN(preClassReminderStartSection)
+                                    preClassReminderStartSection <= 1 ->
+                                        ReminderStr.sectionRangeUntilN(preClassReminderEndSection)
+                                    else -> ReminderStr.sectionRangeN(
+                                        preClassReminderStartSection,
+                                        preClassReminderEndSection
+                                    )
+                                }
+                                ArrowPreference(
+                                    title = ReminderStr.reminderSections(),
+                                    endActions = {
+                                        Text(
+                                            text = reminderSectionLabel,
+                                            fontSize = 14.5.sp,
+                                            color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                            textAlign = TextAlign.End,
+                                        )
+                                    },
+                                    holdDownState = showSectionRangeDialog,
+                                    onClick = {
+                                        rlog(
+                                            "preclass_sections_dialog_open",
+                                            "start=$preClassReminderStartSection end=$preClassReminderEndSection total=$totalSections"
+                                        )
+                                        tempStartSection = preClassReminderStartSection
+                                            .coerceIn(1, totalSections)
+                                        tempEndSection = if (preClassReminderEndSection <= 0) {
+                                            totalSections
+                                        } else {
+                                            preClassReminderEndSection
+                                                .coerceIn(tempStartSection, totalSections)
+                                        }
+                                        showSectionRangeDialog = true
+                                    }
+                                )
                             }
                             SwitchPreference(
-                                title = "次日课程提醒",
-                                summary = "提供明天课程、首节时间、地点等信息，和定闹钟等操作建议",
+                                title = ReminderStr.nextDayReminder(),
+                                summary = ReminderStr.nextDayReminderSummary(),
                                 checked = nextDayReminder,
                                 enabled = masterEnabled,
                                 onCheckedChange = {
@@ -652,7 +725,7 @@ fun CourseReminderScreen(
                             )
                             CardExpand(visible = nextDayReminder) {
                                 ArrowPreference(
-                                    title = "提醒时间",
+                                    title = ReminderStr.reminderTime(),
                                     endActions = {
                                         Text(
                                             text = pad2(nextDayReminderHour, nextDayReminderMinute),
@@ -673,8 +746,8 @@ fun CourseReminderScreen(
                                 )
                             }
                             SwitchPreference(
-                                title = "课中提醒",
-                                summary = "上课中展示距离下课时间与课程状态",
+                                title = ReminderStr.inClassReminder(),
+                                summary = ReminderStr.inClassReminderSummary(),
                                 checked = inClassEnabled,
                                 enabled = masterEnabled,
                                 onCheckedChange = {
@@ -685,13 +758,13 @@ fun CourseReminderScreen(
                             )
                             CardExpand(visible = masterEnabled && inClassEnabled) {
                                 ArrowPreference(
-                                    title = "提醒时机",
+                                    title = ReminderStr.reminderTiming(),
                                     endActions = {
                                         Text(
                                             text = if (inClassTimingMode == ReminderController.IN_CLASS_TIMING_FULL) {
-                                                "全程"
+                                                ReminderStr.inClassTimingFull()
                                             } else {
-                                                "距下课 ${inClassLeadMinutes} 分钟"
+                                                ReminderStr.beforeEndN(inClassLeadMinutes)
                                             },
                                             fontSize = 14.5.sp,
                                             color = MiuixTheme.colorScheme.onSurfaceVariantActions,
@@ -710,12 +783,12 @@ fun CourseReminderScreen(
                                     }
                                 )
                             }
-                            SwitchPreference(
-                                title = "自动开启勿扰",
+                            if (dndSupported) SwitchPreference(
+                                title = ReminderStr.autoDnd(),
                                 summary = if (!dndPermissionGranted) {
-                                    "需要先授予勿扰权限才能自动开启勿扰"
+                                    ReminderStr.autoDndNeedsPermission()
                                 } else {
-                                    "上课时自动开启勿扰，下课后自动恢复"
+                                    ReminderStr.autoDndSummary()
                                 },
                                 checked = classDndEnabled,
                                 // 仅受总开关约束：无权限时仍可点开，会跳到授权卡片引导
@@ -731,8 +804,6 @@ fun CourseReminderScreen(
                                     rlog("reminder_service", "start_after_dnd")
                                 }
                             )
-                            // 总开关开启时档位始终可见：通知/超级岛上的「上课勿扰」按钮也能切换勿扰开关
-                            // 总开关关闭时整页子项折叠，档位一并隐藏
                             val selectMode: (Int) -> Unit = { mode ->
                                 rlog("dnd_mode_select", "mode=$mode")
                                 settingsViewModel.setClassDndMode(mode)
@@ -740,39 +811,39 @@ fun CourseReminderScreen(
                                 // Android N 起同样被判定为切换勿扰，未授权会直接抛异常
                                 if (!reminderController.isDndPermissionGranted()) {
                                     rlog("dnd_mode_permission_needed", "mode=$mode")
-                                    showToast("该档位需要勿扰权限，已为你打开授权页")
+                                    showToast(ReminderStr.dndModeNeedsPermission())
                                     reminderController.openNotificationAccessSettings { onDndPermissionResult() }
                                 }
                                 reminderController.startReminderService()
                                 rlog("reminder_service", "start_after_dnd_mode")
                             }
-                            val modeEntry = remember(classDndMode) {
+                            val modeEntry = remember(classDndMode, AppLanguage.resolved) {
                                 DropdownEntry(
                                     items = listOf(
                                         DropdownItem(
-                                            text = "完全勿扰 (DND)",
-                                            summary = "屏蔽全部通知与铃声",
+                                            text = ReminderStr.dndModeTotalSilence(),
+                                            summary = ReminderStr.dndModeTotalSilenceSummary(),
                                             selected = classDndMode == ReminderController.MODE_DND,
                                             onClick = { selectMode(ReminderController.MODE_DND) }
                                         ),
                                         DropdownItem(
-                                            text = "静音模式 (SILENT)",
-                                            summary = "关闭铃声与振动",
+                                            text = ReminderStr.dndModeSilent(),
+                                            summary = ReminderStr.dndModeSilentSummary(),
                                             selected = classDndMode == ReminderController.MODE_SILENT,
                                             onClick = { selectMode(ReminderController.MODE_SILENT) }
                                         ),
                                         DropdownItem(
-                                            text = "勿扰模式 (PRIORITY)",
-                                            summary = "只放行优先通知",
+                                            text = ReminderStr.dndModePriority(),
+                                            summary = ReminderStr.dndModePrioritySummary(),
                                             selected = classDndMode == ReminderController.MODE_PRIORITY,
                                             onClick = { selectMode(ReminderController.MODE_PRIORITY) }
                                         )
                                     )
                                 )
                             }
-                            CardExpand(visible = masterEnabled) {
+                            if (dndSupported) CardExpand(visible = masterEnabled) {
                                 OverlayDropdownMenu(
-                                    title = "勿扰模式档位",
+                                    title = ReminderStr.dndModeTitle(),
                                     entry = modeEntry,
                                     collapseOnSelection = true,
                                     enabled = masterEnabled,
@@ -794,14 +865,14 @@ fun CourseReminderScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 SwitchPreference(
-                                    title = if (isHyperIsland) "小米超级岛" else "灵动岛",
+                                    title = if (isHyperIsland) ReminderStr.xiaomiSuperIsland() else ReminderStr.dynamicIsland(),
                                     summary = when {
                                         islandNotification && isHyperIsland ->
-                                            "已开启，课程提醒将以超级岛样式显示"
+                                            ReminderStr.superIslandOnSummary()
                                         islandNotification ->
-                                            "已开启，点击上课提醒将启动实时活动"
-                                        isHyperIsland -> "关闭后使用实时动态通知"
-                                        else -> "关闭后点击提醒仅打开应用"
+                                            ReminderStr.liveActivityOnSummary()
+                                        isHyperIsland -> ReminderStr.islandOffHyperSummary()
+                                        else -> ReminderStr.islandOffIosSummary()
                                     },
                                     checked = islandNotification,
                                     onCheckedChange = {
@@ -823,16 +894,16 @@ fun CourseReminderScreen(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
-                                                text = "Shizuku 状态",
+                                                text = ReminderStr.shizukuStatus(),
                                                 fontSize = 14.sp,
                                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                                             )
                                             Spacer(modifier = Modifier.weight(1f))
                                             Text(
                                                 text = when {
-                                                    !shizukuRunning -> "未运行"
-                                                    !shizukuAuthorized -> "未授权"
-                                                    else -> "已就绪"
+                                                    !shizukuRunning -> ReminderStr.notRunning()
+                                                    !shizukuAuthorized -> ReminderStr.notAuthorized()
+                                                    else -> ReminderStr.ready()
                                                 },
                                                 fontSize = 14.sp,
                                                 color = when {
@@ -849,7 +920,7 @@ fun CourseReminderScreen(
                                         CardExpand(visible = !shizukuRunning) {
                                             Spacer(modifier = Modifier.height(8.dp))
                                             Text(
-                                                text = "请安装并启动 Shizuku 应用",
+                                                text = ReminderStr.installShizuku(),
                                                 style = MiuixTheme.textStyles.body2,
                                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                                             )
@@ -857,14 +928,14 @@ fun CourseReminderScreen(
                                         CardExpand(visible = shizukuRunning && !shizukuAuthorized) {
                                             Spacer(modifier = Modifier.height(12.dp))
                                             TextButton(
-                                                text = "授权 Shizuku",
+                                                text = ReminderStr.authorizeShizuku(),
                                                 onClick = {
                                                     rlog("shizuku_authorize_request")
                                                     reminderController.requestShizukuPermission { granted ->
                                                         rlog("shizuku_authorize_result", "granted=$granted")
                                                         shizukuAuthorized = granted
                                                         if (!granted) {
-                                                            showToast("Shizuku 授权失败")
+                                                            showToast(ReminderStr.shizukuAuthFailed())
                                                         }
                                                     }
                                                 },
@@ -886,7 +957,7 @@ fun CourseReminderScreen(
 
                         val liveRightOptions = listOf(
                             DropdownItem(
-                                text = "课程名称",
+                                text = ReminderStr.courseName(),
                                 selected = liveRightMode == 0,
                                 onClick = {
                                     rlog("live_right_mode", "mode=0 课程名称")
@@ -895,7 +966,7 @@ fun CourseReminderScreen(
                                 }
                             ),
                             DropdownItem(
-                                text = "上课地点",
+                                text = ReminderStr.classLocation(),
                                 selected = liveRightMode == 1,
                                 onClick = {
                                     rlog("live_right_mode", "mode=1 上课地点")
@@ -904,7 +975,7 @@ fun CourseReminderScreen(
                                 }
                             ),
                             DropdownItem(
-                                text = "倒计时",
+                                text = ReminderStr.countdown(),
                                 selected = liveRightMode == 2,
                                 onClick = {
                                     rlog("live_right_mode", "mode=2 倒计时")
@@ -916,7 +987,7 @@ fun CourseReminderScreen(
 
                         val islandLeftOptions = listOf(
                             DropdownItem(
-                                text = "课程名称",
+                                text = ReminderStr.courseName(),
                                 selected = islandLeftMode == 0,
                                 onClick = {
                                     rlog("island_left_mode", "mode=0 课程名称")
@@ -925,7 +996,7 @@ fun CourseReminderScreen(
                                 }
                             ),
                             DropdownItem(
-                                text = "上课地点",
+                                text = ReminderStr.classLocation(),
                                 selected = islandLeftMode == 1,
                                 onClick = {
                                     rlog("island_left_mode", "mode=1 上课地点")
@@ -934,7 +1005,7 @@ fun CourseReminderScreen(
                                 }
                             ),
                             DropdownItem(
-                                text = "倒计时",
+                                text = ReminderStr.countdown(),
                                 selected = islandLeftMode == 2,
                                 onClick = {
                                     rlog("island_left_mode", "mode=2 倒计时")
@@ -946,7 +1017,7 @@ fun CourseReminderScreen(
 
                         val islandRightOptions = listOf(
                             DropdownItem(
-                                text = "课程名称",
+                                text = ReminderStr.courseName(),
                                 selected = islandRightMode == 0,
                                 onClick = {
                                     rlog("island_right_mode", "mode=0 课程名称")
@@ -955,7 +1026,7 @@ fun CourseReminderScreen(
                                 }
                             ),
                             DropdownItem(
-                                text = "上课地点",
+                                text = ReminderStr.classLocation(),
                                 selected = islandRightMode == 1,
                                 onClick = {
                                     rlog("island_right_mode", "mode=1 上课地点")
@@ -964,7 +1035,7 @@ fun CourseReminderScreen(
                                 }
                             ),
                             DropdownItem(
-                                text = "倒计时",
+                                text = ReminderStr.countdown(),
                                 selected = islandRightMode == 2,
                                 onClick = {
                                     rlog("island_right_mode", "mode=2 倒计时")
@@ -976,7 +1047,7 @@ fun CourseReminderScreen(
 
                         val islandAodOptions = listOf(
                             DropdownItem(
-                                text = "课程名称",
+                                text = ReminderStr.courseName(),
                                 selected = islandAodMode == 0,
                                 onClick = {
                                     rlog("island_aod_mode", "mode=0 课程名称")
@@ -985,7 +1056,7 @@ fun CourseReminderScreen(
                                 }
                             ),
                             DropdownItem(
-                                text = "上课地点",
+                                text = ReminderStr.classLocation(),
                                 selected = islandAodMode == 1,
                                 onClick = {
                                     rlog("island_aod_mode", "mode=1 上课地点")
@@ -998,7 +1069,7 @@ fun CourseReminderScreen(
                         // 课中岛缩略态右侧：与课前岛的左右两侧互不干扰
                         val islandInClassRightOptions = listOf(
                             DropdownItem(
-                                text = "正在上课",
+                                text = ReminderStr.inClassNow(),
                                 selected = effectiveIslandInClassRightMode == 0,
                                 onClick = {
                                     rlog("island_inclass_right_mode", "mode=0 正在上课")
@@ -1007,7 +1078,7 @@ fun CourseReminderScreen(
                                 }
                             ),
                             DropdownItem(
-                                text = "倒计时",
+                                text = ReminderStr.countdown(),
                                 selected = effectiveIslandInClassRightMode == 1,
                                 onClick = {
                                     rlog("island_inclass_right_mode", "mode=1 倒计时")
@@ -1025,7 +1096,7 @@ fun CourseReminderScreen(
                         ) {
                             CardExpand(visible = !showSlotCard) {
                                 OverlayDropdownMenu(
-                                    title = "实时动态右侧",
+                                    title = ReminderStr.liveRightSide(),
                                     entry = DropdownEntry(items = liveRightOptions),
                                     collapseOnSelection = true,
                                     liquidGlassBackdrop = liquidGlassBackdrop,
@@ -1035,14 +1106,14 @@ fun CourseReminderScreen(
                             // Slot customization for both HyperOS and iOS Live Activity.
                             CardExpand(visible = showSlotCard) {
                                 OverlayDropdownMenu(
-                                    title = if (isHyperIsland) "超级岛左侧" else "灵动岛左侧",
+                                    title = if (isHyperIsland) ReminderStr.superIslandLeft() else ReminderStr.dynamicIslandLeft(),
                                     entry = DropdownEntry(items = islandLeftOptions),
                                     collapseOnSelection = true,
                                     liquidGlassBackdrop = liquidGlassBackdrop,
                                     dropdownColors = liquidGlassDropdownColors,
                                 )
                                 OverlayDropdownMenu(
-                                    title = if (isHyperIsland) "超级岛右侧" else "灵动岛右侧",
+                                    title = if (isHyperIsland) ReminderStr.superIslandRight() else ReminderStr.dynamicIslandRight(),
                                     entry = DropdownEntry(items = islandRightOptions),
                                     collapseOnSelection = true,
                                     liquidGlassBackdrop = liquidGlassBackdrop,
@@ -1050,7 +1121,7 @@ fun CourseReminderScreen(
                                 )
                                 CardExpand(visible = inClassEnabled || !isHyperIsland) {
                                     OverlayDropdownMenu(
-                                        title = if (isHyperIsland) "课中岛右侧" else "课中灵动岛右侧",
+                                        title = if (isHyperIsland) ReminderStr.inClassIslandRight() else ReminderStr.inClassDynamicIslandRight(),
                                         entry = DropdownEntry(items = islandInClassRightOptions),
                                         collapseOnSelection = true,
                                         liquidGlassBackdrop = liquidGlassBackdrop,
@@ -1059,8 +1130,8 @@ fun CourseReminderScreen(
                                 }
                                 CardExpand(visible = isHyperIsland) {
                                     OverlayDropdownMenu(
-                                        title = "息屏显示",
-                                        summary = "全天候显示时无效",
+                                        title = ReminderStr.islandAod(),
+                                        summary = ReminderStr.islandAodSummary(),
                                         entry = DropdownEntry(items = islandAodOptions),
                                         collapseOnSelection = true,
                                         liquidGlassBackdrop = liquidGlassBackdrop,
@@ -1076,10 +1147,10 @@ fun CourseReminderScreen(
                     item(key = "reminder_thumb_label") {
                         CardExpand(visible = masterEnabled && !reminderController.supportsLiveActivity()) {
                             val scopeOptions = listOf(
-                                ClassroomLabel.SCOPE_OFF to "原始文本",
-                                ClassroomLabel.SCOPE_CLASSROOM to "精简地点",
-                                ClassroomLabel.SCOPE_COURSE to "精简课程",
-                                ClassroomLabel.SCOPE_BOTH to "精简地点与课程",
+                                ClassroomLabel.SCOPE_OFF to ReminderStr.scopeOriginal(),
+                                ClassroomLabel.SCOPE_CLASSROOM to ReminderStr.scopeClassroom(),
+                                ClassroomLabel.SCOPE_COURSE to ReminderStr.scopeCourse(),
+                                ClassroomLabel.SCOPE_BOTH to ReminderStr.scopeBoth(),
                             ).map { (value, label) ->
                                 DropdownItem(
                                     text = label,
@@ -1095,8 +1166,8 @@ fun CourseReminderScreen(
                             }
                             val methodOptions = listOf(
                                 DropdownItem(
-                                    text = "正则精简",
-                                    summary = "按预设规则对地点进行精简",
+                                    text = ReminderStr.methodRegex(),
+                                    summary = ReminderStr.methodRegexSummary(),
                                     selected = classroomLabelMethod == ClassroomLabel.METHOD_REGEX,
                                     onClick = {
                                         rlog("classroom_label_method", "method=0 正则")
@@ -1110,8 +1181,8 @@ fun CourseReminderScreen(
                                     }
                                 ),
                                 DropdownItem(
-                                    text = "AI 精简",
-                                    summary = "一键按课表生成精简结果",
+                                    text = ReminderStr.methodAi(),
+                                    summary = ReminderStr.methodAiSummary(),
                                     selected = classroomLabelMethod == ClassroomLabel.METHOD_AI,
                                     onClick = {
                                         rlog("classroom_label_method", "method=1 AI")
@@ -1130,7 +1201,7 @@ fun CourseReminderScreen(
                                 insideMargin = PaddingValues(0.dp)
                             ) {
                                 OverlayDropdownMenu(
-                                    title = "缩略态精简",
+                                    title = ReminderStr.thumbAbbreviation(),
                                     entry = DropdownEntry(items = scopeOptions),
                                     collapseOnSelection = true,
                                     liquidGlassBackdrop = liquidGlassBackdrop,
@@ -1138,15 +1209,15 @@ fun CourseReminderScreen(
                                 )
                                 CardExpand(visible = classroomLabelEnabled) {
                                     OverlayDropdownMenu(
-                                        title = "精简方式",
+                                        title = ReminderStr.abbreviationMethod(),
                                         entry = DropdownEntry(items = methodOptions),
                                         collapseOnSelection = true,
                                         liquidGlassBackdrop = liquidGlassBackdrop,
                                         dropdownColors = liquidGlassDropdownColors,
                                     )
                                     ArrowPreference(
-                                        title = "查看精简预览",
-                                        summary = "预览精简后的课程地点",
+                                        title = ReminderStr.viewAbbreviationPreview(),
+                                        summary = ReminderStr.viewAbbreviationPreviewSummary(),
                                         endActions = {
                                             if (classroomLabelMethod == ClassroomLabel.METHOD_AI) {
                                                 IconButton(
@@ -1167,12 +1238,12 @@ fun CourseReminderScreen(
                                                                         classrooms = previewClassrooms.take(60),
                                                                         courses = previewCourses.take(60),
                                                                     )
-                                                            }.getOrElse { AiResult.Error(it.message ?: "未知错误") }
+                                                            }.getOrElse { AiResult.Error(it.message ?: ReminderStr.unknownError()) }
                                                             aiShrinking = false
                                                             // 失败必须把原因说出来：
                                                             if (outcome is AiResult.Error) {
                                                                 rlog("classroom_label_ai_shrink_fail", outcome.message)
-                                                                showToast("AI 精简失败：${outcome.message}")
+                                                                showToast(ReminderStr.aiShrinkFailedS(outcome.message))
                                                                 return@launch
                                                             }
                                                             val ok = outcome as AiResult.Ok
@@ -1181,7 +1252,7 @@ fun CourseReminderScreen(
                                                             // 没什么可缩。这时别把已有偏好覆盖成空。
                                                             if (lines.isEmpty()) {
                                                                 rlog("classroom_label_ai_shrink_noop")
-                                                                showToast("这些地点已经很短了，没有可精简的")
+                                                                showToast(ReminderStr.alreadyShort())
                                                                 return@launch
                                                             }
                                                             val text = lines.joinToString("\n") { (from, to) -> "$from=$to" }
@@ -1196,9 +1267,9 @@ fun CourseReminderScreen(
                                                             // 每天有次数上限，把剩多少顺带说清楚，免得用户点着点着突然被拦
                                                             showToast(
                                                                 if (ok.remaining != null) {
-                                                                    "已精简 ${lines.size} 条，今天还能用 ${ok.remaining} 次"
+                                                                    ReminderStr.aiShrinkDoneRemaining(lines.size, ok.remaining)
                                                                 } else {
-                                                                    "已精简 ${lines.size} 条"
+                                                                    ReminderStr.aiShrinkDone(lines.size)
                                                                 }
                                                             )
                                                         }
@@ -1220,7 +1291,7 @@ fun CourseReminderScreen(
                                                     } else {
                                                         Icon(
                                                             imageVector = AiSparkleIcon,
-                                                            contentDescription = "一键精简",
+                                                            contentDescription = ReminderStr.oneTapAbbreviate(),
                                                             modifier = Modifier
                                                                 .size(24.dp)
                                                                 .offset(x = 1.dp),
@@ -1250,11 +1321,11 @@ fun CourseReminderScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 ArrowPreference(
-                                    title = "通知权限",
-                                    summary = "用于接收课程提醒通知",
+                                    title = ReminderStr.notificationPermission(),
+                                    summary = ReminderStr.notificationPermissionSummary(),
                                     endActions = {
                                         Text(
-                                            text = if (notificationGranted) "已授权" else "未授权",
+                                            text = if (notificationGranted) ReminderStr.authorized() else ReminderStr.notAuthorized(),
                                             fontSize = 14.5.sp,
                                             color = if (notificationGranted) {
                                                 ComposeColor(0xFF4CAF50)
@@ -1274,11 +1345,11 @@ fun CourseReminderScreen(
                                 )
                                 CardExpand(visible = reminderController.supportsPromotedNotifications) {
                                     ArrowPreference(
-                                        title = "实况通知权限",
-                                        summary = "在状态栏和锁屏实时显示课程倒计时",
+                                        title = ReminderStr.liveNotificationPermission(),
+                                        summary = ReminderStr.liveNotificationPermissionSummary(),
                                         endActions = {
                                             Text(
-                                                text = if (canPostPromoted) "已授权" else "未授权",
+                                                text = if (canPostPromoted) ReminderStr.authorized() else ReminderStr.notAuthorized(),
                                                 fontSize = 14.5.sp,
                                                 color = if (canPostPromoted) {
                                                     ComposeColor(0xFF4CAF50)
@@ -1298,12 +1369,13 @@ fun CourseReminderScreen(
                                         }
                                     )
                                 }
+                                if (ReminderPermissionRow.EXACT_ALARM !in hiddenPermissionRows) {
                                 ArrowPreference(
-                                    title = "精确闹钟权限",
-                                    summary = "确保提醒准时触发，不受省电策略影响",
+                                    title = ReminderStr.exactAlarmPermission(),
+                                    summary = ReminderStr.exactAlarmPermissionSummary(),
                                     endActions = {
                                         Text(
-                                            text = if (canScheduleExactAlarms) "已授权" else "未授权",
+                                            text = if (canScheduleExactAlarms) ReminderStr.authorized() else ReminderStr.notAuthorized(),
                                             fontSize = 14.5.sp,
                                             color = if (canScheduleExactAlarms) {
                                                 ComposeColor(0xFF4CAF50)
@@ -1321,12 +1393,14 @@ fun CourseReminderScreen(
                                         }
                                     }
                                 )
+                                }
+                                if (ReminderPermissionRow.BATTERY_OPTIMIZATION !in hiddenPermissionRows) {
                                 ArrowPreference(
-                                    title = "电池优化",
-                                    summary = "关闭电池优化以确保提醒准时送达",
+                                    title = ReminderStr.batteryOptimization(),
+                                    summary = ReminderStr.batteryOptimizationSummary(),
                                     endActions = {
                                         Text(
-                                            text = if (isIgnoringBattery) "已关闭" else "未关闭",
+                                            text = if (isIgnoringBattery) ReminderStr.optimizationDisabled() else ReminderStr.optimizationNotDisabled(),
                                             fontSize = 14.5.sp,
                                             color = if (isIgnoringBattery) {
                                                 ComposeColor(0xFF4CAF50)
@@ -1345,12 +1419,14 @@ fun CourseReminderScreen(
                                         }
                                     }
                                 )
+                                }
+                                if (ReminderPermissionRow.DND !in hiddenPermissionRows) {
                                 ArrowPreference(
-                                    title = "勿扰权限",
-                                    summary = "用于上课时开启勿扰或静音",
+                                    title = ReminderStr.dndPermission(),
+                                    summary = ReminderStr.dndPermissionSummary(),
                                     endActions = {
                                         Text(
-                                            text = if (dndPermissionGranted) "已授权" else "未授权",
+                                            text = if (dndPermissionGranted) ReminderStr.authorized() else ReminderStr.notAuthorized(),
                                             fontSize = 14.5.sp,
                                             color = if (dndPermissionGranted) {
                                                 ComposeColor(0xFF4CAF50)
@@ -1367,17 +1443,19 @@ fun CourseReminderScreen(
                                             try {
                                                 reminderController.openNotificationAccessSettings { onDndPermissionResult() }
                                             } catch (_: Exception) {
-                                                showToast("请手动在系统设置中授予勿扰权限")
+                                                showToast(ReminderStr.dndPermissionManual())
                                             }
                                         }
                                     }
                                 )
+                                }
+                                if (ReminderPermissionRow.AUTOSTART !in hiddenPermissionRows) {
                                 ArrowPreference(
-                                    title = "自启动权限",
-                                    summary = "在应用被系统清理后及时重启",
+                                    title = ReminderStr.autostartPermission(),
+                                    summary = ReminderStr.autostartPermissionSummary(),
                                     endActions = {
                                         Text(
-                                            text = "前往检查",
+                                            text = ReminderStr.goToCheck(),
                                             fontSize = 14.5.sp,
                                             color = MiuixTheme.colorScheme.onSurfaceVariantActions
                                         )
@@ -1387,6 +1465,7 @@ fun CourseReminderScreen(
                                         reminderController.openAppDetailsSettings(onBatterySettingsResult)
                                     }
                                 )
+                                }
                             }
                         }
                     }
@@ -1398,7 +1477,7 @@ fun CourseReminderScreen(
 
             // 课中提醒时机弹窗：左侧全程/距下课，右侧分钟数（全程时禁用）
             OverlayDialog(
-                title = "提醒时机",
+                title = ReminderStr.reminderTiming(),
                 show = showInClassTimingDialog,
                 liquidGlassBackdrop = liquidGlassBackdrop,
                 onDismissRequest = { showInClassTimingDialog = false }
@@ -1420,7 +1499,7 @@ fun CourseReminderScreen(
                             visibleItemCount = 3,
                             itemHeight = 48.dp,
                             label = { mode ->
-                                if (mode == ReminderController.IN_CLASS_TIMING_FULL) "全程" else "距下课"
+                                if (mode == ReminderController.IN_CLASS_TIMING_FULL) ReminderStr.inClassTimingFull() else ReminderStr.inClassTimingBeforeEnd()
                             },
                             textStyle = MiuixTheme.textStyles.title2,
                             modifier = Modifier.weight(1f)
@@ -1435,7 +1514,7 @@ fun CourseReminderScreen(
                             range = 0..60,
                             visibleItemCount = 3,
                             itemHeight = 48.dp,
-                            label = { "${it}分钟" },
+                            label = { ReminderStr.minutesN(it) },
                             textStyle = MiuixTheme.textStyles.title2,
                             wrapAround = true,
                             enabled = minutesEnabled,
@@ -1444,9 +1523,9 @@ fun CourseReminderScreen(
                     }
                     Text(
                         text = if (tempInClassTimingMode == ReminderController.IN_CLASS_TIMING_FULL) {
-                            "全程显示课中进度"
+                            ReminderStr.inClassFullDesc()
                         } else {
-                            "距下课 ${tempInClassLeadMinutes} 分钟开始显示"
+                            ReminderStr.inClassBeforeEndDesc(tempInClassLeadMinutes)
                         },
                         style = MiuixTheme.textStyles.body2,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
@@ -1460,7 +1539,7 @@ fun CourseReminderScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         TextButton(
-                            text = "取消",
+                            text = CommonStr.cancel(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 rlog("inclass_timing_dialog_cancel")
@@ -1469,7 +1548,7 @@ fun CourseReminderScreen(
                             modifier = Modifier.weight(1f)
                         )
                         TextButton(
-                            text = "确定",
+                            text = CommonStr.ok(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 rlog(
@@ -1493,8 +1572,8 @@ fun CourseReminderScreen(
 
             // 地点精简预览：课表里每一个地点都按当前设置算一遍，改完立刻能看到差别
             OverlayDialog(
-                title = "精简预览",
-                summary = "点击右侧文字可手动修改",
+                title = ReminderStr.abbreviationPreview(),
+                summary = ReminderStr.previewEditHint(),
                 show = showClassroomPreviewDialog,
                 liquidGlassBackdrop = liquidGlassBackdrop,
                 onDismissRequest = {
@@ -1530,23 +1609,23 @@ fun CourseReminderScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = if (classroomLabelMethod == ClassroomLabel.METHOD_AI) {
-                                    "AI 精简"
+                                    ReminderStr.methodAi()
                                 } else {
-                                    "正则精简"
+                                    ReminderStr.methodRegex()
                                 },
                                 style = MiuixTheme.textStyles.body1,
                                 fontWeight = FontWeight.Medium,
                                 color = MiuixTheme.colorScheme.onSurface,
                             )
                             Text(
-                                text = "当前方式",
+                                text = ReminderStr.currentMethod(),
                                 style = MiuixTheme.textStyles.body2,
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             )
                         }
                         Text(
                             text = if (previewItems.isEmpty()) {
-                                "课表没有内容"
+                                ReminderStr.scheduleEmpty()
                             } else {
                                 "$changedCount / ${previewItems.size}"
                             },
@@ -1556,7 +1635,7 @@ fun CourseReminderScreen(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "个会被改写",
+                            text = ReminderStr.willBeRewritten(),
                             fontSize = 15.sp,
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         )
@@ -1582,7 +1661,7 @@ fun CourseReminderScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = "课表里还没有课程名和地点",
+                                    text = ReminderStr.scheduleNoCourseOrClassroom(),
                                     style = MiuixTheme.textStyles.body2,
                                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                 )
@@ -1629,20 +1708,20 @@ fun CourseReminderScreen(
                         // 只改过才有「恢复自动」可点，没改过就别摆一个按不动的按钮
                         if (overriddenCount > 0) {
                             TextButton(
-                                text = "恢复自动（$overriddenCount）",
+                                text = ReminderStr.restoreAutoN(overriddenCount),
                                 onClick = {
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                     previewEditRaw = null
                                     classroomLabelOverrides = ""
                                     reminderPrefs.edit { putString(ClassroomLabel.KEY_OVERRIDES, "") }
                                     rlog("classroom_label_override", "clear_all")
-                                    showToast("已全部恢复自动精简")
+                                    showToast(ReminderStr.allRestoredAuto())
                                 },
                                 modifier = Modifier.weight(1f),
                             )
                         }
                         TextButton(
-                            text = "完成",
+                            text = CommonStr.done(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 commitPreviewEdit()
@@ -1657,7 +1736,7 @@ fun CourseReminderScreen(
 
             // 提前提醒分钟数弹窗
             OverlayDialog(
-                title = "提前提醒时间",
+                title = ReminderStr.reminderLeadTime(),
                 show = showMinutesDialog,
                 liquidGlassBackdrop = liquidGlassBackdrop,
                 onDismissRequest = { showMinutesDialog = false }
@@ -1672,7 +1751,7 @@ fun CourseReminderScreen(
                         range = 1..60,
                         visibleItemCount = 3,
                         itemHeight = 60.dp,
-                        label = { "${it}分钟" },
+                        label = { ReminderStr.minutesN(it) },
                         textStyle = MiuixTheme.textStyles.title2,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1683,7 +1762,7 @@ fun CourseReminderScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         TextButton(
-                            text = "取消",
+                            text = CommonStr.cancel(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 rlog("preclass_minutes_dialog_cancel")
@@ -1692,7 +1771,7 @@ fun CourseReminderScreen(
                             modifier = Modifier.weight(1f)
                         )
                         TextButton(
-                            text = "确定",
+                            text = CommonStr.ok(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 rlog("preclass_minutes_dialog_ok", "minutes=$tempMinutes")
@@ -1708,9 +1787,99 @@ fun CourseReminderScreen(
                 }
             }
 
+            // 提醒节次范围弹窗
+            OverlayDialog(
+                title = ReminderStr.reminderSections(),
+                show = showSectionRangeDialog,
+                liquidGlassBackdrop = liquidGlassBackdrop,
+                onDismissRequest = { showSectionRangeDialog = false }
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        NumberPicker(
+                            value = tempStartSection,
+                            onValueChange = {
+                                tempStartSection = it
+                                if (tempEndSection < it) tempEndSection = it
+                            },
+                            range = 1..totalSections,
+                            visibleItemCount = 3,
+                            itemHeight = 60.dp,
+                            label = { ReminderStr.sectionN(it) },
+                            textStyle = MiuixTheme.textStyles.title2,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "-",
+                            fontSize = 20.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        )
+                        NumberPicker(
+                            value = tempEndSection.coerceIn(tempStartSection, totalSections),
+                            onValueChange = { tempEndSection = it.coerceAtLeast(tempStartSection) },
+                            range = tempStartSection..totalSections,
+                            visibleItemCount = 3,
+                            itemHeight = 60.dp,
+                            label = { ReminderStr.sectionN(it) },
+                            textStyle = MiuixTheme.textStyles.title2,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Text(
+                        text = ReminderStr.sectionRangeHint(),
+                        fontSize = 14.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp, bottom = 20.dp)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        TextButton(
+                            text = CommonStr.cancel(),
+                            onClick = {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                                rlog("preclass_sections_dialog_cancel")
+                                showSectionRangeDialog = false
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            text = CommonStr.ok(),
+                            onClick = {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                                val start = tempStartSection.coerceIn(1, totalSections)
+                                val end = tempEndSection
+                                    .coerceIn(start, totalSections)
+                                    .let { if (it >= totalSections) 0 else it }
+                                rlog("preclass_sections_dialog_ok", "start=$start end=$end")
+                                settingsViewModel.setPreClassReminderStartSection(start)
+                                settingsViewModel.setPreClassReminderEndSection(end)
+                                showSectionRangeDialog = false
+                                reminderController.startReminderService()
+                                rlog("reminder_service", "start_after_preclass_sections")
+                            },
+                            colors = ButtonDefaults.textButtonColorsPrimary(),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+
             // 次日提醒时间弹窗
             OverlayDialog(
-                title = "提醒时间",
+                title = ReminderStr.reminderTime(),
                 show = showTimeDialog,
                 liquidGlassBackdrop = liquidGlassBackdrop,
                 onDismissRequest = { showTimeDialog = false }
@@ -1757,7 +1926,7 @@ fun CourseReminderScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         TextButton(
-                            text = "取消",
+                            text = CommonStr.cancel(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 rlog("nextday_time_dialog_cancel")
@@ -1766,7 +1935,7 @@ fun CourseReminderScreen(
                             modifier = Modifier.weight(1f)
                         )
                         TextButton(
-                            text = "确定",
+                            text = CommonStr.ok(),
                             onClick = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                 rlog("nextday_time_dialog_ok") {

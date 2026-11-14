@@ -30,8 +30,11 @@ J_SHARED = "ui-shared/src/commonMain/kotlin/com/haooz/chedule"    # 共享 Compo
 J_CORE = "core/src/commonMain/kotlin/com/haooz/chedule"           # 跨平台数据层
 
 F_GLASS_PERF = f"{J_SHARED}/ui/utils/GlassPerf.kt"
-F_CARD = f"{J_SHARED}/ui/activities/classschedule/CourseCard.kt"
-F_DAYCOL = f"{J_SHARED}/ui/activities/classschedule/DayColumn.kt"
+# 1.7.1 起这两张卡搬进 ui-shared 的 portable 源集（与 commonMain 同模块、第二个源码根）：
+# portable 下不用 expect/actual，但仍属于 commonMain 的编译单元，所以「绘制期读系数」这类
+# 约束还是同一条。路径必须跟着搬，否则自检会报「架构可能又变了」。
+F_CARD = "ui-shared/src/portable/kotlin/com/haooz/chedule/ui/activities/classschedule/CourseCard.kt"
+F_DAYCOL = "ui-shared/src/portable/kotlin/com/haooz/chedule/ui/activities/classschedule/DayColumn.kt"
 F_TODAY = f"{J_SHARED}/ui/activities/today/TodayScreen.kt"
 F_ISLAND = f"{J_APP}/reminder/IslandNotificationHelper.kt"
 F_REMIND = f"{J_APP}/reminder/CourseReminderHelper.kt"
@@ -43,7 +46,7 @@ F_APPSHELL_STATE = f"{J_SHARED}/ui/activities/main/CourseScheduleAppState.kt"
 F_MAINSCHED = f"{J_SHARED}/ui/activities/classschedule/MainScheduleScreen.kt"
 F_SETTINGS = f"{J_SHARED}/ui/screens/SettingsScreen.kt"
 F_REMSCREEN = f"{J_SHARED}/ui/activities/CourseReminderScreen.kt"
-F_REMCONTROLLER = f"{J_CORE}/data/ReminderController.kt"
+F_REMCONTROLLER = f"{J_CORE}/data/platform/ReminderController.kt"   # 1.7.x 起 data 层按职责拆子包
 F_UPDCHECK = f"{J_APP}/ui/utils/UpdateChecker.kt"
 F_UPDINST = f"{J_APP}/ui/utils/UpdateInstaller.kt"
 WF_CANDIDATES = (
@@ -90,10 +93,13 @@ CHECKS = [
         [],
     ),
     (
-        "四个绘制降级点都乘系数、且 <=0.01 一个 effect 都不追加",
-        None,  # 全树统计
-        [r"glassFactor > 0\.01f"],
-        [],
+        "降级系数 <=0.01 时一个 effect 都不追加（1.7.x 起收敛到 softglass 的样式折算）",
+        # 上游 1.7.1 把玻璃抽成外部 :softglass 库、边光整套下线：以前分散在 4 处绘制点的
+        # "乘系数 / 归零不追加 effect" 现在**只有一处**——GlassPerf.withGlassPerf()。
+        # 分散实现反而变成风险（漏一处就是静默不回退），所以这里改成守那一处。
+        F_GLASS_PERF,
+        [r"if \(f <= GLASS_PERF_OFF_THRESHOLD\)", r"copy\(smallBlurRadius = 0f, refractionScale = 0f\)"],
+        [r"remember\([^)]*glassPerfFactor"],
     ),
     (
         "系数只在绘制期读，不进 remember 键",
@@ -102,16 +108,13 @@ CHECKS = [
         [r"remember\([^)]*glassPerfFactor"],
     ),
     (
+        # 1.7.1 起边光（EdgeLight）整套被上游产品性下线、:backdrop 换成外部 :softglass 库，
+        # 当初守的 lens(width, strength*factor) 已不存在。等价语义变成「折射只缩 scale、
+        # 不动边缘厚度 / 描边宽度」—— 收进 withGlassPerf()，一处覆盖全部玻璃件。
         "折射宽度恒定、只淡强度（宽度乘系数会「扫过」+ 层几何每帧抖）",
-        F_CARD,
-        [r"lens\(lensRadiusPx, lensStrengthPx \* glassFactor\)"],
-        [r"lens\([^,\n]*\*"],
-    ),
-    (
-        "同上（课表格子）",
-        F_DAYCOL,
-        [r"lens\(lensRadiusPx, lensStrengthPx \* glassFactor\)"],
-        [r"lens\([^,\n]*\*"],
+        F_GLASS_PERF,
+        [r"copy\(smallBlurRadius = smallBlurRadius \* f, refractionScale = refractionScale \* f\)"],
+        [r"edgeWidth\s*=\s*edgeWidth\s*\*"],
     ),
     (
         "课程卡状态轮询：两个分支都「睡到边界 + 上限 60s」"
@@ -171,9 +174,9 @@ CHECKS = [
         [],
     ),
     (
-        "同上：课表页把 specialGrid.sectionTop 传下去",
+        "同上：课表页把 sectionTop 传下去（1.7.x 起取自 config.grid）",
         F_MAINSCHED,
-        [r"sectionTopDp = specialGrid\.sectionTop"],
+        [r"sectionTopDp = config\.grid\.sectionTop"],
         [],
     ),
     (
@@ -214,8 +217,8 @@ CHECKS = [
     (
         "课表周页滑动期只预合成 1 页，停稳后才扩到 2/3；不得无条件常驻多页",
         F_MAINSCHED,
-        [r"beyondViewportPageCount = if \(state\.isScrollInProgress\) 1 else idleBeyond",
-         r"idleBeyond = if \(dwelling\) 3 else 2"],
+        [r"beyondPageCount = if \(state\.isAnimating\) maxOf\(idleBeyond, 1\) else idleBeyond",
+         r"idleBeyond = if \(snapshot\.dwelling\) 3 else 2"],
         [],
     ),
     (
@@ -263,7 +266,7 @@ CHECKS = [
         "备份必须覆盖除主设置外的其它用户设置文件（触感/材质/主题/课中提醒/更新源）",
         # 真实缺口：全仓 9 个 SharedPreferences，备份原先只覆盖 course_schedule_prefs 一个，
         # 于是这些文件里的用户设置换设备/重装后静默回到默认值。
-        f"{J_CORE}/data/CourseRepository.kt",
+        f"{J_CORE}/data/repo/BackupTransfer.kt",
         [
             r"private val BACKUP_EXTRA_PREFS = listOf\(",
             r'"app_preferences"', r'"app_theme_prefs"', r'"appearance_settings"',
@@ -273,7 +276,7 @@ CHECKS = [
     ),
     (
         "跨文件还原必须走白名单（备份文件不能决定写哪个 SharedPreferences）",
-        f"{J_CORE}/data/CourseRepository.kt",
+        f"{J_CORE}/data/repo/BackupTransfer.kt",
         [r"if \(fileName !in BACKUP_EXTRA_PREFS \|\| originalKey\.isEmpty\(\)\) return"],
         [],
     ),
@@ -289,8 +292,8 @@ CHECKS = [
     ),
     (
         "备份导出必须是黑名单式（白名单会漏掉所有不带前缀的用户设置）",
-        f"{J_CORE}/data/CourseRepository.kt",
-        [r"val excludedKeys = setOf\(KEY_DEFAULT_FOLDER_MIGRATED\)"],
+        f"{J_CORE}/data/repo/BackupTransfer.kt",
+        [r"isExcludedLocalState\(key\)"],
         [r"val relevantKeys = listOf\("],
     ),
     (
@@ -301,8 +304,10 @@ CHECKS = [
     ),
     (
         "检查更新在缓存里没有下载地址时强制重查（否则只弹「未找到下载链接」）",
-        F_UPDSET,
-        [r"latestRelease!!\.apkUrl\.isNotBlank\(\)"],
+        # 1.7.x 起这条守卫从设置页搬进了 UpdateChecker.resolveApkUrl：缓存里的空串一律不接受
+        F_UPDCHECK,
+        [r"takeIf \{ it\.isNotBlank\(\) \}",
+         r"release\.apkUrl\.isBlank\(\)\) continue"],
         [],
     ),
     (
@@ -449,8 +454,9 @@ def main():
     counts = [
         ("fun returnDayVerb(", 1, 1, "「返校」日子词实现"),
         ("fun nextDayReminderText(", 2, 2, "次日文案实现（恰好 1 个重载）"),
-        ("glassFactor > 0.01f", 4, 99, "毛玻璃降级守卫（四个绘制点）"),
-        ("glassPerfFactor()", 5, 99, "毛玻璃系数读取点"),
+        # 1.7.1 起：折算只有一处（withGlassPerf），读取点必须存在且不能进 remember 键。
+        ("withGlassPerf()", 2, 99, "毛玻璃系数折算点（静态 + 实时两条玻璃路径）"),
+        ("glassPerfFactor()", 2, 99, "毛玻璃系数读取点"),
     ]
     for symbol, lo, hi, label in counts:
         files = []

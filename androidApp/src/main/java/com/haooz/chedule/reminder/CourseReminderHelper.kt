@@ -1,15 +1,5 @@
 package com.haooz.chedule.reminder
 
-import com.haooz.chedule.data.HolidayEntry
-
-import com.haooz.chedule.data.localDateTimeAt
-
-import com.haooz.chedule.data.minusDays
-import com.haooz.chedule.data.plusDays
-import com.haooz.chedule.data.todayLocalDate
-import kotlinx.datetime.isoDayNumber
-import com.haooz.chedule.ui.utils.ApiCompat
-
 import android.annotation.SuppressLint
 import android.app.AlarmManager
 import android.app.Notification
@@ -20,27 +10,38 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
-import androidx.core.content.edit
 import com.haooz.chedule.R
-import com.haooz.chedule.data.Course
-import com.haooz.chedule.data.CourseRepository
-import com.haooz.chedule.data.CourseScheduleDateBounds
-import com.haooz.chedule.data.CourseTimeSpan
-import com.haooz.chedule.data.DayScheduleResolver
-import com.haooz.chedule.data.DayScheduleResolver.DayScheduleResolution
-import com.haooz.chedule.data.HolidayCourseExclusion
-import com.haooz.chedule.data.HolidayBeforeCourseExclusion
-import com.haooz.chedule.data.HolidayEndCourseExclusion
-import com.haooz.chedule.data.HolidayManager
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.repo.CourseRepository
+import com.haooz.chedule.data.model.CourseScheduleDateBounds
+import com.haooz.chedule.data.util.CourseTimeSpan
+import com.haooz.chedule.data.repo.DayScheduleResolver
+import com.haooz.chedule.data.holiday.HolidayBeforeCourseExclusion
+import com.haooz.chedule.data.holiday.HolidayCourseExclusion
+import com.haooz.chedule.data.holiday.HolidayEndCourseExclusion
+import com.haooz.chedule.data.holiday.HolidayManager
 import com.haooz.chedule.data.ReturnDayReminder
-import com.haooz.chedule.data.TeachingWeekPosition
+import com.haooz.chedule.data.holiday.TeachingWeekPosition
+import com.haooz.chedule.data.holiday.HolidayEntry
+import com.haooz.chedule.data.holiday.TeachingWeekReorganizationRule
+import com.haooz.chedule.data.model.CourseTimeResolver
+import com.haooz.chedule.data.platform.LOG_LEVEL_DEBUG
+import com.haooz.chedule.data.platform.NexioLog
+import com.haooz.chedule.data.platform.logMinLevel
+import com.haooz.chedule.data.repo.DayScheduleResolver.DayScheduleResolution
+import com.haooz.chedule.data.storage.AppStorage
+import com.haooz.chedule.data.storage.getStringOrNull
+import com.haooz.chedule.data.util.localDateTimeAt
+import com.haooz.chedule.data.util.minusDays
+import com.haooz.chedule.data.util.plusDays
+import com.haooz.chedule.data.util.todayLocalDate
+import com.haooz.chedule.i18n.AndroidNotifStr
 import com.haooz.chedule.ui.activities.MainActivity
+import com.haooz.chedule.ui.utils.ApiCompat
 import com.haooz.chedule.widget.WidgetUpdateCache
-import kotlinx.datetime.LocalDate
 import java.util.Calendar
-import com.haooz.chedule.data.LOG_LEVEL_DEBUG
-import com.haooz.chedule.data.NexioLog
-import com.haooz.chedule.data.logMinLevel
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.isoDayNumber
 
 object CourseReminderHelper {
 
@@ -146,7 +147,7 @@ object CourseReminderHelper {
     const val IN_CLASS_TIMING_BEFORE_END = 1
 
     fun isInClassEnabled(context: Context): Boolean {
-        val prefs = context.getSharedPreferences("course_reminder_prefs", Context.MODE_PRIVATE)
+        val prefs = AppStorage.store("course_reminder_prefs")
         if (prefs.contains(KEY_IN_CLASS)) {
             return prefs.getBoolean(KEY_IN_CLASS, false)
         }
@@ -158,12 +159,12 @@ object CourseReminderHelper {
     fun isInClassLiveEnabled(context: Context): Boolean = isInClassEnabled(context)
 
     fun getInClassTimingMode(context: Context): Int {
-        return context.getSharedPreferences("course_reminder_prefs", Context.MODE_PRIVATE)
+        return AppStorage.store("course_reminder_prefs")
             .getInt(KEY_IN_CLASS_TIMING_MODE, IN_CLASS_TIMING_FULL)
     }
 
     fun getInClassLeadMinutes(context: Context): Int {
-        return context.getSharedPreferences("course_reminder_prefs", Context.MODE_PRIVATE)
+        return AppStorage.store("course_reminder_prefs")
             .getInt(KEY_IN_CLASS_LEAD_MINUTES, 10).coerceIn(0, 60)
     }
 
@@ -189,9 +190,11 @@ object CourseReminderHelper {
     }
 
     const val CHANNEL_REMINDER_ID = "course_reminder_alert"
-    const val CHANNEL_REMINDER_NAME = "课程提醒通知"
+
+    /** 渠道名在系统设置中展示，随语言取值 */
+    val CHANNEL_REMINDER_NAME: String get() = AndroidNotifStr.channelReminder()
     const val CHANNEL_LIVE_ID = "course_reminder_live"
-    const val CHANNEL_LIVE_NAME = "课程提醒实况"
+    val CHANNEL_LIVE_NAME: String get() = AndroidNotifStr.channelLiveName()
 
     /** 假期余额 / 返校清单专用通道：与课前提醒分开，方便在系统设置里单独控制 */
     const val CHANNEL_HOLIDAY_ID = "course_reminder_holiday"
@@ -214,22 +217,22 @@ object CourseReminderHelper {
     private const val PI_FLAGS = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
     private fun readRcSet(context: Context, key: String): Set<Int> {
-        val prefs = context.getSharedPreferences(PREF_ALARM_REGISTRY, Context.MODE_PRIVATE)
-        return (prefs.getStringSet(key, emptySet()) ?: emptySet()).mapNotNull { it.toIntOrNull() }.toSet()
+        val prefs = AppStorage.store(PREF_ALARM_REGISTRY)
+        return prefs.getStringSet(key, emptySet()).mapNotNull { it.toIntOrNull() }.toSet()
     }
 
     private fun writeRcSet(context: Context, key: String, rcs: Set<Int>) {
-        context.getSharedPreferences(PREF_ALARM_REGISTRY, Context.MODE_PRIVATE).edit {
+        AppStorage.store(PREF_ALARM_REGISTRY).edit {
             putStringSet(key, rcs.map { it.toString() }.toSet())
         }
     }
 
     // 跨日后整份记录失效，保证次日可重新提醒
     fun recordPreClassSent(context: Context, courseId: String) {
-        val prefs = context.getSharedPreferences(PREF_SENT_HISTORY, Context.MODE_PRIVATE)
+        val prefs = AppStorage.store(PREF_SENT_HISTORY)
         val today = getTodayDateString()
-        val day = prefs.getString(KEY_SENT_DAY, null)
-        val mapStr = prefs.getString(KEY_SENT_MAP, null)
+        val day = prefs.getStringOrNull(KEY_SENT_DAY)
+        val mapStr = prefs.getStringOrNull(KEY_SENT_MAP)
         val json = if (day == today && !mapStr.isNullOrEmpty()) {
             try {
                 org.json.JSONObject(mapStr)
@@ -248,9 +251,9 @@ object CourseReminderHelper {
 
     // 按 courseId 精确匹配 60 分钟窗口；跨日整份重置以便次日重发
     fun isPreClassSentRecently(context: Context, courseId: String): Boolean {
-        val prefs = context.getSharedPreferences(PREF_SENT_HISTORY, Context.MODE_PRIVATE)
-        if (prefs.getString(KEY_SENT_DAY, null) != getTodayDateString()) return false
-        val mapStr = prefs.getString(KEY_SENT_MAP, null) ?: return false
+        val prefs = AppStorage.store(PREF_SENT_HISTORY)
+        if (prefs.getStringOrNull(KEY_SENT_DAY) != getTodayDateString()) return false
+        val mapStr = prefs.getStringOrNull(KEY_SENT_MAP) ?: return false
         val lastTime = try {
             org.json.JSONObject(mapStr).optLong(courseId, 0L)
         } catch (_: Exception) {
@@ -262,9 +265,9 @@ object CourseReminderHelper {
 
     // 岛倒计时是原生 ChronometerCountDown，当天发一次即可；重发会触发岛重新弹出
     fun hasIslandPreClassSentToday(context: Context, courseId: String): Boolean {
-        val prefs = context.getSharedPreferences(PREF_SENT_HISTORY, Context.MODE_PRIVATE)
-        if (prefs.getString(KEY_SENT_DAY, null) != getTodayDateString()) return false
-        val mapStr = prefs.getString(KEY_SENT_MAP, null) ?: return false
+        val prefs = AppStorage.store(PREF_SENT_HISTORY)
+        if (prefs.getStringOrNull(KEY_SENT_DAY) != getTodayDateString()) return false
+        val mapStr = prefs.getStringOrNull(KEY_SENT_MAP) ?: return false
         return try {
             org.json.JSONObject(mapStr).has(courseId)
         } catch (_: Exception) {
@@ -275,8 +278,8 @@ object CourseReminderHelper {
     // 日期变化时重调度：原调度仅覆盖今天，跨日后需为新一天重新注册闹钟
     fun checkAndRescheduleOnDayChange(context: Context) {
         val today = getTodayDateString()
-        val prefs = context.getSharedPreferences(PREF_DAY_CHANGE, Context.MODE_PRIVATE)
-        val lastDate = prefs.getString(KEY_LAST_SCHEDULE_DATE, null)
+        val prefs = AppStorage.store(PREF_DAY_CHANGE)
+        val lastDate = prefs.getStringOrNull(KEY_LAST_SCHEDULE_DATE)
 
         if (lastDate == today) return
 
@@ -342,9 +345,9 @@ object CourseReminderHelper {
             else -> ""
         }
         if (timeRange.isEmpty()) {
-            append("${minutesUntilStart}分钟后上课")
+            append(AndroidNotifStr.classInN(minutesUntilStart))
         } else {
-            append("${minutesUntilStart}分钟后上课 · $timeRange")
+            append(AndroidNotifStr.classInNAt(minutesUntilStart, timeRange))
         }
         if (classroom.isNotEmpty()) {
             append('\n')
@@ -731,12 +734,28 @@ object CourseReminderHelper {
         }
         logD(context, "schedulePre: todayCourses=${todayCourses.size}")
 
+        // 提醒节次范围（用户可自定义某些节次不提醒，例如晚休之后的课）
+        val reminderStartSection = repository.getPreClassReminderStartSection()
+        val reminderEndSection = repository.getPreClassReminderEndSection()
+        val reminderCourses = if (reminderStartSection <= 1 && reminderEndSection <= 0) {
+            todayCourses
+        } else {
+            todayCourses.filter {
+                isCourseInReminderSections(it, reminderStartSection, reminderEndSection)
+            }
+        }
+        if (reminderCourses.isEmpty()) {
+            logD(context, "schedulePre: noCourseInReminderSections")
+            writeRcSet(context, KEY_PRE_CLASS_RCS, emptySet())
+            return
+        }
+
         // 登记本次注册的 RC，供 cancelAllAlarms 清理孤儿闹钟
         val scheduledRcs = mutableSetOf<Int>()
 
         val useIsland = repository.getIslandNotification() && IslandNotificationHelper.isIslandSupported(context)
 
-        for ((index, course) in todayCourses.withIndex()) {
+        for ((index, course) in reminderCourses.withIndex()) {
             val startTime = getCourseStartTime(course, repository) ?: continue
             val startParts = startTime.split(":")
             if (startParts.size != 2) continue
@@ -745,7 +764,7 @@ object CourseReminderHelper {
             val startTotalMinutes = startHour * 60 + startMinute
 
             // 找紧邻前一节课：同一时段可能多门课，不能直接用 index-1
-            val prevCourse = todayCourses.take(index).lastOrNull { prev ->
+            val prevCourse = reminderCourses.take(index).lastOrNull { prev ->
                 isConsecutiveCourse(prev, course)
             }
 
@@ -875,7 +894,7 @@ object CourseReminderHelper {
         val todayCourses = getTodayCourses(context)
 
         // 倒计时/岛激活时需每分钟刷新，便于更新文案与对账补切
-        val countdownPrefs = context.getSharedPreferences("countdown_state", Context.MODE_PRIVATE)
+        val countdownPrefs = AppStorage.store("countdown_state")
         val hasActiveCountdown = countdownPrefs.getBoolean("active", false) ||
             IslandNotificationHelper.IslandState.isActiveAny(context)
 
@@ -998,6 +1017,21 @@ object CourseReminderHelper {
         return prev.endSection + 1 == current.startSection
     }
 
+    /**
+     * 课程是否落在「上课提醒节次范围」内。
+     * 自定义时间的课没有节次概念，始终提醒；普通课按起始节判断，endSection=0 表示不限。
+     */
+    internal fun isCourseInReminderSections(
+        course: Course,
+        startSection: Int,
+        endSection: Int
+    ): Boolean {
+        if (course.hasValidCustomTime()) return true
+        if (course.startSection < startSection) return false
+        if (endSection > 0 && course.startSection > endSection) return false
+        return true
+    }
+
     fun getTodayOfWeek(): Int {
         val calendar = Calendar.getInstance()
         return (calendar.get(Calendar.DAY_OF_WEEK) + 5) % 7 + 1
@@ -1005,10 +1039,10 @@ object CourseReminderHelper {
 
     // 新代码直接用 CourseTimeResolver
     fun getCourseStartTime(course: Course, repository: CourseRepository): String? =
-        com.haooz.chedule.data.CourseTimeResolver.getStartTime(course, repository)
+        CourseTimeResolver.getStartTime(course, repository)
 
     fun getCourseEndTime(course: Course, repository: CourseRepository): String? =
-        com.haooz.chedule.data.CourseTimeResolver.getEndTime(course, repository)
+        CourseTimeResolver.getEndTime(course, repository)
 
     fun getLatestCourseEndTime(courses: List<Course>, repository: CourseRepository): String? =
         latestCourseEndTime(courses) { getCourseEndTime(it, repository) }
@@ -1058,7 +1092,7 @@ object CourseReminderHelper {
     fun effectiveWeekendDays(
         semesterStartDate: LocalDate,
         week: Int,
-        rules: List<com.haooz.chedule.data.TeachingWeekReorganizationRule>,
+        rules: List<TeachingWeekReorganizationRule>,
         hasCoursesOnDate: (LocalDate) -> Boolean,
     ): Set<Int> = DayScheduleResolver.effectiveWeekendDays(
         semesterStartDate = semesterStartDate,
@@ -1149,7 +1183,7 @@ object CourseReminderHelper {
     private fun reconcileActiveHolidayCourse(context: Context) {
         val now = System.currentTimeMillis()
         val repository = CourseRepository()
-        val countdownPrefs = context.getSharedPreferences("countdown_state", Context.MODE_PRIVATE)
+        val countdownPrefs = AppStorage.store("countdown_state")
         val countdownStart = countdownPrefs.getLong("startMillis", 0L)
         val countdownEnd = countdownPrefs.getLong("endMillis", 0L)
         val countdownIsReal = !countdownPrefs.getBoolean("test_mode", false)
@@ -1159,9 +1193,9 @@ object CourseReminderHelper {
                 repository = repository,
                 startMillis = countdownStart,
                 endMillis = countdownEnd,
-                courseName = countdownPrefs.getString("courseName", "") ?: "",
-                classroom = countdownPrefs.getString("classroom", "") ?: "",
-                section = countdownPrefs.getString("section", "") ?: "",
+                courseName = countdownPrefs.getString("courseName", ""),
+                classroom = countdownPrefs.getString("classroom", ""),
+                section = countdownPrefs.getString("section", ""),
             )
             if (!stillScheduled) {
                 val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -1170,10 +1204,10 @@ object CourseReminderHelper {
                 manager.cancel(LIVE_IN_CLASS_ID)
                 countdownPrefs.edit {
                     putBoolean("active", false)
-                        .putBoolean("in_class_active", false)
-                        .remove("last_displayed_minutes")
-                        .remove("last_in_class_minutes")
-                        .remove("last_in_class_progress")
+                    putBoolean("in_class_active", false)
+                    remove("last_displayed_minutes")
+                    remove("last_in_class_minutes")
+                    remove("last_in_class_progress")
                 }
             }
         }
@@ -1357,7 +1391,7 @@ object CourseReminderHelper {
         val startedId = liveStartedId(testMode)
         val countdownId = liveCountdownId(testMode)
 
-        val prefs = context.getSharedPreferences("countdown_state", Context.MODE_PRIVATE)
+        val prefs = AppStorage.store("countdown_state")
         val wasInClass = prefs.getBoolean("in_class_active", false)
         val remainMin = inClassRemainMinutes(endMillis, now)
         val progress = inClassProgressPercent(startMillis, endMillis, remainMin)
@@ -1389,15 +1423,18 @@ object CourseReminderHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val endTimeLabel = if (endTime.isNotEmpty()) "${endTime}下课" else "下课"
-        val infoLine = "$endTimeLabel · 还剩${remainMin}分钟"
+        val infoLine = if (endTime.isNotEmpty()) {
+            AndroidNotifStr.infoWithRemaining(AndroidNotifStr.endsAt(endTime), remainMin)
+        } else {
+            AndroidNotifStr.infoRemaining(remainMin)
+        }
         val expandedText = if (classroom.isBlank()) infoLine else "$infoLine\n$classroom"
-        val shortCriticalText = "${remainMin}分钟"
+        val shortCriticalText = AndroidNotifStr.minutesShort(remainMin)
 
         // 课中只保留进度卡片，不挂动作按钮（点整卡打开课表即可）
         val notification = if (Build.VERSION.SDK_INT >= 36) {
             val builder = Notification.Builder(context, CHANNEL_LIVE_ID)
-                .setSmallIcon(R.mipmap.ic_launcher)
+                .setSmallIcon(R.drawable.ic_notification_calendar)
                 .setContentTitle(courseName)
                 .setContentText(infoLine)
                 .setStyle(Notification.BigTextStyle().bigText(expandedText))
@@ -1425,7 +1462,7 @@ object CourseReminderHelper {
         } else {
             // 低版本无 ProgressStyle：用普通进度条 + 提升请求降级
             NotificationCompat.Builder(context, CHANNEL_LIVE_ID)
-                .setSmallIcon(R.mipmap.ic_launcher)
+                .setSmallIcon(R.drawable.ic_notification_calendar)
                 .setContentTitle(courseName)
                 .setContentText(expandedText)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(expandedText))
@@ -1447,9 +1484,9 @@ object CourseReminderHelper {
         manager.notify(inClassId, notification)
         prefs.edit {
             putBoolean("in_class_active", true)
-                .putInt("in_class_notification_id", inClassId)
-                .putInt("last_in_class_minutes", remainMin)
-                .putInt("last_in_class_progress", progress)
+            putInt("in_class_notification_id", inClassId)
+            putInt("last_in_class_minutes", remainMin)
+            putInt("last_in_class_progress", progress)
         }
     }
 
@@ -1459,11 +1496,11 @@ object CourseReminderHelper {
     ) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.cancel(liveInClassId(testMode))
-        val prefs = context.getSharedPreferences("countdown_state", Context.MODE_PRIVATE)
+        val prefs = AppStorage.store("countdown_state")
         prefs.edit {
             putBoolean("in_class_active", false)
-                .remove("last_in_class_minutes")
-                .remove("last_in_class_progress")
+            remove("last_in_class_minutes")
+            remove("last_in_class_progress")
         }
     }
 
@@ -1482,9 +1519,8 @@ object CourseReminderHelper {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val dndIntent = Intent(context, ClassDndReceiver::class.java).apply {
-            // 测试课已并入 isInClass，与真实课共用同一条按钮链路
-            action = ClassDndReceiver.ACTION_TOGGLE
+        val dndIntent = Intent(context, ClassDndToggleReceiver::class.java).apply {
+            action = ClassDndToggleReceiver.ACTION_TOGGLE
         }
         val dndPendingIntent = PendingIntent.getBroadcast(
             context,
@@ -1497,10 +1533,10 @@ object CourseReminderHelper {
                 append(startTime)
                 append(" · ")
             }
-            append("现在上课")
+            append(AndroidNotifStr.classStartedNow())
         }
         val startedNotification = NotificationCompat.Builder(context, CHANNEL_LIVE_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_calendar)
             .setContentTitle(courseName)
             .setShortCriticalText(courseName)
             .setStyle(
@@ -1511,8 +1547,8 @@ object CourseReminderHelper {
             .setContentIntent(startedIntent)
             .setCategory(Notification.CATEGORY_REMINDER)
             .setRequestPromotedOngoing(true)
-            .addAction(R.drawable.ic_notification_calendar, "查看课表", startedIntent)
-            .addAction(R.drawable.ic_notification_mute, "上课勿扰", dndPendingIntent)
+            .addAction(R.drawable.ic_notification_calendar, AndroidNotifStr.viewSchedule(), startedIntent)
+            .addAction(R.drawable.ic_notification_mute, AndroidNotifStr.dndAction(), dndPendingIntent)
             .setTimeoutAfter(15_000L)
             .build()
             .apply {
@@ -1520,7 +1556,7 @@ object CourseReminderHelper {
             }
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val startedNotificationId = liveStartedId(testMode)
-        context.getSharedPreferences("countdown_state", Context.MODE_PRIVATE)
+        AppStorage.store("countdown_state")
             .edit { putInt("started_notification_id", startedNotificationId) }
         manager.notify(startedNotificationId, startedNotification)
     }
@@ -1583,7 +1619,7 @@ object CourseReminderHelper {
             CHANNEL_REMINDER_NAME,
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "课程提醒通知"
+            description = AndroidNotifStr.channelReminder()
             setShowBadge(true)
         }
         val liveChannel = NotificationChannel(
@@ -1591,7 +1627,7 @@ object CourseReminderHelper {
             CHANNEL_LIVE_NAME,
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
-            description = "课程提醒实时进度"
+            description = AndroidNotifStr.channelLiveDesc()
             setShowBadge(true)
             enableLights(false)
             enableVibration(false)
@@ -1629,7 +1665,7 @@ object CourseReminderHelper {
         )
 
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_calendar)
             .setContentTitle(title)
             .setContentText(message.replace("\n", " "))
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
@@ -1662,9 +1698,8 @@ object CourseReminderHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val dndIntent = Intent(context, ClassDndReceiver::class.java).apply {
-            // 测试课已并入 isInClass，与真实课共用同一条按钮链路
-            action = ClassDndReceiver.ACTION_TOGGLE
+        val dndIntent = Intent(context, ClassDndToggleReceiver::class.java).apply {
+            action = ClassDndToggleReceiver.ACTION_TOGGLE
         }
         val dndPendingIntent = PendingIntent.getBroadcast(
             context,
@@ -1678,13 +1713,13 @@ object CourseReminderHelper {
         val minutesUntilStart = ceilMinutesUntil(startMillis)
 
         // 右侧显示模式：0=课程名称，1=上课地点，2=倒计时
-        val reminderPrefs = context.getSharedPreferences("course_reminder_prefs", Context.MODE_PRIVATE)
+        val reminderPrefs = AppStorage.store("course_reminder_prefs")
         val collapsedMode = reminderPrefs.getInt("live_right_mode", 0)
         val shortCriticalText = when (collapsedMode) {
             // 缩略态只有十几个半角宽，课程名和地点都先按用户规则精简一手
             0 -> reminderPrefs.shortCourse(courseName).ifEmpty { courseName }
             1 -> reminderPrefs.shortClassroom(classroom).ifEmpty { courseName }
-            2 -> "${minutesUntilStart}分钟"
+            2 -> AndroidNotifStr.minutesShort(minutesUntilStart)
             else -> reminderPrefs.shortCourse(courseName).ifEmpty { courseName }
         }
 
@@ -1696,7 +1731,7 @@ object CourseReminderHelper {
         )
 
         val notification = NotificationCompat.Builder(context, CHANNEL_LIVE_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_calendar)
             .setContentTitle(courseName)
             .setShortCriticalText(shortCriticalText)
             .setStyle(
@@ -1709,8 +1744,8 @@ object CourseReminderHelper {
             .setContentIntent(contentIntent)
             .setCategory(Notification.CATEGORY_REMINDER)
             .setRequestPromotedOngoing(true)
-            .addAction(R.drawable.ic_notification_calendar, "查看课表", contentIntent)
-            .addAction(R.drawable.ic_notification_mute, "上课勿扰", dndPendingIntent)
+            .addAction(R.drawable.ic_notification_calendar, AndroidNotifStr.viewSchedule(), contentIntent)
+            .addAction(R.drawable.ic_notification_mute, AndroidNotifStr.dndAction(), dndPendingIntent)
             .apply {
                 val timeout = endMillis - System.currentTimeMillis()
                 if (timeout > 0) setTimeoutAfter(timeout)
@@ -1734,22 +1769,22 @@ object CourseReminderHelper {
         manager.notify(notificationId, notification)
 
         // 倒计时状态供 WidgetRefreshReceiver 每分钟更新
-        val prefs = context.getSharedPreferences("countdown_state", Context.MODE_PRIVATE)
+        val prefs = AppStorage.store("countdown_state")
         prefs.edit {
             putBoolean("active", true)
-                .putBoolean("test_mode", testMode)
-                .putString("courseName", courseName)
-                .putString("classroom", classroom)
-                .putString("section", section)
-                .putString("startTime", startTime)
-                .putLong("startMillis", startMillis)
-                .putLong("endMillis", endMillis)
-                .putInt("notificationId", notificationId)
-                .putBoolean("in_class_active", false)
-                .remove("last_displayed_minutes")
-                .remove("last_in_class_minutes")
-                .remove("last_in_class_progress")
-                .remove("started_shown")
+            putBoolean("test_mode", testMode)
+            putString("courseName", courseName)
+            putString("classroom", classroom)
+            putString("section", section)
+            putString("startTime", startTime)
+            putLong("startMillis", startMillis)
+            putLong("endMillis", endMillis)
+            putInt("notificationId", notificationId)
+            putBoolean("in_class_active", false)
+            remove("last_displayed_minutes")
+            remove("last_in_class_minutes")
+            remove("last_in_class_progress")
+            remove("started_shown")
         }
 
         // 精确闹钟保证到点可靠更新
@@ -1785,9 +1820,10 @@ object CourseReminderHelper {
         /** 直接落到哪个状态；COUNTDOWN 走完整时序（到点由对账/闹钟自动切换） */
         phase: ReminderTestPhase = ReminderTestPhase.COUNTDOWN,
     ) {
-        val courseName = "大学英语Ⅱ"
-        val classroom = "博A201"
-        val section = "第3~4节"
+        // 文案走上游的 i18n（英文包不能出现中文）：同一个课程/教室/节次，中英各一份
+        val courseName = AndroidNotifStr.testCourseName()
+        val classroom = AndroidNotifStr.testClassroom()
+        val section = AndroidNotifStr.testSection()
         val startMillis = System.currentTimeMillis() + startDelayMs
         val endMillis = startMillis + durationMs
         val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
@@ -1866,7 +1902,7 @@ object CourseReminderHelper {
 
     // 每分钟由 WidgetRefreshReceiver 驱动；同 notifyId 重复 notify 无痕更新
     fun updateActiveCountdown(context: Context) {
-        val prefs = context.getSharedPreferences("countdown_state", Context.MODE_PRIVATE)
+        val prefs = AppStorage.store("countdown_state")
         if (!prefs.getBoolean("active", false)) return
 
         // 岛模式下不显示实况通知：收起残留实况，改由岛状态对账接管
@@ -1882,7 +1918,7 @@ object CourseReminderHelper {
                 manager.cancel(LIVE_TEST_IN_CLASS_ID)
                 prefs.edit {
                     putBoolean("active", false)
-                        .putBoolean("in_class_active", false)
+                    putBoolean("in_class_active", false)
                 }
             }
             reconcileIslandCountdown(context)
@@ -1893,9 +1929,9 @@ object CourseReminderHelper {
         val startMillis = prefs.getLong("startMillis", 0L)
         val endMillis = prefs.getLong("endMillis", 0L)
         val notificationId = liveCountdownId(testMode)
-        val courseName = prefs.getString("courseName", "") ?: ""
-        val classroom = prefs.getString("classroom", "") ?: ""
-        val startTime = prefs.getString("startTime", "") ?: ""
+        val courseName = prefs.getString("courseName", "")
+        val classroom = prefs.getString("classroom", "")
+        val startTime = prefs.getString("startTime", "")
 
         val now = System.currentTimeMillis()
 
@@ -1963,7 +1999,7 @@ object CourseReminderHelper {
             return
         }
 
-        val collapsedPrefs = context.getSharedPreferences("course_reminder_prefs", Context.MODE_PRIVATE)
+        val collapsedPrefs = AppStorage.store("course_reminder_prefs")
         val collapsedMode = collapsedPrefs.getInt("live_right_mode", 0)
 
         val minutesUntilStart = ceilMinutesUntil(startMillis, now)
@@ -1974,7 +2010,7 @@ object CourseReminderHelper {
         val shortCriticalText = when (collapsedMode) {
             0 -> collapsedPrefs.shortCourse(courseName).ifEmpty { courseName }
             1 -> collapsedPrefs.shortClassroom(classroom).ifEmpty { courseName }
-            2 -> "${minutesUntilStart}分钟"
+            2 -> AndroidNotifStr.minutesShort(minutesUntilStart)
             else -> collapsedPrefs.shortCourse(courseName).ifEmpty { courseName }
         }
 
@@ -1993,9 +2029,8 @@ object CourseReminderHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val dndIntent = Intent(context, ClassDndReceiver::class.java).apply {
-            // 测试课已并入 isInClass，与真实课共用同一条按钮链路
-            action = ClassDndReceiver.ACTION_TOGGLE
+        val dndIntent = Intent(context, ClassDndToggleReceiver::class.java).apply {
+            action = ClassDndToggleReceiver.ACTION_TOGGLE
         }
         val dndPendingIntent = PendingIntent.getBroadcast(
             context,
@@ -2005,7 +2040,7 @@ object CourseReminderHelper {
         )
 
         val notification = NotificationCompat.Builder(context, CHANNEL_LIVE_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_calendar)
             .setContentTitle(courseName)
             .setShortCriticalText(shortCriticalText)
             .setStyle(
@@ -2018,8 +2053,8 @@ object CourseReminderHelper {
             .setContentIntent(contentIntent)
             .setCategory(Notification.CATEGORY_REMINDER)
             .setRequestPromotedOngoing(true)
-            .addAction(R.drawable.ic_notification_calendar, "查看课表", contentIntent)
-            .addAction(R.drawable.ic_notification_mute, "上课勿扰", dndPendingIntent)
+            .addAction(R.drawable.ic_notification_calendar, AndroidNotifStr.viewSchedule(), contentIntent)
+            .addAction(R.drawable.ic_notification_mute, AndroidNotifStr.dndAction(), dndPendingIntent)
             .apply {
                 val timeout = endMillis - now
                 if (timeout > 0) setTimeoutAfter(timeout)
@@ -2263,7 +2298,7 @@ object CourseReminderHelper {
     // 关闭提醒时清理实况/岛残留
     fun cancelAllReminderNotifications(context: Context) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val countdownPrefs = context.getSharedPreferences("countdown_state", Context.MODE_PRIVATE)
+        val countdownPrefs = AppStorage.store("countdown_state")
         manager.cancel(LIVE_COUNTDOWN_ID)
         manager.cancel(LIVE_STARTED_ID)
         manager.cancel(LIVE_IN_CLASS_ID)
@@ -2272,10 +2307,10 @@ object CourseReminderHelper {
         manager.cancel(LIVE_TEST_IN_CLASS_ID)
         countdownPrefs.edit {
             putBoolean("active", false)
-                .putBoolean("in_class_active", false)
-                .remove("test_mode")
-                .remove("last_in_class_minutes")
-                .remove("last_in_class_progress")
+            putBoolean("in_class_active", false)
+            remove("test_mode")
+            remove("last_in_class_minutes")
+            remove("last_in_class_progress")
         }
         IslandNotificationHelper.cancelIslandNotifications(context)
         IslandNotificationHelper.IslandState.clear(context)
@@ -2292,7 +2327,17 @@ object CourseReminderHelper {
         }
 
         // 复用 getTodayCourses，勿再内联过滤逻辑
-        val courses = getTodayCourses(context)
+        val allCourses = getTodayCourses(context)
+        // 与 schedulePreClassAlarms 一致：只处理落在用户设定节次范围内的课
+        val reminderStartSection = repository.getPreClassReminderStartSection()
+        val reminderEndSection = repository.getPreClassReminderEndSection()
+        val courses = if (reminderStartSection <= 1 && reminderEndSection <= 0) {
+            allCourses
+        } else {
+            allCourses.filter {
+                isCourseInReminderSections(it, reminderStartSection, reminderEndSection)
+            }
+        }
         if (courses.isEmpty()) {
             return
         }

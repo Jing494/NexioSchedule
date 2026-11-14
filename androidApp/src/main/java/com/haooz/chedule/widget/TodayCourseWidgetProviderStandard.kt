@@ -14,9 +14,13 @@ import android.view.View
 import android.widget.RemoteViews
 import androidx.core.graphics.createBitmap
 import com.haooz.chedule.R
-import com.haooz.chedule.data.Course
-import com.haooz.chedule.data.CourseRepository
-import com.haooz.chedule.data.CourseTimeSpan
+import com.haooz.chedule.data.WidgetWallpaperStore
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.model.CourseTimeResolver
+import com.haooz.chedule.data.repo.CourseRepository
+import com.haooz.chedule.data.util.CourseTimeSpan
+import com.haooz.chedule.i18n.AndroidWidgetStr
+import com.haooz.chedule.i18n.CommonStr
 import com.haooz.chedule.reminder.CourseReminderHelper
 import java.util.Calendar
 
@@ -68,7 +72,9 @@ class TodayCourseWidgetProviderStandard : AppWidgetProvider() {
         appWidgetId: Int
     ) {
         val repository = CourseRepository()
-        val dark = WidgetTextSizes.isDark(context)
+        val appearance = WidgetWallpaperStore.loadAppearance(WidgetWallpaperStore.KEY_SMALL)
+        val dark = WidgetWallpaperRender.resolveDark(context, WidgetWallpaperStore.KEY_SMALL)
+        val monet = WidgetMonetColors.palette(context, dark)
 
         val currentWeek = repository.getLiveTeachingWeek()
         val todayCourses = CourseReminderHelper.getTodayCourses(context)
@@ -90,7 +96,11 @@ class TodayCourseWidgetProviderStandard : AppWidgetProvider() {
         } else true
         val showTomorrow = isNextDayReminderEnabled && currentMinutes >= reminderMinutes && todayCoursesFinished
 
-        val dayNames = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+        val dayNames = listOf(
+            CommonStr.weekdayMon(), CommonStr.weekdayTue(), CommonStr.weekdayWed(),
+            CommonStr.weekdayThu(), CommonStr.weekdayFri(), CommonStr.weekdaySat(),
+            CommonStr.weekdaySun()
+        )
         // 今日/明日统一走 resolveDaySchedule：节假日末日例外按节次保留课程、调休按映射查课
         val resolution = CourseReminderHelper.resolveDaySchedule(context, forTomorrow = showTomorrow)
         val targetWeek = resolution.displayWeek
@@ -101,15 +111,15 @@ class TodayCourseWidgetProviderStandard : AppWidgetProvider() {
         val isHoliday = currentWeek > totalWeeks || (currentWeek >= 1 && currentWeek > lastWeekWithCourses)
 
         val titleText = if (showTomorrow) {
-            "明天"
+            AndroidWidgetStr.tomorrow()
         } else {
             // 今日也用日历日，避免调休日标题写成映射星期
             dayNames[(resolution.calendarDayOfWeek - 1).coerceIn(0, 6)]
         }
         val weekText = when {
-            isHoliday -> "放假中"
-            currentWeek < 1 -> "未开始"
-            else -> "第${targetWeek}周"
+            isHoliday -> AndroidWidgetStr.onBreak()
+            currentWeek < 1 -> AndroidWidgetStr.notStarted()
+            else -> CommonStr.weekN(targetWeek)
         }
 
         val displayCourse: Course?
@@ -157,17 +167,18 @@ class TodayCourseWidgetProviderStandard : AppWidgetProvider() {
             } else allCourses
         } else {
             emptyText = when {
-                isHoliday -> "假期中，暂无课程"
-                currentWeek < 1 -> "学期暂未开始"
+                isHoliday -> AndroidWidgetStr.vacationNoClasses()
+                currentWeek < 1 -> AndroidWidgetStr.semesterNotStarted()
+                // fork：假期末日/返校日文案走 ReturnDayReminder（上游没有这块）
                 resolution.isHolidayDate ->
                     com.haooz.chedule.data.ReturnDayReminder.statusText(
                         context,
                         repository,
                         java.time.LocalDate.now().plusDays(if (showTomorrow) 1 else 0),
-                    ) ?: "假期中，暂无课程"
-                showTomorrow -> "明日无课"
-                todayCourses.isEmpty() -> "今日无课"
-                else -> "今日课程已上完"
+                    ) ?: AndroidWidgetStr.vacationNoClasses()
+                showTomorrow -> AndroidWidgetStr.noClassesTomorrow()
+                todayCourses.isEmpty() -> AndroidWidgetStr.noClassesToday()
+                else -> AndroidWidgetStr.allClassesFinished()
             }
             startTime = ""
             endTime = ""
@@ -187,6 +198,13 @@ class TodayCourseWidgetProviderStandard : AppWidgetProvider() {
         }
         val signature = buildString {
             append(dark).append('|').append(paddingMode)
+            append('|').append(WidgetWallpaperRender.signaturePart(WidgetWallpaperStore.KEY_SMALL))
+            append('|').append(WidgetMonetColors.signature(monet))
+            append('|').append(
+                WidgetWallpaperRender.sizeSignature(
+                    appWidgetManager, appWidgetId, WidgetWallpaperRender.WidgetSize(110, 110)
+                )
+            )
             append('|').append(titleText).append('|').append(weekText)
             if (displayCourse != null) {
                 append('|').append(displayCourse.id).append('|').append(displayCourse.name)
@@ -200,18 +218,34 @@ class TodayCourseWidgetProviderStandard : AppWidgetProvider() {
         }
         if (WidgetUpdateCache.shouldSkip("today_std_$appWidgetId", signature)) return
 
+        fun buildViews(size: WidgetWallpaperRender.WidgetSize): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_today_course_standard)
-        applyWidgetMode(views, context, repository)
+        val (insetTopDp, insetBottomDp) = applyWidgetMode(views, context, repository)
         // 外层圆角：HyperOS（小米系）按系统规范 24dp，其余 20dp
-        views.setInt(
-            R.id.widget_today_container,
-            "setBackgroundResource",
-            if (WidgetTextSizes.isXiaomi) R.drawable.widget_today_course_background_xiaomi
-            else R.drawable.widget_today_course_background
+        val containerBackground = if (WidgetTextSizes.isXiaomi) {
+            R.drawable.widget_today_course_background_xiaomi
+        } else {
+            R.drawable.widget_today_course_background
+        }
+        views.setInt(R.id.widget_today_container, "setBackgroundResource", containerBackground)
+        WidgetWallpaperRender.apply(
+            views = views,
+            context = context,
+            key = WidgetWallpaperStore.KEY_SMALL,
+            appWidgetId = appWidgetId,
+            imageId = R.id.widget_wallpaper,
+            containerId = R.id.widget_today_container,
+            normalBackgroundRes = containerBackground,
+            insetTopDp = insetTopDp,
+            insetBottomDp = insetBottomDp,
+            monet = monet,
         )
         // ColorOS 上 2×2 的内容会被整体放大，按 0.85 倍反补偿（字号与间距一起）
         val contentScale = if (WidgetTextSizes.isColorOs) COLOR_OS_CONTENT_SCALE else 1f
-        WidgetTextSizes.applyTodayCourse(views, contentScale)
+        WidgetTextSizes.applyTodayCourse(views, contentScale * appearance.textScale)
+        if (WidgetWallpaperRender.hasWallpaper(WidgetWallpaperStore.KEY_SMALL) || monet != null) {
+            WidgetTextSizes.applyTextColors(views, context, dark, courseReminder = false, monet = monet)
+        }
         applyScaledMetrics(views, context, contentScale)
         views.setTextViewText(R.id.widget_title, titleText)
         views.setTextViewText(R.id.widget_week, weekText)
@@ -224,15 +258,16 @@ class TodayCourseWidgetProviderStandard : AppWidgetProvider() {
             views.setTextViewText(R.id.widget_course_time, "$startTime-$endTime")
             views.setTextViewText(R.id.widget_course_location, displayCourse.classroom)
 
-            val remainingText = if (remainingCount > 0) "还有${remainingCount}节课" else "没有其他课程"
+            val remainingText = if (remainingCount > 0) AndroidWidgetStr.moreClassesN(remainingCount) else AndroidWidgetStr.noOtherClasses()
             views.setTextViewText(R.id.widget_remaining_text, remainingText)
 
             for (i in dotIds.indices) {
                 if (i < dotCourses.size) {
                     views.setViewVisibility(dotIds[i], View.VISIBLE)
-                    views.setImageViewBitmap(dotIds[i], createCircleBitmap(context, dotCourses[i].colorRes.toInt(),
-                        if (dark) WidgetTextSizes.TODAY_BG_DARK else WidgetTextSizes.TODAY_BG_LIGHT,
-                        contentScale))
+                    views.setImageViewBitmap(
+                        dotIds[i],
+                        createCircleBitmap(context, dotCourses[i].colorRes.toInt(), contentScale)
+                    )
                 } else {
                     views.setViewVisibility(dotIds[i], View.GONE)
                 }
@@ -252,7 +287,28 @@ class TodayCourseWidgetProviderStandard : AppWidgetProvider() {
             WidgetClickHelper.launchAndRefreshPending(context)
         )
 
-        appWidgetManager.updateAppWidget(appWidgetId, views)
+            return views
+        }
+        val sizes = WidgetWallpaperRender.renderSizes(
+            manager = appWidgetManager,
+            appWidgetId = appWidgetId,
+            fallback = WidgetWallpaperRender.WidgetSize(110, 110),
+        )
+        appWidgetManager.updateAppWidget(
+            appWidgetId,
+            WidgetWallpaperRender.responsiveViews(sizes.map { it to buildViews(it) }),
+        )
+    }
+
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: android.os.Bundle
+    ) {
+        // 拉伸/缩放：尺寸变了必须重建（签名里也带了尺寸，这里再兜一层）
+        WidgetUpdateCache.invalidateWidget("today_std_$appWidgetId")
+        updateWidget(context, appWidgetManager, appWidgetId)
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
@@ -264,7 +320,7 @@ class TodayCourseWidgetProviderStandard : AppWidgetProvider() {
         views: RemoteViews,
         context: Context,
         repository: CourseRepository
-    ) {
+    ): Pair<Float, Float> {
         // 0=标准(0/0), 1=4×6(12/14), 2=4×7(8/10), 3=4×6无字(21/5), 4=4×7无字(17/2)
         val (top, bottom) = when (repository.getWidgetPaddingMode()) {
             1 -> 12f to 14f
@@ -280,6 +336,7 @@ class TodayCourseWidgetProviderStandard : AppWidgetProvider() {
             0,
             WidgetTextSizes.dpToPx(context, bottom).toInt()
         )
+        return top to bottom
     }
 
     /**
@@ -306,10 +363,15 @@ class TodayCourseWidgetProviderStandard : AppWidgetProvider() {
         }
     }
 
-    private fun createCircleBitmap(context: Context, color: Int, background: Int, scale: Float = 1f): Bitmap {
-        val size = (7 * scale * WidgetTextSizes.deviceDensity(context)).toInt()
-        // 用不透明的卡片底色填充，避免透明像素被桌面渲染成灰色方块
-        val bitmap = createBitmap(size, size).apply { eraseColor(background) }
+    /**
+     * 色球位图：整张图就是一个圆，四角留透明。
+     *
+     * 以前是「整张填不透明卡片底色，再在上面画圆」—— 卡片底色是半透明的，
+     * 那四个角就是四个纯色方尖，会从圆边上戳出来。
+     */
+    private fun createCircleBitmap(context: Context, color: Int, scale: Float = 1f): Bitmap {
+        val size = (7 * scale * WidgetTextSizes.deviceDensity(context)).toInt().coerceAtLeast(1)
+        val bitmap = createBitmap(size, size)
         val canvas = Canvas(bitmap)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             this.color = color
@@ -319,10 +381,10 @@ class TodayCourseWidgetProviderStandard : AppWidgetProvider() {
     }
 
     private fun getCourseStartTime(course: Course, repository: CourseRepository): String? =
-        com.haooz.chedule.data.CourseTimeResolver.getStartTime(course, repository)
+        CourseTimeResolver.getStartTime(course, repository)
 
     private fun getCourseEndTime(course: Course, repository: CourseRepository): String? =
-        com.haooz.chedule.data.CourseTimeResolver.getEndTime(course, repository)
+        CourseTimeResolver.getEndTime(course, repository)
 
     /** "HH:mm" -> 分钟数，用于排序；null/非法返回 Int.MAX_VALUE 排到末尾 */
     private fun String?.toMinutes(): Int {

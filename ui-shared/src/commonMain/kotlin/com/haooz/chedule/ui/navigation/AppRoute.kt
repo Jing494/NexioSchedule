@@ -5,12 +5,29 @@ package com.haooz.chedule.ui.navigation
  *
  * ⚠ [id] 是持久化契约（`rememberSaveable` 进程/配置重建用）：已发布路由的 id 不要改，否则多任务切换回来会落回首页；改 id 必须写迁移。
  *
- * ⚠ 主界面不在此处：它是常驻底座、不参与 save/restore，在此加路由会让非 saveable 状态（`remember { mutableStateOf }`）丢失。要加主 tab 改 `CourseScheduleApp` 的 pager。
+ * ⚠ 主界面（今日 / 课表）不在此处：它是常驻底座、不参与 save/restore，在此加路由会让非 saveable
+ * 状态（`remember { mutableStateOf }`）丢失。要加主 tab 改 `CourseScheduleApp` 的 pager。
+ * 例外是 [Settings]（2026-10 起）：它是二级页而不是主 tab，页内状态全是临时 UI 态，出栈销毁无妨。
  */
 sealed interface AppRoute {
 
     /** 持久化标识。已发布的 id 不要改（见接口 KDoc）。 */
     val id: String
+
+    /** 设置（原主 pager 第三页，现为二级页）。 */
+    data object Settings : AppRoute {
+        override val id: String get() = "settings"
+    }
+
+    /** 课程表。 */
+    data object ScheduleSettings : AppRoute {
+        override val id: String get() = "schedule_settings"
+    }
+
+    /** 天气详情页（今日卡天气行的入口）。 */
+    data object Weather : AppRoute {
+        override val id: String get() = "weather"
+    }
 
     /** 关于页。 */
     data object About : AppRoute {
@@ -32,44 +49,40 @@ sealed interface AppRoute {
         override val id: String get() = "privacy_policy"
     }
 
-    /** 应用偏好设置（Manifest label「应用偏好设置」）。 */
+    /** 应用个性化。 */
     data object PreferenceSettings : AppRoute {
         override val id: String get() = "preference_settings"
     }
 
-    /** 更新设置（「更新设置」）。 */
+    /** 更新。 */
     data object UpdateSettings : AppRoute {
         override val id: String get() = "update_settings"
     }
 
-    /** 交流与反馈（「交流与反馈」）。 */
+    /** 更新设置（更新通道 / 下载源）。 */
+    data object UpdatePreferences : AppRoute {
+        override val id: String get() = "update_preferences"
+    }
+
+    /** 问题反馈（「问题反馈」）。 */
     data object Communication : AppRoute {
         override val id: String get() = "communication"
     }
 
-    /** 本地备份（「本地备份」）。 */
-    data object LocalBackup : AppRoute {
-        override val id: String get() = "local_backup"
-    }
 
     /** 捐赠支持（「捐赠支持」）。 */
     data object AppreciateAuthor : AppRoute {
         override val id: String get() = "appreciate_author"
     }
 
-    /** 课表导入（「课表导入」）。 */
-    data object ScheduleImport : AppRoute {
-        override val id: String get() = "schedule_import"
-    }
-
-    /** 课表导出（「课表导出」）。 */
-    data object ScheduleExport : AppRoute {
-        override val id: String get() = "schedule_export"
-    }
-
-    /** 课表备份（「课表备份」）。 */
+    /** 备份与同步。 */
     data object ScheduleBackup : AppRoute {
         override val id: String get() = "schedule_backup"
+    }
+
+    /** 导入导出（顶部胶囊切换）。 */
+    data object ImportExport : AppRoute {
+        override val id: String get() = "import_export"
     }
 
     /** AI 文本导入（「AI 文本导入」）。 */
@@ -97,12 +110,12 @@ sealed interface AppRoute {
         override val id: String get() = "holiday_settings"
     }
 
-    /** WebDAV 云备份（「WebDAV 云备份」）。 */
+    /** WebDAV 云同步。 */
     data object WebDavSettings : AppRoute {
         override val id: String get() = "webdav_settings"
     }
 
-    /** 课程时间管理（「课程时间管理」）。 */
+    /** 上课时间（「上课时间」）。 */
     data object CourseTimeSettings : AppRoute {
         override val id: String get() = "course_time_settings"
     }
@@ -127,21 +140,38 @@ sealed interface AppRoute {
         override val id: String get() = "web_import"
     }
 
+    /** 应用内反馈（提交 Bug / 功能建议，替代原来的腾讯文档外链）。 */
+    data object Feedback : AppRoute {
+        override val id: String get() = "feedback"
+    }
+
+    /** 我的反馈（按 device_id + 可选邮箱查历史提交与状态时间线）。 */
+    data object FeedbackHistory : AppRoute {
+        override val id: String get() = "feedback_history"
+    }
+
+    /** 开发进度（后端维护的 roadmap，App 只读）。 */
+    data object FeedbackRoadmap : AppRoute {
+        override val id: String get() = "feedback_roadmap"
+    }
+
     companion object {
         /** 按 [id] 还原路由；未知 id 返回 null（版本回退/脏数据时由调用方兜底）。 */
         fun fromId(id: String): AppRoute? = when (id) {
+            Settings.id -> Settings
+            ScheduleSettings.id -> ScheduleSettings
+            Weather.id -> Weather
             About.id -> About
             Changelog.id -> Changelog
             License.id -> License
             PrivacyPolicy.id -> PrivacyPolicy
             PreferenceSettings.id -> PreferenceSettings
             UpdateSettings.id -> UpdateSettings
+            UpdatePreferences.id -> UpdatePreferences
             Communication.id -> Communication
-            LocalBackup.id -> LocalBackup
             AppreciateAuthor.id -> AppreciateAuthor
-            ScheduleImport.id -> ScheduleImport
-            ScheduleExport.id -> ScheduleExport
             ScheduleBackup.id -> ScheduleBackup
+            ImportExport.id -> ImportExport
             AiImport.id -> AiImport
             WidgetIntro.id -> WidgetIntro
             CourseReminder.id -> CourseReminder
@@ -152,6 +182,9 @@ sealed interface AppRoute {
             CourseManage.id -> CourseManage
             EducationalImport.id -> EducationalImport
             WebImport.id -> WebImport
+            Feedback.id -> Feedback
+            FeedbackHistory.id -> FeedbackHistory
+            FeedbackRoadmap.id -> FeedbackRoadmap
             else -> null
         }
     }

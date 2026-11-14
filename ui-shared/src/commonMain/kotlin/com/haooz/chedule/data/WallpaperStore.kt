@@ -3,7 +3,7 @@ package com.haooz.chedule.data
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toPixelMap
-import com.haooz.chedule.data.AppFiles
+import com.haooz.chedule.data.platform.AppFiles
 
 /**
  * 壁纸后端能力 —— 平台实现需提供四项能力。
@@ -18,6 +18,18 @@ interface WallpaperBackend {
 
     /** 编码 [ImageBitmap] 为字节（quality 0~100）；失败返回 null。落盘由调用方负责。 */
     suspend fun encode(image: ImageBitmap, quality: Int): ByteArray?
+
+    /**
+     * 解码**给定字节**（纯解码，不碰磁盘）
+     * 默认实现只为少写平台代码；语义正确的平台应覆盖。
+     */
+    suspend fun decodeBytes(bytes: ByteArray): ImageBitmap? = decode(bytes)
+
+    /**
+     * 只编码、不落盘。
+     * 用它存小部件壁纸会把用户的课表壁纸覆盖掉，外观页「跟随壁纸」的深浅色也跟着一起错。
+     */
+    suspend fun encodeBytes(image: ImageBitmap, quality: Int): ByteArray? = encode(image, quality)
 
     /** 缩放到指定像素尺寸（宽高比由调用方算好后传入）。 */
     suspend fun scale(image: ImageBitmap, width: Int, height: Int): ImageBitmap
@@ -67,6 +79,15 @@ object WallpaperStore {
 
     /** 平台后端。未注入时（桌面/测试）退化成「读不到盘」，表现为没有壁纸。 */
     var backend: WallpaperBackend? = null
+
+    /**
+     * 同步取壁纸（读盘 + 解码，不走协程）。首帧前就要拿到，否则首帧只有底色、
+     * 等异步加载完再跳成用户设定。
+     *
+     * 宿主注入：Android = `ScheduleAppearance.loadWallpaper()`（自带 LruCache 与降采样），
+     * iOS = skia 同步解码；桌面不注入（无壁纸）。未注入时首帧加载交给异步兜底。
+     */
+    var synchronousLoader: (() -> ImageBitmap?)? = null
 
     /**
      * 内存缓存；Android 主缓存在 `ScheduleAppearance.LruCache`，此处仅兜底避免

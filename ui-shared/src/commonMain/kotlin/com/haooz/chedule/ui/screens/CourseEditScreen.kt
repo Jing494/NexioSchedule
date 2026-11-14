@@ -1,47 +1,38 @@
 /** 课程编辑页面 - 修改课程时段/周次 */
 package com.haooz.chedule.ui.screens
 
-import com.haooz.chedule.ui.components.CardExpandSpec
-import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.consumeWindowInsets
-import com.haooz.chedule.ui.components.cardRevealLayer
-import com.haooz.chedule.ui.components.rememberCardRevealState
-import com.haooz.chedule.ui.utils.LocalNativeDocumentChrome
-import com.haooz.chedule.ui.utils.hostVerticalBarEdge
-import com.haooz.chedule.ui.utils.NativeDocumentAction
-import com.haooz.chedule.ui.utils.NativeDocumentEditorChrome
-import com.haooz.chedule.ui.utils.NativeDocumentEditorEffect
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,9 +46,9 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
-import com.haooz.chedule.ui.utils.TransitionLayerSnapshot
-import com.haooz.chedule.ui.utils.TransitionLayerImage
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -68,23 +59,38 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.haooz.chedule.data.Course
-import kotlinx.datetime.Clock
-import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBar
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.i18n.CourseEditStr
+import com.haooz.chedule.i18n.NoteStr
 import com.haooz.chedule.ui.basic.LiquidTopBarButton
-import top.yukonga.miuix.kmp.layout.ProgressiveBlurTopBar
-import top.yukonga.miuix.kmp.layout.rememberSharedScrollBehavior
+import com.haooz.chedule.ui.components.CardExpandSpec
+import com.haooz.chedule.ui.components.cardRevealLayer
+import com.haooz.chedule.ui.components.rememberCardRevealState
+import com.haooz.chedule.ui.components.text.material.Text as Text
+import com.haooz.chedule.ui.effects.motion.morphClip
+import com.haooz.chedule.ui.effects.motion.rememberMorphTransition
 import com.haooz.chedule.ui.utils.CourseSorting
-import com.haooz.chedule.ui.utils.blockTouchPassThrough
-import com.haooz.chedule.ui.utils.isAppDarkTheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
+import com.haooz.chedule.ui.utils.LocalNativeDocumentChrome
+import com.haooz.chedule.ui.utils.NativeDocumentAction
+import com.haooz.chedule.ui.utils.NativeDocumentEditorChrome
+import com.haooz.chedule.ui.utils.NativeDocumentEditorEffect
 import com.haooz.chedule.ui.utils.ScreenCornerRadiiPx
-import com.kyant.capsule.ContinuousRoundedRectangle
+import com.haooz.chedule.ui.utils.TransitionLayerImage
+import com.haooz.chedule.ui.utils.TransitionLayerSnapshot
+import com.haooz.chedule.ui.utils.blockTouchPassThrough
+import com.haooz.chedule.ui.utils.hostVerticalBarEdge
+import com.haooz.chedule.ui.utils.isAppDarkTheme
+import com.haooz.softglass.backdrop.GlassBackdrop
+import com.haooz.softglass.backdrop.backdrops.layerBackdrop as liquidGlassLayerBackdrop
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.datetime.Clock
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -98,17 +104,17 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.ChevronBackward
 import top.yukonga.miuix.kmp.icon.extended.Delete
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
-import top.yukonga.miuix.kmp.squircle.squircleBorder
-import top.yukonga.miuix.kmp.squircle.squircleClip
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import kotlin.time.Duration.Companion.milliseconds
-import androidx.compose.ui.graphics.Color as ComposeColor
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.layerBackdrop as liquidGlassLayerBackdrop
+import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBar
+import top.yukonga.miuix.kmp.layout.ProgressiveBlurTopBar
 import top.yukonga.miuix.kmp.layout.isTabletWidth
-import com.haooz.chedule.ui.effects.motion.rememberMorphTransition
+import top.yukonga.miuix.kmp.layout.rememberSharedScrollBehavior
+import top.yukonga.miuix.kmp.layout.rememberTopBarMaterialState
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import com.haooz.softglass.shape.continuousBorder
+import com.haooz.softglass.shape.continuousClip
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 // ===================== Course Grouping Helpers =====================
 
@@ -160,7 +166,7 @@ fun CourseEditScreen(
     /** Retained source card drawing, owned by the underlying management page. */
     cardSnapshot: TransitionLayerSnapshot?,
     cardColor: Color = Color(0xFF4CAF50),
-    cardAlpha: Float = 0.15f,
+    cardAlpha: Float = 0.12f,
     onBackStart: () -> Unit,
     onBack: () -> Unit,
     onCourseUpdated: (Course) -> Unit = { _ -> },
@@ -168,17 +174,19 @@ fun CourseEditScreen(
     onDeleteCourse: (String) -> Unit = { _ -> },
     onColorChanged: (Long) -> Unit = { _ -> },
     getOccupiedWeeks: (dayOfWeek: Int, startSection: Int, endSection: Int, excludeIds: List<String>, startTime: String?, endTime: String?) -> Set<Int> = { _, _, _, _, _, _ -> emptySet() },
-    liquidGlassBackdrop: com.kyant.backdrop.backdrops.LayerBackdrop? = null,
+    liquidGlassBackdrop: com.haooz.softglass.backdrop.backdrops.LayerBackdrop? = null,
     sectionTimes: Map<Int, String> = emptyMap(),
     /** 平板右栏内嵌：不做展开/返回形变，也不拦截返回手势，直接以全尺寸静态呈现 */
     embedded: Boolean = false,
     /** 弹窗/底部抽屉的玻璃采样层：内嵌时传全屏层，使弹窗能采样到左栏内容 */
-    dialogBackdrop: Backdrop? = null,
+    dialogBackdrop: GlassBackdrop? = null,
     /** 内嵌时由外部指定内容顶距（与左栏 chromeTop 对齐），替代按顶栏高度推算 */
     contentTopPadding: androidx.compose.ui.unit.Dp? = null,
+    /** false = 先停在起点卡态，等宿主持源卡藏掉、整页快照上屏后再放行展开 */
+    morphStarted: Boolean = true,
 ) {
     // 弹窗默认跟随自身玻璃层；内嵌时由外层指定全屏层
-    val dialogGlass: Backdrop? = dialogBackdrop ?: liquidGlassBackdrop
+    val dialogGlass: GlassBackdrop? = dialogBackdrop ?: liquidGlassBackdrop
     val courseName = courses.firstOrNull()?.name ?: ""
     // 所有同名课程共享颜色，仅保存时生效
     var selectedColor by remember {
@@ -191,6 +199,10 @@ fun CourseEditScreen(
 
     val isTablet = isTabletWidth()
     val tabletHorizontalPadding = if (isTablet) 20.dp else 16.dp
+    // 嵌入分栏时宿主已处理安全区，页内只留固定白边
+    val horizontalSafeInsets = if (embedded) Modifier else Modifier.windowInsetsPadding(
+        WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+    )
 
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -208,6 +220,7 @@ fun CourseEditScreen(
         onBackStart = onBackStart,
         onBack = onBack,
         embedded = embedded,
+        autoStart = morphStarted,
     )
 
     // ---- UI State ----
@@ -236,8 +249,8 @@ fun CourseEditScreen(
         NativeDocumentEditorEffect(
             if (exiting) null else NativeDocumentEditorChrome(
                 title = courseName,
-                cancel = NativeDocumentAction("chevron.backward", "返回", enabled = !showAddCourseSheet && !showEditCourseSheet) { closeEditor() },
-                save = NativeDocumentAction("plus", "添加课程", enabled = !showAddCourseSheet && !showEditCourseSheet) {
+                cancel = NativeDocumentAction("chevron.backward", CommonStr.back(), enabled = !showAddCourseSheet && !showEditCourseSheet) { closeEditor() },
+                save = NativeDocumentAction("plus", CourseEditStr.addCourse(), enabled = !showAddCourseSheet && !showEditCourseSheet) {
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                     showAddCourseSheet = true
                 },
@@ -297,19 +310,21 @@ fun CourseEditScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                if (isDark) ComposeColor(0xFF2C2C2C).copy(alpha = morph.state.value.bgAlpha)
-                else ComposeColor.Black.copy(alpha = morph.state.value.bgAlpha)
-            )
+            .drawBehind {
+                val alpha = morph.state.value.bgAlpha
+                drawRect(
+                    if (isDark) ComposeColor(0xFF2C2C2C).copy(alpha = alpha)
+                    else ComposeColor.Black.copy(alpha = alpha)
+                )
+            }
             // 只挡下层穿透、不 consume，避免内部列表/控件滑不动
             .blockTouchPassThrough()
     ) {
-        val s = morph.state.value
-
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
+                    val s = morph.state.value
                     clip = false
                     transformOrigin = TransformOrigin(s.anchorX, 0.5f)
                     scaleX = s.scale
@@ -317,18 +332,22 @@ fun CourseEditScreen(
                     translationX = s.translationX
                     translationY = s.translationY
                 }
-                .clip(morph.clipShape)
+                .morphClip(morph)
                 .background(MiuixTheme.colorScheme.surface)
                 .background(cardColor.copy(alpha = cardAlpha))
         ) {
-            if (cardSnapshot != null && s.snapshotAlpha > 0f) {
+            if (cardSnapshot != null) {
                 TransitionLayerImage(
                     snapshot = cardSnapshot,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .fillMaxWidth()
-                        .clip(ContinuousRoundedRectangle((18 / s.scale).dp))
-                        .graphicsLayer { alpha = s.snapshotAlpha },
+                        .graphicsLayer {
+                            val s = morph.state.value
+                            shape = ContinuousRoundedRectangle((18 / s.scale).dp)
+                            clip = true
+                            alpha = s.snapshotAlpha
+                        },
                     contentScale = ContentScale.FillWidth
                 )
             }
@@ -336,12 +355,14 @@ fun CourseEditScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = s.contentAlpha }
+                    .graphicsLayer { alpha = morph.state.value.contentAlpha }
             ) {
                 Scaffold(
                     modifier = Modifier.consumeWindowInsets(PaddingValues(top = nativeBarInset)),
                     topBar = {
 
+                        // 本页唯一材质状态：按钮玻璃走全站同一判据（本页遮罩常驻，不接 maskAlpha）
+                        val material = rememberTopBarMaterialState(scrollBehavior)
                         ProgressiveBlurTopBar(
                             backdrop = liquidGlassBackdrop!!,
                             topInsetAdjustment = nativeBarInset,
@@ -350,10 +371,9 @@ fun CourseEditScreen(
                             CollapsibleTopAppBar(
                                 title = courseName,
                                 largeTitle = courseName,
-                                modifier = Modifier.windowInsetsPadding(
-                                    WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
-                                ),
+                                modifier = horizontalSafeInsets,
                                 scrollBehavior = scrollBehavior,
+                                materialState = material,
                                 contentPadding = {},
                                 startAction = if (embedded || nativeChrome != null) null else {
                                     { backdropAlpha, shadowAlpha ->
@@ -361,7 +381,7 @@ fun CourseEditScreen(
                                         onClick = { morph.close() },
                                         backdrop = liquidGlassBackdrop,
                                         icon = MiuixIcons.ChevronBackward,
-                                        contentDescription = "返回",
+                                        contentDescription = CommonStr.back(),
                                         performHapticFeedback = false,
                                         iconSize = 25.dp,
                                         iconOffset = DpOffset(x = (-2).dp, y = 0.dp),
@@ -378,7 +398,7 @@ fun CourseEditScreen(
                                         },
                                         backdrop = liquidGlassBackdrop,
                                         icon = MiuixIcons.Add,
-                                        contentDescription = "添加课程",
+                                        contentDescription = CourseEditStr.addCourse(),
                                         iconSize = 24.dp,
                                         backdropAlpha = backdropAlpha,
                                         shadowAlpha = shadowAlpha,
@@ -392,7 +412,14 @@ fun CourseEditScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .liquidGlassLayerBackdrop(liquidGlassBackdrop!!)
+                            .then(
+                                // 无材质档：玻璃全关，采样录屏层不挂
+                                if (com.haooz.chedule.ui.utils.AppMaterialSettings.isNoneTier()) {
+                                    Modifier
+                                } else {
+                                    Modifier.liquidGlassLayerBackdrop(liquidGlassBackdrop!!)
+                                }
+                            )
                     ) {
                         Card(
                             modifier = Modifier
@@ -450,7 +477,7 @@ fun CourseEditScreen(
                                 columns = StaggeredGridCells.Fixed(1),
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                                    .then(horizontalSafeInsets)
                                     .overScrollVertical()
                                     .scrollEndHaptic(
                                         hapticFeedbackType = HapticFeedbackType.TextHandleMove
@@ -481,7 +508,7 @@ fun CourseEditScreen(
                                     ) {
                                         Column(modifier = Modifier.fillMaxWidth()) {
                                             Text(
-                                                text = "课程颜色",
+                                                text = CourseEditStr.courseColor(),
                                                 fontSize = 17.sp,
                                                 fontWeight = FontWeight.Medium,
                                                 color = MiuixTheme.colorScheme.onSurface,
@@ -528,7 +555,7 @@ fun CourseEditScreen(
                                                                 Box(
                                                                     modifier = Modifier
                                                                         .fillMaxSize()
-                                                                        .squircleBorder(
+                                                                        .continuousBorder(
                                                                             width = 2.dp,
                                                                             color = primaryColor.copy(
                                                                                 alpha = borderAlpha
@@ -536,7 +563,7 @@ fun CourseEditScreen(
                                                                             cornerRadius = 12.dp
                                                                         )
                                                                         .padding(4.dp)
-                                                                        .squircleClip(8.dp)
+                                                                        .continuousClip(8.dp)
                                                                         .background(
                                                                             Color(color).copy(
                                                                                 alpha = if (isDark) 0.22f else 0.16f
@@ -574,7 +601,7 @@ fun CourseEditScreen(
                                                                 Box(
                                                                     modifier = Modifier
                                                                         .fillMaxSize()
-                                                                        .squircleBorder(
+                                                                        .continuousBorder(
                                                                             width = 2.dp,
                                                                             color = primaryColor.copy(
                                                                                 alpha = customBorderAlpha
@@ -582,7 +609,7 @@ fun CourseEditScreen(
                                                                             cornerRadius = 12.dp
                                                                         )
                                                                         .padding(4.dp)
-                                                                        .squircleClip(8.dp)
+                                                                        .continuousClip(8.dp)
                                                                         .background(
                                                                             if (isCustomColor) Color(
                                                                                 selectedColor
@@ -598,7 +625,7 @@ fun CourseEditScreen(
                                                                     if (!isCustomColor) {
                                                                         Icon(
                                                                             imageVector = MiuixIcons.Add,
-                                                                            contentDescription = "自定义颜色",
+                                                                            contentDescription = CourseEditStr.customColorLabel(),
                                                                             modifier = Modifier.size(
                                                                                 18.dp
                                                                             ),
@@ -671,7 +698,7 @@ fun CourseEditScreen(
                                                 )
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
-                                                    "删除",
+                                                    CommonStr.delete(),
                                                     fontSize = 17.sp,
                                                     fontWeight = FontWeight.Medium,
                                                     color = Color(0xFFF44336)
@@ -685,7 +712,7 @@ fun CourseEditScreen(
                     }
 
                     OverlayDialog(
-                        title = "选择颜色",
+                        title = CourseEditStr.selectColorTitle(),
                         show = showColorDialog,
                         liquidGlassBackdrop = dialogGlass,
                         onDismissRequest = { showColorDialog = false }
@@ -707,7 +734,7 @@ fun CourseEditScreen(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 TextButton(
-                                    text = "取消",
+                                    text = CommonStr.cancel(),
                                     onClick = {
                                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                         showColorDialog = false
@@ -715,7 +742,7 @@ fun CourseEditScreen(
                                     modifier = Modifier.weight(1f)
                                 )
                                 TextButton(
-                                    text = "确定",
+                                    text = CommonStr.ok(),
                                     onClick = {
                                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                         selectedColor =
@@ -735,8 +762,10 @@ fun CourseEditScreen(
                     }
 
                     OverlayDialog(
-                        title = "删除课程",
-                        summary = "确定要删除课程「${pendingDeleteGroup?.courses?.firstOrNull()?.name ?: ""}」吗？\n此操作不可撤销。",
+                        title = CourseEditStr.deleteCourse(),
+                        summary = CourseEditStr.deleteCourseConfirm(
+                            pendingDeleteGroup?.courses?.firstOrNull()?.name ?: ""
+                        ),
                         show = showDeleteDialog,
                         liquidGlassBackdrop = dialogGlass,
                         onDismissRequest = { showDeleteDialog = false }
@@ -748,7 +777,7 @@ fun CourseEditScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             TextButton(
-                                text = "取消",
+                                text = CommonStr.cancel(),
                                 onClick = {
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                     showDeleteDialog = false
@@ -756,7 +785,7 @@ fun CourseEditScreen(
                                 modifier = Modifier.weight(1f)
                             )
                             TextButton(
-                                text = "删除",
+                                text = CommonStr.delete(),
                                 onClick = {
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                                     showDeleteDialog = false
@@ -810,6 +839,16 @@ fun CourseEditScreen(
                                         isCustomTime = updatedCourse.isCustomTime,
                                         customStartTime = updatedCourse.customStartTime,
                                         customEndTime = updatedCourse.customEndTime,
+                                        // ⚠ 逐字段 copy：新加的可编辑字段都要在这里补一行，
+                                        //   漏了就是「表单里能填、点确定后没保存」
+                                        note = updatedCourse.note,
+                                        // 备注文本变了 = 重设「全部周」备注，这条记录自己的
+                                        // 单周覆盖跟着清掉；没改就原样保留
+                                        weekNotes = if (updatedCourse.note != old.note) {
+                                            emptyMap()
+                                        } else {
+                                            old.weekNotes
+                                        },
                                         lastModified = Clock.System.now().toEpochMilliseconds()
                                     )
                                 )
@@ -836,9 +875,20 @@ private fun CourseGroupCard(
     onEdit: (CourseGroup) -> Unit
 ) {
     val course = group.courses.first()
-    val dayLabels = listOf("", "周一", "周二", "周三", "周四", "周五", "周六", "周日")
-    val weekText = course.getWeekText().ifEmpty { "未设置" }
-    val sectionText = course.getTimeDisplayText().ifEmpty { "未设置" }
+    val dayLabels = listOf(
+        "",
+        CommonStr.weekdayMon(),
+        CommonStr.weekdayTue(),
+        CommonStr.weekdayWed(),
+        CommonStr.weekdayThu(),
+        CommonStr.weekdayFri(),
+        CommonStr.weekdaySat(),
+        CommonStr.weekdaySun(),
+    )
+    val weekText = course.weekTextLocalized().ifEmpty { CommonStr.notSet() }
+    val sectionText = course.timeDisplayTextLocalized().ifEmpty { CommonStr.notSet() }
+    // 这里只认「所有周」那条备注：编辑表单里改的也是它
+    val noteText = course.note
 
     Column(modifier = Modifier.fillMaxWidth()) {
         // 分组标题用「周几 + 时间」而非周次：列表按时段排序，
@@ -847,7 +897,7 @@ private fun CourseGroupCard(
             text = if (course.dayOfWeek in 1..7) {
                 "${dayLabels[course.dayOfWeek]} $sectionText"
             } else {
-                "未设置时间"
+                CourseEditStr.notSetTime()
             }
         )
 
@@ -863,14 +913,14 @@ private fun CourseGroupCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "地点",
+                        text = CourseEditStr.location(),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Medium,
                         color = MiuixTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.weight(1f))
                     Text(
-                        text = course.classroom.ifBlank { "未设置" },
+                        text = course.classroom.ifBlank { CommonStr.notSet() },
                         modifier = Modifier.fillMaxWidth(0.8f),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Medium,
@@ -882,24 +932,59 @@ private fun CourseGroupCard(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 17.dp),
+                        .padding(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 14.dp,
+                            // 下面接备注行时不留 17dp，否则卡片底部会多出一条缝
+                            bottom = if (noteText.isNotBlank()) 14.dp else 17.dp,
+                        ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "教师",
+                        text = CourseEditStr.teacher(),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Medium,
                         color = MiuixTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.weight(1f))
                     Text(
-                        text = course.teacher.ifBlank { "未设置" },
+                        text = course.teacher.ifBlank { CommonStr.notSet() },
                         modifier = Modifier.fillMaxWidth(0.8f),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Medium,
                         color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                         textAlign = TextAlign.End
                     )
+                }
+
+                // 备注跟在教师后面，只显示「所有周」那条（单周备注归详情弹窗，
+                // 这里混着列出来反而看不出哪条属于哪一周）
+                if (noteText.isNotBlank()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 17.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = NoteStr.noteLabel(),
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MiuixTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(
+                            text = noteText,
+                            modifier = Modifier.fillMaxWidth(0.8f),
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MiuixTheme.colorScheme.primary,
+                            textAlign = TextAlign.End,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
                 Spacer(
@@ -917,7 +1002,7 @@ private fun CourseGroupCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "上课时间",
+                        text = CourseEditStr.classTime(),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Medium,
                         color = MiuixTheme.colorScheme.onSurface
@@ -941,7 +1026,7 @@ private fun CourseGroupCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "上课周次",
+                        text = CourseEditStr.classWeeks(),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Medium,
                         color = MiuixTheme.colorScheme.onSurface
@@ -961,7 +1046,7 @@ private fun CourseGroupCard(
 
         if (group.courses.size > 1) {
             Text(
-                text = "包含 ${group.courses.size} 个相同配置的课程",
+                text = CourseEditStr.coursesShareConfig(group.courses.size),
                 fontSize = 12.sp,
                 color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                 modifier = Modifier.padding(start = 32.dp, top = 4.dp)

@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -26,23 +25,21 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.fastCoerceAtMost
-import androidx.compose.ui.util.lerp
 import androidx.compose.ui.zIndex
-import com.kyant.backdrop.edgelight.edgeLight
-import com.haooz.chedule.ui.utils.rememberDefaultEdgeLight
+import com.haooz.chedule.ui.components.GlassDragStretchRatio
+import com.haooz.chedule.ui.components.GlassDragTranslationDamping
 import com.haooz.chedule.ui.effects.liquidglass.InteractiveHighlight
 import com.haooz.chedule.ui.utils.isAppDarkTheme
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
-import kotlin.math.abs
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.math.tanh
+import com.haooz.softglass.backdrop.GlassBackdrop
+import com.haooz.softglass.backdrop.drawBackdrop
+import com.haooz.softglass.backdrop.effects.blur
+import com.haooz.softglass.backdrop.effects.runtimeShaderEffect
+import com.haooz.softglass.glass.SOFT_GLASS_LIVE_SHADER
+import com.haooz.chedule.ui.glass.ScheduleSoftGlassStyle
+import com.haooz.softglass.glass.applySoftGlass
+import com.haooz.softglass.glass.SoftGlassStyle
+import com.haooz.softglass.shape.ContinuousCapsule
+import top.yukonga.miuix.kmp.interactive.computeDragTransform
 import top.yukonga.miuix.kmp.internal.drawBlurredPathShadow
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -53,7 +50,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun LiquidTopBarButton(
     onClick: () -> Unit,
-    backdrop: Backdrop,
+    backdrop: GlassBackdrop,
     icon: ImageVector,
     contentDescription: String,
     modifier: Modifier = Modifier,
@@ -66,6 +63,16 @@ fun LiquidTopBarButton(
     containerColor: Color = Color.Unspecified,
     performHapticFeedback: Boolean = true,
     enabled: Boolean = true,
+    /**
+     * 材质填充策略。默认 [com.haooz.softglass.glass.ThemeFill]（浅色白 / 深色黑 0.4）；
+     * 传 [com.haooz.softglass.glass.NoneFill] 则透出原本的玻璃色。
+     */
+    fill: com.haooz.softglass.glass.GlassFill = com.haooz.softglass.glass.ThemeFill,
+    /**
+     * 材质基调。默认 [com.haooz.softglass.glass.BrightTone]（不压暗）：按钮里只有图标，
+     * 没有需要在玻璃内保证可读性的文字，压暗只会让它在浅色页面上变成一块灰。
+     */
+    tone: com.haooz.softglass.glass.GlassTone = com.haooz.softglass.glass.BrightTone,
 ) {
     val animationScope = rememberCoroutineScope()
     val interactiveHighlight = remember(animationScope) {
@@ -73,7 +80,7 @@ fun LiquidTopBarButton(
     }
     val hapticFeedback = LocalHapticFeedback.current
     val isLightTheme = !isAppDarkTheme()
-    // 底色 alpha 随材质档位：通透玻璃档压低一档，让折射透出来（与下拉菜单同源；浅深各一档）
+    // 底色 alpha 随材质档位：柔光玻璃档压低一档，让折射透出来（与下拉菜单同源；浅深各一档）
     val resolvedContainerColor = if (containerColor != Color.Unspecified) containerColor
         else if (MiuixTheme.isDynamicColor) MiuixTheme.colorScheme.surfaceContainer
             .copy(alpha = com.haooz.chedule.ui.utils.AppMaterialSettings.glassSurfaceAlpha(if (isLightTheme) 0.76f else 0.84f, isLightTheme))
@@ -85,18 +92,37 @@ fun LiquidTopBarButton(
 
     // drawBackdrop 的 element 按引用比较 shape / effects / onDrawSurface；lambda 每帧新建
     // 会让节点每帧 invalidateDraw、重新录制采样层并重跑采样
-    val chromeLens = com.haooz.chedule.ui.utils.AppMaterialSettings.chromeLensEnabled()
-    // 玻璃模糊随材质档位：通透玻璃档更低（折射接管通透感），其余档 8
+    // 玻璃模糊随材质档位：柔光玻璃档更低（折射接管通透感），其余档 8；无材质档整体关
     val glassBlur = com.haooz.chedule.ui.utils.AppMaterialSettings.glassBlurDp()
-    val buttonShapeBlock: () -> androidx.compose.ui.graphics.Shape = remember { { CircleShape } }
-    val buttonEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit = remember(chromeLens, glassBlur) {
-        {
-            vibrancy()
-            blur(glassBlur.dp.toPx())
-            // 均衡及以下关闭折射
-            if (chromeLens) lens(6f.dp.toPx(), 36f.dp.toPx())
+    val glassEffectsOn = com.haooz.chedule.ui.utils.AppMaterialSettings.glassEffectsEnabled()
+    val buttonShapeBlock: () -> androidx.compose.ui.graphics.Shape = remember { { ContinuousCapsule() } }
+    // 材质、档位差异、基调、填充全部由材质层给出，这里只说「用哪套」
+    val buttonGlassStyle: SoftGlassStyle =
+        com.haooz.chedule.ui.utils.AppMaterialSettings.chromeGlassStyle(
+            base = ScheduleSoftGlassStyle,
+            isDark = !isLightTheme,
+            fill = fill,
+            tone = tone,
+        )
+    val buttonEffects: com.haooz.softglass.backdrop.GlassEffectScope.() -> Unit =
+        remember(glassBlur, glassEffectsOn, buttonGlassStyle) {
+            {
+                if (glassEffectsOn) {
+                    blur(glassBlur.dp.toPx())
+                    runtimeShaderEffect(
+                        key = LIVE_GLASS_KEY,
+                        shaderString = SOFT_GLASS_LIVE_SHADER,
+                        uniformShaderName = "content",
+                    ) {
+                        applySoftGlass(
+                            style = buttonGlassStyle,
+                            width = size.width,
+                            height = size.height,
+                        )
+                    }
+                }
+            }
         }
-    }
     val buttonOnDrawSurface: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit =
         remember(resolvedContainerColor) {
             { drawRect(resolvedContainerColor) }
@@ -108,27 +134,22 @@ fun LiquidTopBarButton(
             .size(buttonHeight)
             .graphicsLayer {
                 clip = false
-                val width = size.width
-                val height = size.height
-                val progress = interactiveHighlight.pressProgress.coerceAtLeast(0f)
-                val scale = lerp(1f, 1f + 4f.dp.toPx() / height, progress)
-                val offset = interactiveHighlight.offset
-                // 沿拖动方向的最大拉伸比例：2dp/高度（42dp 按钮约 4.8%），与 BackToNowFloatingButton 一致。
-                val maxDragScale = 2f.dp.toPx() / height
-                val offsetAngle = atan2(offset.y, offset.x)
-                scaleX =
-                    scale +
-                        maxDragScale * abs(cos(offsetAngle) * offset.x / size.maxDimension) *
-                        (width / height).fastCoerceAtMost(1f)
-                scaleY =
-                    scale +
-                        maxDragScale * abs(sin(offsetAngle) * offset.y / size.maxDimension) *
-                        (height / width).fastCoerceAtMost(1f)
-                val contentMin = size.minDimension.coerceAtLeast(1f)
-                // 起始跟手斜率：0.08 时位移约为手指的 8%，越拖阻尼越强（与 BackToNowFloatingButton 一致）。
-                val initialDerivative = 0.08f
-                translationX = contentMin * tanh(initialDerivative * offset.x / contentMin)
-                translationY = contentMin * tanh(initialDerivative * offset.y / contentMin)
+                // 与 LiquidGlassDropdownMenu 缩小态同一套：按压 2dp、0.012 拉伸、0.032 位移阻尼
+                val drag = computeDragTransform(
+                    width = size.width,
+                    height = size.height,
+                    fraction = 0f,
+                    pressProgress = interactiveHighlight.pressProgress,
+                    offset = interactiveHighlight.offset,
+                    density = this,
+                    stretchRatio = GlassDragStretchRatio,
+                    translationDamping = GlassDragTranslationDamping,
+                    pressScaleDp = 2f,
+                )
+                scaleX = drag.scaleX
+                scaleY = drag.scaleY
+                translationX = drag.translationX
+                translationY = drag.translationY
             }
             .drawBehind {
                 val spread = shadowAlpha
@@ -175,14 +196,14 @@ fun LiquidTopBarButton(
                 .size(buttonHeight)
                 .drawBackdrop(
                     backdrop = backdrop,
+                    shadow = null,
                     shape = buttonShapeBlock,
                     effects = buttonEffects,
-                    highlight = null,
-                    shadow = null,
                     layerBlock = { alpha = backdropAlpha },
-                    onDrawSurface = buttonOnDrawSurface
+                    // 柔光自己会画玻璃色与方向光，再叠容器色会把折射盖住。
+                    // 但「无材质档」不跑 shader，必须留容器色，否则按钮变成透空圆孔。
+                    onDrawSurface = if (glassEffectsOn) null else buttonOnDrawSurface
                 )
-                .edgeLight(shape = CircleShape, edgeLight = rememberDefaultEdgeLight(baseColor = resolvedContainerColor))
                 .zIndex(0f)
         )
         // 按压高光单独一层、与材质层平级：drawBackdrop 的 layerBlock 会把整个节点 alpha
@@ -193,7 +214,7 @@ fun LiquidTopBarButton(
                 .size(buttonHeight)
                 // 必须 clip：光晕半径是 minDimension * 1.5，本就溢出圆形，
                 // 不裁会画成一个亮方块。放在 interactiveHighlight 之前（外层）。
-                .clip(CircleShape)
+                .clip(ContinuousCapsule())
                 .then(interactiveHighlight.modifier)
                 .then(if (enabled) interactiveHighlight.gestureModifier else Modifier)
                 .clickable(
@@ -223,3 +244,7 @@ fun LiquidTopBarButton(
         )
     }
 }
+
+
+/** 实时录制柔光的 shader 缓存键（参数全固定，一个程序够全应用按钮用）。 */
+private const val LIVE_GLASS_KEY = "NexioSoftGlassLive"

@@ -11,6 +11,15 @@
     android:clipChildren="true"
     android:clipToPadding="true">
 
+    <!-- 壁纸层：垫在所有内容之下，有壁纸时才显示（见 WidgetWallpaperRender） -->
+    <ImageView
+        android:id="@+id/widget_wallpaper"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:visibility="gone" />
+
+
     <LinearLayout
         android:id="@+id/widget_container"
         android:layout_width="match_parent"
@@ -544,7 +553,7 @@
                 android:id="@+id/widget_empty_text"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="今日无课"
+                android:text="@string/widget_no_classes_today"
                 android:textSize="14dp"
                 android:textColor="@color/widget_empty_color" />
         </LinearLayout>

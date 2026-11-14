@@ -1,7 +1,7 @@
 package com.haooz.chedule.reminder
 
 import android.content.Context
-import com.haooz.chedule.data.CourseRepository
+import com.haooz.chedule.data.repo.CourseRepository
 import com.haooz.chedule.data.ReturnDayReminder
 import com.haooz.chedule.ui.screens.ReminderTestEntry
 import com.haooz.chedule.ui.screens.ReminderTestGroup

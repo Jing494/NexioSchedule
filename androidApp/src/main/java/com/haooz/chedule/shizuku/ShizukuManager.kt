@@ -6,14 +6,15 @@ import android.content.Context
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
-import com.haooz.chedule.data.NexioLog
+import com.haooz.chedule.data.platform.NexioLog
+import com.haooz.chedule.i18n.AndroidMiscStr
+import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
 import rikka.shizuku.SystemServiceHelper
 import rikka.sui.Sui
-import java.io.File
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 object ShizukuManager {
     private const val TAG = "ShizukuManager"
@@ -243,7 +244,7 @@ object ShizukuManager {
      */
     fun execAsShell(arguments: Array<String>): Pair<Int, String> {
         if (!isShizukuRunning() || !checkSelfPermission()) {
-            return Pair(-1, "Shizuku 不可用或未授权")
+            return Pair(-1, AndroidMiscStr.shizukuUnavailable())
         }
         return try {
             // 13.x API 中 Shizuku.newProcess 为 private static，通过反射调用以 shell 身份启动子进程
@@ -263,7 +264,7 @@ object ShizukuManager {
             Pair(exit, output.toString().trim())
         } catch (e: Exception) {
             NexioLog.e(TAG, "execAsShell failed", e)
-            Pair(-1, e.message ?: "执行异常")
+            Pair(-1, e.message ?: AndroidMiscStr.execError())
         }
     }
 
@@ -273,11 +274,11 @@ object ShizukuManager {
      */
     fun silentInstallApk(apkPath: String): Pair<Boolean, String> {
         if (!isShizukuRunning() || !checkSelfPermission()) {
-            return Pair(false, "Shizuku 不可用或未授权")
+            return Pair(false, AndroidMiscStr.shizukuUnavailable())
         }
         return try {
             val file = File(apkPath)
-            if (!file.exists()) return Pair(false, "APK 不存在: $apkPath")
+            if (!file.exists()) return Pair(false, AndroidMiscStr.apkNotFoundN(apkPath))
 
             // 13.x API 中 Shizuku.newProcess 为 private static，通过反射以 shell 身份启动 pm install
             val clazz = Class.forName("rikka.shizuku.Shizuku")
@@ -306,11 +307,11 @@ object ShizukuManager {
             val ok = exit == 0 && output.contains("Success", ignoreCase = true)
             return Pair(
                 ok,
-                if (ok) "静默安装成功" else "exit=$exit, ${output.take(300)}"
+                if (ok) AndroidMiscStr.silentInstallSuccess() else "exit=$exit, ${output.take(300)}"
             )
         } catch (e: Exception) {
             NexioLog.e(TAG, "silentInstallApk failed", e)
-            Pair(false, e.message ?: "执行异常")
+            Pair(false, e.message ?: AndroidMiscStr.execError())
         }
     }
 

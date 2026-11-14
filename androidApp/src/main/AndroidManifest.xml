@@ -11,6 +11,18 @@
     <!-- 用于天气按当前位置查询（优先精确 GPS，回退粗略网络定位） -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- 导出到手表：BLE 扫描 + 连接。neverForLocation 表示扫描结果不用于推断位置 -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Android 11 及以下没有 BLUETOOTH_SCAN/CONNECT，靠旧权限 + 定位权限扫描 -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"
         tools:ignore="RequestInstallPackagesPolicy" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
@@ -27,6 +39,9 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- 上课勿扰：读取/修改系统勿扰模式，需用户在「免打扰访问权限」中授权 -->
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <!-- 同步到日历：课表导出页写系统日历，运行时申请 -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 
     <application
         android:name=".NexioApplication"
@@ -68,7 +83,7 @@
             android:name=".ImportAlias"
             android:targetActivity=".ui.activities.MainActivity"
             android:exported="true"
-            android:label="导入课程表"
+            android:label="@string/import_schedule"
             android:theme="@style/Theme.课程表"
             tools:ignore="InvalidManifestAttribute">
             <intent-filter>
@@ -145,15 +160,23 @@
             android:name=".reminder.CourseStartReceiver"
             android:exported="false" />
 
-        <!-- 上课勿扰：接收实况通知/超级岛按钮与上课、下课闹钟（exported：需要系统通知栏发送广播） -->
+        <!-- 上课勿扰闹钟：仅本应用排期 -->
         <receiver
             android:name=".reminder.ClassDndReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.haooz.chedule.ACTION_CLASS_DND_START" />
+                <action android:name="com.haooz.chedule.ACTION_CLASS_DND_END" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 通知 / 超级岛按钮：由系统通知栏发送，必须导出 -->
+        <receiver
+            android:name=".reminder.ClassDndToggleReceiver"
             android:exported="true"
             tools:ignore="ExportedReceiver">
             <intent-filter>
                 <action android:name="com.haooz.chedule.ACTION_CLASS_DND_TOGGLE" />
-                <action android:name="com.haooz.chedule.ACTION_CLASS_DND_START" />
-                <action android:name="com.haooz.chedule.ACTION_CLASS_DND_END" />
             </intent-filter>
         </receiver>
 
@@ -173,7 +196,7 @@
         <receiver
             android:name=".widget.CourseWidgetProviderStandard"
             android:exported="true"
-            android:label="课程提醒">
+            android:label="@string/widget_course_reminder">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -185,7 +208,7 @@
         <receiver
             android:name=".widget.TodayTomorrowCourseWidgetProvider"
             android:exported="true"
-            android:label="今明课程">
+            android:label="@string/widget_today_tomorrow">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -197,7 +220,7 @@
         <receiver
             android:name=".widget.TodayCourseWidgetProviderStandard"
             android:exported="true"
-            android:label="今日课程">
+            android:label="@string/widget_today_course">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -209,7 +232,7 @@
         <receiver
             android:name=".widget.CourseWidgetProviderPad"
             android:exported="true"
-            android:label="课程提醒(Pad)">
+            android:label="@string/widget_course_reminder_pad">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -221,7 +244,7 @@
         <receiver
             android:name=".widget.TodayCourseWidgetProviderPad"
             android:exported="true"
-            android:label="今日课程(Pad)">
+            android:label="@string/widget_today_course_pad">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

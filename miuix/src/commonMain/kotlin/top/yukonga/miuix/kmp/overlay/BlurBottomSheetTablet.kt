@@ -9,16 +9,20 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,11 +31,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,35 +62,31 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import top.yukonga.miuix.kmp.layout.rememberCollapsibleTopAppBarState
-import top.yukonga.miuix.kmp.layout.rememberSharedScrollBehavior
-import com.kyant.backdrop.edgelight.edgeLight
-import com.kyant.backdrop.edgelight.rememberDefaultEdgeLight
-import top.yukonga.miuix.kmp.theme.LocalForcedDarkTheme
-import top.yukonga.miuix.kmp.theme.LocalMonetColorEnabled
-import top.yukonga.miuix.kmp.utils.LocalOverScrollState
-import top.yukonga.miuix.kmp.utils.OverScrollState
-import top.yukonga.miuix.kmp.utils.LocalPredictiveBackEnabled
-import top.yukonga.miuix.kmp.theme.rememberAppSettingDark
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
-import com.kyant.capsule.ContinuousRoundedRectangle
+import com.haooz.softglass.backdrop.GlassBackdrop
+import com.haooz.softglass.backdrop.backdrops.layerBackdrop
+import com.haooz.softglass.backdrop.backdrops.rememberCanvasBackdrop
+import com.haooz.softglass.backdrop.backdrops.rememberLayerBackdrop
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.anim.folmeSpring
+import top.yukonga.miuix.kmp.layout.TopBarMaterialHideSpec
+import top.yukonga.miuix.kmp.layout.TopBarMaterialShowSpec
+import top.yukonga.miuix.kmp.layout.rememberCollapsibleTopAppBarState
+import top.yukonga.miuix.kmp.layout.rememberSharedScrollBehavior
+import top.yukonga.miuix.kmp.material.LocalMaterialNoneEnabled
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
+import top.yukonga.miuix.kmp.theme.LocalForcedDarkTheme
+import top.yukonga.miuix.kmp.theme.LocalMonetColorEnabled
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
+import top.yukonga.miuix.kmp.theme.rememberAppSettingDark
+import top.yukonga.miuix.kmp.utils.LocalOverScrollState
+import top.yukonga.miuix.kmp.utils.LocalPredictiveBackEnabled
 import top.yukonga.miuix.kmp.utils.MiuixPopupUtils.Companion.DialogLayout
+import top.yukonga.miuix.kmp.utils.OverScrollState
 import top.yukonga.miuix.kmp.utils.rememberNavigationBack
-import kotlin.time.Duration.Companion.milliseconds
-import androidx.compose.foundation.layout.fillMaxHeight as fillMaxHeightModifier
 
 /**
  * 平板版模糊底部弹窗组件：居中悬浮矩形，从底部滑入动画。
@@ -113,8 +113,7 @@ fun BlurBottomSheetTablet(
     onDismissRequest: () -> Unit,
     startAction: @Composable (() -> Unit)? = null,
     endAction: @Composable (() -> Unit)? = null,
-    onSheetContentBackdropCreated: ((Backdrop?) -> Unit)? = null,
-    enableContentHeightSnap: Boolean = false,
+    onSheetContentBackdropCreated: ((GlassBackdrop?) -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val visibleState = remember { mutableStateOf(show) }
@@ -138,7 +137,6 @@ fun BlurBottomSheetTablet(
             show = show,
             visibleState = visibleState,
             title = title,
-            enableContentHeightSnap = enableContentHeightSnap,
             dimBackground = dimBackground,
             sheetMaxWidth = sheetMaxWidth,
             sheetMaxHeight = sheetMaxHeight,
@@ -157,7 +155,6 @@ fun BlurBottomSheetTablet(
 private fun BlurBottomSheetTabletContent(
     show: Boolean,
     visibleState: MutableState<Boolean>,
-    fillMaxHeight: Boolean = false,
     title: String,
     dimBackground: Boolean = false,
     sheetMaxWidth: Dp = 560.dp,
@@ -167,8 +164,7 @@ private fun BlurBottomSheetTabletContent(
     onDismissRequest: () -> Unit,
     startAction: @Composable (() -> Unit)? = null,
     endAction: @Composable (() -> Unit)? = null,
-    onSheetContentBackdropCreated: ((Backdrop?) -> Unit)? = null,
-    enableContentHeightSnap: Boolean = false,
+    onSheetContentBackdropCreated: ((GlassBackdrop?) -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     // 弹窗跟随应用主题，不受壁纸强制主题影响。
@@ -191,7 +187,7 @@ private fun BlurBottomSheetTabletContent(
     val density = LocalDensity.current
     val windowInfo = LocalWindowInfo.current
     // 滑入动画用的窗口高度在组合期读取一次，避免进入动画期间逐帧做密度换算
-    val windowHeightPx = with(density) { windowInfo.containerDpSize.height.toPx() }
+    val windowHeightPx = with(density) { windowInfo.containerSize.height.toFloat() }
     // 预测性返回（API 33+）进度实时驱动 sheet 下滑，取消回弹、完成关闭；低版本退化为立即关闭。
     // 走本模块 expect 封装（utils/NavigationBack.kt），commonMain 不直接依赖 AndroidX navigationevent。
     // backState 必须同时喂 handler 与进度读取（同一份状态），拆开跟手动画不动。
@@ -211,7 +207,7 @@ private fun BlurBottomSheetTabletContent(
     // 显示/隐藏动画同时驱动位移与遮罩透明度，确保二者完全同步
     LaunchedEffect(show) {
         if (show) {
-            if (enableContentHeightSnap) detentState.reset()
+            detentState.reset()
             backProgress.snapTo(0f)
             animationProgress.animateTo(
                 targetValue = 1f,
@@ -269,7 +265,7 @@ private fun BlurBottomSheetTabletContent(
     // 弹窗形状与 drawBackdrop 的 shape lambda 必须固定引用（否则模糊重编译）。
     // 圆角固定 38dp：平板弹窗是居中窄条不贴屏幕边缘，不跟屏幕物理圆角。
     val sheetShape = remember { ContinuousRoundedRectangle(38.dp) }
-    val windowWidth = windowInfo.containerDpSize.width
+    val windowWidth = with(density) { windowInfo.containerSize.width.toDp() }
     val horizontalGap = ((windowWidth - minOf(sheetMaxWidth, windowWidth)) / 2).coerceAtLeast(0.dp)
 
             Box(
@@ -286,30 +282,25 @@ private fun BlurBottomSheetTabletContent(
                 val progress = animationProgress.value
                 // 从屏幕底部滑入；backProgress 为返回手势把 sheet 向下推出屏幕
                 translationY = windowHeightPx * (1f - progress) + backProgress.value * windowHeightPx +
-                    if (enableContentHeightSnap) detentState.dismissOffsetPx else 0f
+                    detentState.dismissOffsetPx
             }
 
         Box(
             modifier = sheetModifier
                 .width(sheetMaxWidth)
                 .fillMaxWidth()
-                .heightIn(max = if (sheetMaxHeight != Dp.Unspecified) sheetMaxHeight else windowInfo.containerDpSize.height * 0.8f)
-                .then(
-                    when {
-                        enableContentHeightSnap -> Modifier.blurBottomSheetDetentHeight(detentState)
-                        fillMaxHeight -> Modifier.fillMaxHeightModifier()
-                        else -> Modifier
-                    },
-                )
+                .heightIn(max = if (sheetMaxHeight != Dp.Unspecified) sheetMaxHeight else with(density) { windowInfo.containerSize.height.toDp() } * 0.8f)
+                .blurBottomSheetDetentHeight(detentState)
                 .then(if (isBottomAligned) Modifier.padding(bottom = 20.dp) else Modifier)
                 .clip(sheetShape)
                 // 弹窗本体不做壁纸玻璃模糊，纯实色
-                .edgeLight(shape = sheetShape, edgeLight = rememberDefaultEdgeLight(baseColor = sheetBgColor))
                 .background(sheetBgColor)
+                // 上下方向高光描边：纯 Compose 画，不走 AGSL
+                .sheetRimHighlight(isDark, 38.dp)
                 // A centered sheet already clears the window edges by this distance.
                 .consumeWindowInsets(PaddingValues(horizontal = horizontalGap))
                 .onGloballyPositioned { coordinates ->
-                    if (enableContentHeightSnap) detentState.updateCollapsedHeight(coordinates.size.height)
+                    detentState.updateCollapsedHeight(coordinates.size.height)
                 }
                 .pointerInput(Unit) {
                     // 消费弹窗空白处的点击，防止事件穿透到背景层触发关闭
@@ -365,11 +356,8 @@ private fun BlurBottomSheetTabletContent(
                 val topBarMaterial = remember { SheetTopBarMaterial(backdropAlpha, shadowAlpha) }
                 LaunchedEffect(showButtonShadow) {
                     val target = if (showButtonShadow) 1f else 0f
-                    val spec = if (showButtonShadow) {
-                        folmeSpring(damping = 1.0f, response = 0.6f)
-                    } else {
-                        folmeSpring<Float>(damping = 1.0f, response = 0.4f)
-                    }
+                    // 弹簧唯一来源：miuix layout/TopBarMaterial.kt（与全站顶栏同一套手感）
+                    val spec = if (showButtonShadow) TopBarMaterialShowSpec else TopBarMaterialHideSpec
                     launch { shadowAlpha.animateTo(target, spec) }
                     launch { backdropAlpha.animateTo(target, spec) }
                 }
@@ -387,10 +375,12 @@ private fun BlurBottomSheetTabletContent(
                     onSheetContentBackdropCreated?.invoke(sheetContentBackdrop)
                 }
 
-                // 进入动画早期挂载，避免 AGSL 编译卡顿落在动画刚结束、用户准备点遮罩的窗口
+                // 进入动画早期挂载，避免 AGSL 编译卡顿落在动画刚结束、用户准备点遮罩的窗口。
+                // 无材质档：内容录屏层不挂（采样侧退回纯色 placeholder）
+                val materialNone = LocalMaterialNoneEnabled.current
                 var sheetBackdropMounted by remember { mutableStateOf(false) }
-                LaunchedEffect(show) {
-                    if (show) {
+                LaunchedEffect(show, materialNone) {
+                    if (show && !materialNone) {
                         delay(80.milliseconds)
                         sheetBackdropMounted = true
                     }
@@ -412,30 +402,26 @@ private fun BlurBottomSheetTabletContent(
                     LocalSheetTopBarMaterial provides topBarMaterial,
                     LocalSheetContentBackdrop provides
                             if (sheetBackdropMounted) sheetContentBackdrop else placeholderBackdrop,
-                    LocalBlurBottomSheetContentExpanded provides
-                        (enableContentHeightSnap && isDetentExpanded),
+                    LocalBlurBottomSheetContentExpanded provides isDetentExpanded,
                 ) {
-                    if (enableContentHeightSnap) {
-                        BlurBottomSheetDragHandle(
-                            enabled = true,
-                            onDrag = detentState::dragBy,
-                            onDragStarted = { detentState.beginDrag() },
-                            onDragStopped = { velocity ->
-                                detentState.settle(
-                                    velocityY = velocity,
-                                    velocityThresholdPx = with(density) { 800.dp.toPx() },
-                                    dismissThresholdPx = with(density) { 150.dp.toPx() },
-                                    onDismiss = currentOnDismissRequest,
-                                )
-                            },
-                        )
-                    }
+                    BlurBottomSheetDragHandle(
+                        onDrag = detentState::dragBy,
+                        onDragStarted = { detentState.beginDrag() },
+                        onDragStopped = { velocity ->
+                            detentState.settle(
+                                velocityY = velocity,
+                                velocityThresholdPx = with(density) { 800.dp.toPx() },
+                                dismissThresholdPx = with(density) { 150.dp.toPx() },
+                                onDismiss = currentOnDismissRequest,
+                            )
+                        },
+                    )
                     // 内容区域（layerBackdrop 捕获「底色+内容」）
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .then(
-                                if (enableContentHeightSnap && isDetentExpanded) {
+                                if (isDetentExpanded) {
                                     Modifier.fillMaxHeight()
                                 } else {
                                     Modifier.wrapContentHeight()

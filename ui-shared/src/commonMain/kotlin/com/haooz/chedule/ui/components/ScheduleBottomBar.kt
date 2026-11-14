@@ -1,29 +1,55 @@
 package com.haooz.chedule.ui.components
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import com.haooz.chedule.ui.components.text.material.Text as Text
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kyant.backdrop.Backdrop
+import com.haooz.chedule.i18n.ChromeStr
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.ui.components.text.material.Text
+import com.haooz.chedule.ui.utils.NativeBottomBarHost
+import com.haooz.chedule.ui.utils.NativeBottomBarState
+import com.haooz.chedule.ui.utils.argbValue
+import com.haooz.chedule.ui.utils.bottomFloatingPadding
+import com.haooz.softglass.backdrop.GlassBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Album
-import top.yukonga.miuix.kmp.icon.extended.ContactsCircle
 import top.yukonga.miuix.kmp.icon.extended.Months
 import top.yukonga.miuix.kmp.icon.extended.Settings
-import com.haooz.chedule.ui.utils.bottomFloatingPadding
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+/** 圆钮直径，与胶囊同高 */
+private val BOTTOM_BAR_CIRCLE = 56.dp
+
+/** 胶囊与圆钮的静止间距 */
+private val BOTTOM_BAR_GAP = 10.dp
+
+/** 每格占屏比，沿用「3 格占 0.63」的密度 */
+private const val TAB_WIDTH_FRACTION = 0.21f
+
+/** 底栏整体占位高度（含浮动留白）：宿主接管时 Compose 侧要留同高的空位。 */
+@Composable
+fun scheduleBottomBarHeight(): Dp = BOTTOM_BAR_CIRCLE + bottomFloatingPadding()
+
 /**
- * 手机端底部导航。平板导航由 MainActivity 叠层 [LiquidNavigationRail] 绘制，此处直接 return，避免 Scaffold bottomBar 的 fillMaxSize 挡住内容滚动。
+ * 手机端底部导航。平板导航由 MainActivity 叠层 [LiquidNavigationRail] 绘制，此处直接返回，
+ * 避免 Scaffold bottomBar 的 fillMaxSize 挡住内容滚动。
+ *
+ * tab 胶囊与右侧圆按钮是两块独立玻璃（见 [LiquidBottomTabs] 的 trailing），中间只有间距、不再融合。
+ * 宿主接管底部导航（鸿蒙 ArkUI）时这里根本不会被组合，语义发布见 [PublishNativeBottomBar]。
  */
 @Composable
 fun ScheduleBottomBar(
@@ -31,89 +57,137 @@ fun ScheduleBottomBar(
     isShiftMode: Boolean,
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
-    liquidGlassBackdrop: Backdrop? = null,
+    onOpenSettings: () -> Unit = {},
+    liquidGlassBackdrop: GlassBackdrop? = null,
 ) {
-    if (navBarStyle == "rail" || liquidGlassBackdrop == null) return
+    if (navBarStyle == "rail") return
 
-    val onSelect: (Int) -> Unit = { idx -> onTabSelected(idx) }
-    val iconTint = MiuixTheme.colorScheme.onSurfaceContainer.copy(alpha = 0.8f)
-    // 底部间距统一走共享算法（见 bottomFloatingPadding）：切换课表底栏、教务导入底部胶囊、
-    // 首页「回到底」浮动按钮都用它，四处互相有对位关系，不能各写各的常量
+    // 每格占屏 0.21，沿用「3 格占 0.63」的密度
+    val tabCount = if (isShiftMode) 1 else 2
     val bottomPadding = bottomFloatingPadding()
 
-    Box(
+    if (liquidGlassBackdrop == null) return
+
+    val iconTint = MiuixTheme.colorScheme.onSurfaceContainer.copy(alpha = 0.8f)
+
+    val tabsWidthFraction = TAB_WIDTH_FRACTION * tabCount
+
+    val openSettings = remember(onOpenSettings) { onOpenSettings }
+    val trailing = remember(openSettings) {
+        LiquidBottomTrailing(
+            icon = MiuixIcons.Settings,
+            contentDescription = CommonStr.settings(),
+            onClick = { openSettings() },
+            gap = BOTTOM_BAR_GAP,
+        )
+    }
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = bottomPadding),
-        contentAlignment = Alignment.Center
+            .padding(bottom = bottomPadding)
+            .height(BOTTOM_BAR_CIRCLE),
     ) {
-        if (isShiftMode) {
-            LiquidBottomTabs(
-                selectedTabIndex = { selectedTab },
-                onTabSelected = { onSelect(it) },
-                backdrop = liquidGlassBackdrop,
-                tabsCount = 2,
-                modifier = Modifier
-                    .fillMaxWidth(0.42f)
-                    .height(56.dp)
-            ) {
-                LiquidBottomTab(index = 0, onClick = { onSelect(0) }) {
+        val pillWidth = maxWidth * tabsWidthFraction
+        // 居中按「胶囊 + 间距 + 圆钮」算；两块独立玻璃，不需要额外拖动余量
+        val visibleWidth = pillWidth + BOTTOM_BAR_GAP + BOTTOM_BAR_CIRCLE
+        val nodeWidth = visibleWidth
+        val nodeLeft = (maxWidth - visibleWidth) / 2
+
+        LiquidBottomTabs(
+            selectedTabIndex = { selectedTab },
+            onTabSelected = onTabSelected,
+            backdrop = liquidGlassBackdrop,
+            tabsCount = tabCount,
+            containerHeight = BOTTOM_BAR_CIRCLE,
+            trailing = trailing,
+            modifier = Modifier
+                .offset(x = nodeLeft)
+                .width(nodeWidth)
+                .height(BOTTOM_BAR_CIRCLE),
+        ) {
+            if (isShiftMode) {
+                LiquidBottomTab() {
                     Image(
                         modifier = Modifier.size(24.dp),
                         imageVector = MiuixIcons.Months,
                         contentDescription = null,
                         colorFilter = ColorFilter.tint(iconTint)
                     )
-                    Text("排班课表", fontSize = 11.sp, color = iconTint)
+                    Text(ChromeStr.shiftSchedule(), fontSize = 11.sp, color = iconTint)
                 }
-                LiquidBottomTab(index = 1, onClick = { onSelect(1) }) {
-                    Image(
-                        modifier = Modifier.size(24.dp),
-                        imageVector = MiuixIcons.Demibold.Settings,
-                        contentDescription = null,
-                        colorFilter = ColorFilter.tint(iconTint)
-                    )
-                    Text("设置", fontSize = 11.sp, color = iconTint)
-                }
-            }
-        } else {
-            LiquidBottomTabs(
-                selectedTabIndex = { selectedTab },
-                onTabSelected = { onSelect(it) },
-                backdrop = liquidGlassBackdrop,
-                tabsCount = 3,
-                modifier = Modifier
-                    .fillMaxWidth(0.63f)
-                    .height(56.dp)
-            ) {
-                LiquidBottomTab(index = 0, onClick = { onSelect(0) }) {
+            } else {
+                LiquidBottomTab() {
                     Image(
                         modifier = Modifier.size(24.dp),
                         imageVector = MiuixIcons.Album,
                         contentDescription = null,
                         colorFilter = ColorFilter.tint(iconTint)
                     )
-                    Text("今日", fontSize = 11.sp, color = iconTint)
+                    Text(CommonStr.today(), fontSize = 11.sp, color = iconTint)
                 }
-                LiquidBottomTab(index = 1, onClick = { onSelect(1) }) {
+                LiquidBottomTab() {
                     Image(
                         modifier = Modifier.size(24.dp),
                         imageVector = MiuixIcons.Months,
                         contentDescription = null,
                         colorFilter = ColorFilter.tint(iconTint)
                     )
-                    Text("课程表", fontSize = 11.sp, color = iconTint)
-                }
-                LiquidBottomTab(index = 2, onClick = { onSelect(2) }) {
-                    Image(
-                        modifier = Modifier.size(24.dp),
-                        imageVector = MiuixIcons.ContactsCircle,
-                        contentDescription = null,
-                        colorFilter = ColorFilter.tint(iconTint)
-                    )
-                    Text("我的", fontSize = 11.sp, color = iconTint)
+                    Text(ChromeStr.schedule(), fontSize = 11.sp, color = iconTint)
                 }
             }
+        }
+    }
+}
+
+/**
+ * 宿主画底栏时**唯一**的语义发布点（鸿蒙 ArkUI）。
+ *
+ * ⚠ 必须在 Scaffold 之外无条件调用：宿主接管时 [ScheduleBottomBar] 不会被组合，
+ * 写在它里面等于一次都不发，宿主拿到 null 就整条不画。
+ *
+ * Compose 这边一个像素都不画；[onTabSelected] 收到 `index >= tabsCount` 即为末尾的设置页签。
+ */
+@Composable
+internal fun PublishNativeBottomBar(
+    host: NativeBottomBarHost,
+    isShiftMode: Boolean,
+    selectedTab: Int,
+    onTabSelected: (Int) -> Unit,
+    onOpenSettings: (() -> Unit)?,
+) {
+    val tabsCount = if (isShiftMode) 1 else 2
+    // 二级页在宿主那边是独立的一层，压在底栏上面，底栏不需要为它让位；
+    // 只有 Compose 内部的全屏层（外观页 / 切换课表页 / 详情页）盖不住它，才整条收起。
+    if (host.suppressed) {
+        SideEffect {
+            host.state = null
+            host.onTabSelected = null
+        }
+        return
+    }
+    val state = NativeBottomBarState(
+        selectedTab = selectedTab.coerceIn(0, (tabsCount - 1).coerceAtLeast(0)),
+        tabsCount = tabsCount,
+        labels = if (isShiftMode) {
+            listOf(ChromeStr.shiftSchedule())
+        } else {
+            listOf(CommonStr.today(), ChromeStr.schedule())
+        },
+        onSurfaceArgb = MiuixTheme.colorScheme.onSurface.argbValue(),
+        accentArgb = MiuixTheme.colorScheme.primary.argbValue(),
+        heightDp = BOTTOM_BAR_CIRCLE.value,
+    )
+    SideEffect {
+        host.state = state
+        host.onTabSelected = { index ->
+            if (index >= tabsCount) onOpenSettings?.invoke() else onTabSelected(index)
+        }
+    }
+    DisposableEffect(host) {
+        onDispose {
+            host.state = null
+            host.onTabSelected = null
         }
     }
 }

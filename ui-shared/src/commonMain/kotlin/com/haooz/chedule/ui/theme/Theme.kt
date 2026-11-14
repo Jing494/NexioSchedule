@@ -1,49 +1,63 @@
 /** 应用主题 - 定义 Material3 主题配色方案 */
 package com.haooz.chedule.ui.theme
 
+import com.haooz.softglass.GlassEnvironment
 import androidx.compose.foundation.Indication
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.ui.platform.LocalDensity
-import com.haooz.chedule.data.AppStorage
-import com.haooz.chedule.data.KEY_CHANGED_ANYWHERE
-import com.haooz.chedule.data.currentDeviceInfo
+import com.haooz.chedule.data.platform.currentDeviceInfo
+import com.haooz.chedule.data.storage.AppStorage
+import com.haooz.chedule.data.storage.KEY_CHANGED_ANYWHERE
 import com.haooz.chedule.ui.components.text.TextMotionBox
+import com.haooz.softglass.glass.BarFill
+import com.haooz.softglass.glass.BrightLargeTone
+import com.haooz.softglass.glass.BrightTone
+import com.haooz.softglass.glass.SOFT_GLASS_LIVE_SHADER
+import com.haooz.chedule.ui.glass.ScheduleSoftGlassStyle
+import com.haooz.softglass.glass.ThemeFill
+import com.haooz.softglass.glass.applySoftGlass
 import com.haooz.chedule.ui.utils.AppMaterialSettings
 import com.haooz.chedule.ui.utils.PredictiveBackSettings
+import com.haooz.chedule.ui.utils.installAppSettingDarkBridge
 import com.haooz.chedule.ui.utils.rememberScreenCornerRadiiPx
 import top.yukonga.miuix.kmp.basic.Text as MiuixText
-import top.yukonga.miuix.kmp.material.LocalMiuixTextMotion
-import top.yukonga.miuix.kmp.material.MiuixTextMotion
-import top.yukonga.miuix.kmp.theme.LocalScreenCornerRadius
-import top.yukonga.miuix.kmp.theme.LocalScreenTopCornerRadii
-import top.yukonga.miuix.kmp.theme.ScreenTopCornerRadii
-import top.yukonga.miuix.kmp.material.LocalChromeLensEnabled
-import top.yukonga.miuix.kmp.material.LocalGlassBlurDp
 import top.yukonga.miuix.kmp.material.GlassSurfaceAlphaDrop
+import top.yukonga.miuix.kmp.material.LocalGlassBlurDp
 import top.yukonga.miuix.kmp.material.LocalGlassDialogBlurDp
 import top.yukonga.miuix.kmp.material.LocalGlassPanelBlurDp
 import top.yukonga.miuix.kmp.material.LocalGlassSurfaceAlphaDrop
+import top.yukonga.miuix.kmp.material.LocalMaterialNoneEnabled
+import top.yukonga.miuix.kmp.material.LocalMiuixTextMotion
+import top.yukonga.miuix.kmp.material.LocalSoftGlassLayerVariants
 import top.yukonga.miuix.kmp.material.LocalUseFakeProgressiveBlur
+import top.yukonga.miuix.kmp.material.MiuixTextMotion
+import top.yukonga.miuix.kmp.material.SoftGlassLayer
+import top.yukonga.miuix.kmp.material.SoftGlassLayerVariants
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.LocalAppSettingDark
 import top.yukonga.miuix.kmp.theme.LocalMonetColorEnabled
+import top.yukonga.miuix.kmp.theme.LocalScreenCornerRadius
+import top.yukonga.miuix.kmp.theme.LocalScreenTopCornerRadii
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.ScreenTopCornerRadii
 import top.yukonga.miuix.kmp.theme.ThemeController
 import top.yukonga.miuix.kmp.utils.LocalPredictiveBackEnabled
 
@@ -91,6 +105,8 @@ fun CourseScheduleTheme(
     systemDarkTheme: Boolean? = null,
     content: @Composable () -> Unit
 ) {
+    // 注入 :miuix 的深浅色数据源，须早于其组件组合
+    remember { installAppSettingDarkBridge() }
     val prefs = remember { AppStorage.store("app_theme_prefs") }
     val themeMode = remember { mutableStateOf(prefs.getString("theme_mode", "system")) }
     var monetEnabled by remember { mutableStateOf(prefs.getBoolean(KEY_MONET_COLOR, false)) }
@@ -161,27 +177,27 @@ fun CourseScheduleTheme(
             ScreenTopCornerRadii(screenCorners.topLeft.toDp(), screenCorners.topRight.toDp())
         } else null
     }
+    // 柔光玻璃：浅 / 深各一份、样式在组合期就绑定好的 layer。
+    val glassVariants = remember(AppMaterialSettings.level) {
+        buildSoftGlassLayerVariants()
+    }
+    // GlassEnvironment.isDark 降级为「少数 draw 期观感（按压高光 / 阴影）的只读镜像」：
+    // 全应用唯一写入点，不再由上百个 isAppDarkTheme() 调用点用 SideEffect 竞争写。
+    val effectiveGlassDark = appDark ?: isSystemInDarkTheme()
+    SideEffect { GlassEnvironment.update(isDark = effectiveGlassDark) }
     MiuixTheme(
         controller = controller,
         content = {
-            // MaterialTheme 会自己提供两样东西并顶掉 miuix 默认值，故必须在进入 MaterialTheme 前捕获、再在里层写回：
-            // 1. `LocalIndication = ripple()`（顶掉 miuix 的 MiuixIndication）；2. `ProvideTextStyle(bodyLarge)`（只写 fontSize 不写 lineHeight 的 Text）
             val miuixIndication: Indication = LocalIndication.current
             val outerTextStyle: TextStyle = LocalTextStyle.current
             CompositionLocalProvider(
                 LocalScreenCornerRadius provides screenCornerRadius,
                 LocalScreenTopCornerRadii provides screenTopCorners,
                 LocalHapticFeedback provides gatedHaptic,
-                // 弹窗（BlurBottomSheet）会读它来决定自建 controller 用不用 Monet 模式，
-                // 所以这里下发的是**有效值**：偏好开启 && 平台支持。
                 LocalMonetColorEnabled provides (monetEnabled && isMonetColorAvailable()),
                 LocalSystemDarkTheme provides systemDarkTheme,
-                // A null system source retains the platform fallback on other hosts.
-                // iOS resolves automatic mode using the externally supplied system appearance.
                 LocalAppSettingDark provides appDark,
-                // :miuix 需要的 App 能力注入点（避免 :miuix → :app 反向依赖）；
-                // 效果与迁移前一致，调用点无需逐个改。
-                LocalChromeLensEnabled provides AppMaterialSettings.chromeLensEnabled(),
+                LocalMaterialNoneEnabled provides AppMaterialSettings.isNoneTier(),
                 LocalUseFakeProgressiveBlur provides AppMaterialSettings.progressiveBlurUseFake(),
                 LocalGlassBlurDp provides AppMaterialSettings.glassBlurDp(),
                 LocalGlassPanelBlurDp provides AppMaterialSettings.glassPanelBlurDp(),
@@ -190,6 +206,7 @@ fun CourseScheduleTheme(
                     light = AppMaterialSettings.glassSurfaceAlphaDrop(isLight = true),
                     dark = AppMaterialSettings.glassSurfaceAlphaDrop(isLight = false),
                 ),
+                LocalSoftGlassLayerVariants provides glassVariants,
                 LocalPredictiveBackEnabled provides PredictiveBackSettings.enabled,
                 // :miuix 内部绘制的展示文字（偏好项标题/副标题、下拉菜单当前值、
                 // 弹窗标题/摘要）交给我们的换字动效：模块不能反向依赖 :ui-shared，
@@ -207,6 +224,46 @@ fun CourseScheduleTheme(
             }
         }
     )
+}
+
+/**
+ * 构造浅 / 深两套柔光玻璃层。三个 uniform 灌装 lambda 各自捕获已解析好的样式，
+ * 绘制期只读尺寸与圆角，不读任何主题状态 —— 深浅在组合期就定死了。
+ *
+ * 只在 [CourseScheduleTheme] 的 `remember(材质档位)` 里调用：档位不变时两个实例身份稳定，
+ * 下游拿它当 effects 的 remember key 才不会每帧重建采样层；切深浅只是换用另一个实例，
+ * 不会重新编译 shader。
+ */
+private fun buildSoftGlassLayerVariants(): SoftGlassLayerVariants {
+    if (!AppMaterialSettings.glassEffectsEnabled()) return SoftGlassLayerVariants()
+
+    fun layer(isDark: Boolean): SoftGlassLayer {
+        val small = AppMaterialSettings.chromeGlassStyle(
+            base = ScheduleSoftGlassStyle,
+            isDark = isDark,
+            fill = ThemeFill,
+            tone = BrightTone,
+        )
+        val large = AppMaterialSettings.chromeGlassStyle(
+            base = ScheduleSoftGlassStyle,
+            isDark = isDark,
+            fill = ThemeFill,
+            tone = BrightLargeTone,
+        )
+        val dialog = AppMaterialSettings.chromeGlassStyle(
+            base = ScheduleSoftGlassStyle,
+            isDark = isDark,
+            fill = BarFill,
+            tone = BrightLargeTone,
+        )
+        return SoftGlassLayer(
+            shaderString = SOFT_GLASS_LIVE_SHADER,
+            applyUniforms = { w, h, r -> applySoftGlass(small, w, h, r) },
+            applyLargeUniforms = { w, h, r -> applySoftGlass(large, w, h, r) },
+            applyDialogUniforms = { w, h, r -> applySoftGlass(dialog, w, h, r) },
+        )
+    }
+    return SoftGlassLayerVariants(light = layer(false), dark = layer(true))
 }
 
 /**

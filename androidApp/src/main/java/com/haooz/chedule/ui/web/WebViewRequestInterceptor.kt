@@ -5,13 +5,14 @@ import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
-import com.haooz.chedule.data.NexioLog
+import com.haooz.chedule.data.platform.NexioLog
+import com.haooz.chedule.i18n.AndroidMiscStr
+import java.util.concurrent.TimeUnit
 import okhttp3.Cache
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.concurrent.TimeUnit
 
 /**
  * WebView 请求拦截器。
@@ -136,7 +137,7 @@ class WebViewRequestInterceptor {
 
         NexioLog.d(
             "WebViewInterceptor",
-            "转发 ${request.method} dest=${fetchDest ?: "main"} $url"
+            AndroidMiscStr.logForwardN(request.method, fetchDest ?: "main", url)
         )
 
         val client = if (request.isForMainFrame) clientNoRedirects else clientWithRedirects
@@ -186,7 +187,12 @@ class WebViewRequestInterceptor {
             val response = client.newCall(builder.build()).execute()
             NexioLog.d(
                 "WebViewInterceptor",
-                "转发结果 ${response.code} ${response.header("Content-Type")} ${response.body?.contentLength()}B $url"
+                AndroidMiscStr.logForwardResultN(
+                    response.code,
+                    response.header("Content-Type"),
+                    response.body?.contentLength(),
+                    url
+                )
             )
 
             // 同步 Set-Cookie 回 WebView

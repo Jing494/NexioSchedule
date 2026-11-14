@@ -18,13 +18,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import com.haooz.chedule.ui.components.CardExpand
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -37,20 +34,30 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.haooz.chedule.data.AppStorage
-import com.haooz.chedule.data.HolidayManager
-import com.haooz.chedule.data.getStringOrNull
+import com.haooz.chedule.data.holiday.HolidayManager
+import com.haooz.chedule.data.storage.AppStorage
+import com.haooz.chedule.data.storage.getStringOrNull
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.i18n.PreferenceStr
+import com.haooz.chedule.i18n.WeatherStr
 import com.haooz.chedule.ui.basic.OverlayDropdownMenu
-import com.haooz.chedule.ui.activities.today.ClassEndEffectSettings
+import com.haooz.chedule.ui.components.CardExpand
+import com.haooz.chedule.ui.components.pageTopExtra
+import com.haooz.chedule.ui.components.text.material.Text as Text
+import com.haooz.chedule.ui.theme.KEY_MONET_COLOR
 import com.haooz.chedule.ui.theme.LocalSystemDarkTheme
+import com.haooz.chedule.ui.theme.isMonetColorAvailable
+import com.haooz.chedule.ui.utils.AppMaterialSettings
+import com.haooz.chedule.ui.utils.FeatureLog
+import com.haooz.chedule.ui.utils.KEY_TODAY_INFO_CARDS
+import com.haooz.chedule.ui.utils.PredictiveBackSettings
+import com.haooz.chedule.ui.utils.rememberWeatherVisible
 import com.haooz.chedule.uishared.resources.Res
 import com.haooz.chedule.uishared.resources.theme_preview_light
 import com.haooz.chedule.uishared.resources.theme_preview_night
 import com.haooz.chedule.viewmodel.settingsViewModel
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
-import com.haooz.chedule.ui.theme.KEY_MONET_COLOR
-import com.haooz.chedule.ui.theme.isMonetColorAvailable
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownEntry
@@ -62,8 +69,8 @@ import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
 import top.yukonga.miuix.kmp.layout.collapsibleTopInset
 import top.yukonga.miuix.kmp.layout.isTabletWidth
 import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.squircle.squircleBorder
-import top.yukonga.miuix.kmp.squircle.squircleClip
+import com.haooz.softglass.shape.continuousBorder
+import com.haooz.softglass.shape.continuousClip
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -71,13 +78,19 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 @Composable
 fun PreferenceSettingsScreen(
     scrollBehavior: SharedScrollBehavior? = null,
-    liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = null,
+    liquidGlassBackdrop: com.haooz.softglass.backdrop.GlassBackdrop? = null,
     /** 是否已授予定位权限（Android 宿主注入权限检查；桌面/iOS 恒 false） */
     hasLocationPermission: () -> Boolean = { false },
     /** 清空天气缓存（Android 宿主注入；桌面/iOS 空实现） */
     onInvalidateWeatherCache: () -> Unit = {},
     /** 隐藏最近任务卡片（Android 专有能力；宿主注入） */
     onSetTaskExcludedFromRecents: (Boolean) -> Unit = {},
+    /** 是否展示「预测性返回动画」（仅 Android 有该能力） */
+    showPredictiveBackAnimation: Boolean = true,
+    /** 是否展示「隐藏后台」（仅 Android 有该能力） */
+    showHideFromRecents: Boolean = true,
+    /** 是否展示「莫奈取色」（仅 Android 支持动态取色） */
+    showMonetColor: Boolean = true,
 ) {
 
     val eduPrefs = remember { AppStorage.store("edu_import_prefs") }
@@ -90,16 +103,17 @@ fun PreferenceSettingsScreen(
     var holidaySource by remember { mutableStateOf(HolidayManager.holidaySource()) }
 
     val weatherPrefs = remember { AppStorage.store("weather_prefs") }
-    var weatherSource by remember { mutableStateOf(weatherPrefs.getString("weather_source", "caiyun")) }
+    // 旧值 "caiyun"/"itboy" 不再有对应实现，Source.from 会回落到融合源
+    var weatherSource by remember { mutableStateOf(weatherPrefs.getString("weather_source", "fusion")) }
     // 天气定位摘要：有定位权限显示当前定位，否则回退显示上次定位
     val lastLocationName = weatherPrefs.getStringOrNull("last_location_name")
     val weatherHasPermission = hasLocationPermission()
     val weatherLocationSummary = when {
         weatherHasPermission ->
-            if (lastLocationName != null) "当前定位：$lastLocationName"
-            else "当前定位：未获取"
-        lastLocationName != null -> "上次定位：$lastLocationName"
-        else -> "未获取定位，开启定位权限后显示天气"
+            if (lastLocationName != null) PreferenceStr.currentLocationS(lastLocationName)
+            else PreferenceStr.currentLocationNone()
+        lastLocationName != null -> PreferenceStr.lastLocationS(lastLocationName)
+        else -> PreferenceStr.weatherNeedsLocation()
     }
 
     val themePrefs = remember { AppStorage.store("app_theme_prefs") }
@@ -118,6 +132,7 @@ fun PreferenceSettingsScreen(
     val defaultHomepage by settingsViewModel.defaultHomepage.collectAsState()
     val islandNotification by settingsViewModel.islandNotification.collectAsState()
     val reminderPrefs = remember { AppStorage.store("course_reminder_prefs") }
+    // 默认值必须与 IslandNotificationHelper.DEFAULT_ISLAND_EXPAND_GLOW 保持一致
     var islandExpandGlowEnabled by remember {
         mutableStateOf(reminderPrefs.getBoolean("island_expand_glow_enabled", false))
     }
@@ -130,20 +145,32 @@ fun PreferenceSettingsScreen(
             appPrefs.getBoolean(com.haooz.chedule.ui.theme.KEY_HAPTIC_FEEDBACK, true)
         )
     }
-    var classEndFireworks by remember {
-        mutableStateOf(appPrefs.getBoolean(ClassEndEffectSettings.KEY_FIREWORKS, true))
-    }
     var appMaterialLevel by remember {
         mutableStateOf(
             appPrefs.getString(
-                com.haooz.chedule.ui.utils.AppMaterialSettings.KEY_APP_MATERIAL,
-                com.haooz.chedule.ui.utils.AppMaterialSettings.BALANCED
+                AppMaterialSettings.KEY_APP_MATERIAL,
+                AppMaterialSettings.BEST
             )
         )
     }
-    // 启动时同步到全局，后续材质效果直接读 AppMaterialSettings.level
+    // 「真·渐进模糊」默认开；与档位同存 app_preferences，切换时同步全局状态
+    var trueProgressiveBlurEnabled by remember {
+        mutableStateOf(
+            appPrefs.getBoolean(AppMaterialSettings.KEY_TRUE_PROGRESSIVE_BLUR, true)
+        )
+    }
+    // 统一限制：模糊能力不可用（Android API < 31）一律锁进无材质档；桌面 / iOS 恒支持不锁
+    val materialLocked = !com.haooz.softglass.platform.isRenderEffectSupported()
+    val effectiveMaterialLevel = if (materialLocked) {
+        AppMaterialSettings.NONE
+    } else {
+        appMaterialLevel
+    }
+    // 启动时同步到全局，后续材质效果直接读 AppMaterialSettings.level；
+    // 渐进模糊开关也在这里兜一次（未调 load() 的入口靠它对齐）。
     LaunchedEffect(Unit) {
-        com.haooz.chedule.ui.utils.AppMaterialSettings.apply(appMaterialLevel)
+        AppMaterialSettings.apply(effectiveMaterialLevel)
+        AppMaterialSettings.applyTrueProgressiveBlur(trueProgressiveBlurEnabled)
     }
 
     val isTablet = isTabletWidth()
@@ -177,7 +204,8 @@ fun PreferenceSettingsScreen(
                 contentPadding = PaddingValues(
                     start = tabletHorizontalPadding,
                     end = tabletHorizontalPadding,
-                    top = paddingValues.calculateTopPadding() + CollapsibleTopAppBarDefaults.CollapsedHeight,
+                    top = paddingValues.calculateTopPadding() + CollapsibleTopAppBarDefaults.CollapsedHeight +
+                        pageTopExtra(isTablet, hasSmallTitle = false),
                     bottom = 60.dp
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -190,7 +218,7 @@ fun PreferenceSettingsScreen(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         ThemeSelectionBox(
-                            label = "浅色模式",
+                            label = PreferenceStr.lightMode(),
                             drawableRes = Res.drawable.theme_preview_light,
                             selected = !effectiveDark,
                             onClick = onClick@ {
@@ -202,7 +230,7 @@ fun PreferenceSettingsScreen(
                             modifier = Modifier.weight(1f)
                         )
                         ThemeSelectionBox(
-                            label = "深色模式",
+                            label = PreferenceStr.darkMode(),
                             drawableRes = Res.drawable.theme_preview_night,
                             selected = effectiveDark,
                             onClick = onClick@ {
@@ -220,7 +248,7 @@ fun PreferenceSettingsScreen(
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             SwitchPreference(
-                                title = "自动切换深色模式",
+                                title = PreferenceStr.autoDarkMode(),
                                 checked = themeMode == "system",
                                 onCheckedChange = { on ->
                                     if (on) {
@@ -232,64 +260,89 @@ fun PreferenceSettingsScreen(
                                     }
                                 }
                             )
-                            SwitchPreference(
-                                title = "莫奈取色",
-                                summary = if (isMonetColorAvailable()) {
-                                    "跟随系统壁纸对应用进行配色"
-                                } else {
-                                    "需要 Android 12 及以上版本"
-                                },
-                                checked = monetEnabled && isMonetColorAvailable(),
-                                enabled = isMonetColorAvailable(),
-                                onCheckedChange = {
-                                    monetEnabled = it
-                                    themePrefs.edit { putBoolean(KEY_MONET_COLOR, it) }
-                                }
-                            )
+                            if (showMonetColor) {
+                                SwitchPreference(
+                                    title = PreferenceStr.monetColor(),
+                                    summary = if (isMonetColorAvailable()) {
+                                        PreferenceStr.monetColorSummary()
+                                    } else {
+                                        PreferenceStr.monetColorUnavailable()
+                                    },
+                                    checked = monetEnabled && isMonetColorAvailable(),
+                                    enabled = isMonetColorAvailable(),
+                                    onCheckedChange = {
+                                        monetEnabled = it
+                                        themePrefs.edit { putBoolean(KEY_MONET_COLOR, it) }
+                                    }
+                                )
+                            }
                         }
                     }
                 }
+                // 材质卡片：档位行在平台锁定时隐藏，真·渐进模糊与岛光开关按各自条件显示
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         insideMargin = PaddingValues(0.dp)
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            val appMaterialEntry = DropdownEntry(
-                                items = com.haooz.chedule.ui.utils.AppMaterialSettings.entries
-                                    .map { (value, label) ->
+                            // 平台锁定档位时不给切换入口（鸿蒙：玻璃能力固定）
+                            if (AppMaterialSettings.lockedLevel == null) {
+                                val appMaterialEntry = DropdownEntry(
+                                    items = (if (materialLocked) {
+                                        // 锁定态只留无材质一项，其余档位点不到
+                                        listOf(
+                                            AppMaterialSettings.NONE to
+                                                AppMaterialSettings.labelOf(AppMaterialSettings.NONE)
+                                        )
+                                    } else {
+                                        AppMaterialSettings.entries
+                                    }).map { (value, label) ->
                                         DropdownItem(
                                             text = label,
-                                            selected = appMaterialLevel == value,
+                                            selected = effectiveMaterialLevel == value,
                                             onClick = {
-                                                com.haooz.chedule.ui.utils.FeatureLog.preference(
-                                                    "app_material=$value"
-                                                )
+                                                FeatureLog.preference("app_material=$value")
                                                 appMaterialLevel = value
-                                                com.haooz.chedule.ui.utils.AppMaterialSettings.apply(value)
+                                                AppMaterialSettings.apply(value)
                                                 appPrefs.edit {
-                                                    putString(
-                                                        com.haooz.chedule.ui.utils.AppMaterialSettings.KEY_APP_MATERIAL,
-                                                        value
-                                                    )
+                                                    putString(AppMaterialSettings.KEY_APP_MATERIAL, value)
                                                 }
                                             }
                                         )
                                     }
-                            )
-                            OverlayDropdownMenu(
-                                title = "应用材质效果",
-                                // summary 为空时自动显示当前选中档位
-                                summary = null,
-                                entry = appMaterialEntry,
-                                collapseOnSelection = true,
-                                liquidGlassBackdrop = liquidGlassBackdrop,
-                                dropdownColors = liquidGlassDropdownColors,
+                                )
+                                OverlayDropdownMenu(
+                                    title = PreferenceStr.appMaterialEffect(),
+                                    // summary 为空时自动显示当前选中档位；锁定态给出原因
+                                    summary = if (materialLocked) PreferenceStr.materialLockedSummary() else null,
+                                    entry = appMaterialEntry,
+                                    collapseOnSelection = true,
+                                    liquidGlassBackdrop = liquidGlassBackdrop,
+                                    dropdownColors = liquidGlassDropdownColors,
+                                )
+                            }
+                            // 与「应用材质效果」同一张卡片：默认开启，无材质档（含能力锁定）时禁用
+                            SwitchPreference(
+                                title = PreferenceStr.trueProgressiveBlur(),
+                                summary = if (effectiveMaterialLevel == AppMaterialSettings.NONE) {
+                                    PreferenceStr.trueProgressiveBlurDisabled()
+                                } else { null },
+                                checked = trueProgressiveBlurEnabled,
+                                enabled = effectiveMaterialLevel != AppMaterialSettings.NONE,
+                                onCheckedChange = { enabled ->
+                                    FeatureLog.preference("true_progressive_blur=$enabled")
+                                    trueProgressiveBlurEnabled = enabled
+                                    AppMaterialSettings.applyTrueProgressiveBlur(enabled)
+                                    appPrefs.edit {
+                                        putBoolean(AppMaterialSettings.KEY_TRUE_PROGRESSIVE_BLUR, enabled)
+                                    }
+                                }
                             )
                             CardExpand(visible = islandNotification) {
                                 SwitchPreference(
-                                    title = "小米超级岛光效",
-                                    summary = "在小米超级岛展开态显示流动光效",
+                                    title = PreferenceStr.superIslandGlow(),
+                                    summary = PreferenceStr.superIslandGlowSummary(),
                                     checked = islandExpandGlowEnabled,
                                     onCheckedChange = {
                                         islandExpandGlowEnabled = it
@@ -303,7 +356,7 @@ fun PreferenceSettingsScreen(
 
                 item {
                     SmallTitle(
-                        text = "应用设置",
+                        text = PreferenceStr.appSettings(),
                     )
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -313,18 +366,18 @@ fun PreferenceSettingsScreen(
                             val homepageEntry = DropdownEntry(
                                 items = listOf(
                                     DropdownItem(
-                                        text = "今日",
+                                        text = CommonStr.today(),
                                         selected = defaultHomepage == "今日",
                                         onClick = {
-                                            com.haooz.chedule.ui.utils.FeatureLog.preference("default_homepage=今日")
+                                            FeatureLog.preference("default_homepage=今日")
                                             settingsViewModel.setDefaultHomepage("今日")
                                         }
                                     ),
                                     DropdownItem(
-                                        text = "课程表",
+                                        text = PreferenceStr.schedule(),
                                         selected = defaultHomepage == "课程表",
                                         onClick = {
-                                            com.haooz.chedule.ui.utils.FeatureLog.preference("default_homepage=课程表")
+                                            FeatureLog.preference("default_homepage=课程表")
                                             settingsViewModel.setDefaultHomepage("课程表")
                                         }
                                     ),
@@ -332,8 +385,8 @@ fun PreferenceSettingsScreen(
                             )
 
                             OverlayDropdownMenu(
-                                title = "默认首页",
-                                summary = "首次启动时默认显示的页面",
+                                title = PreferenceStr.defaultHomepage(),
+                                summary = PreferenceStr.defaultHomepageSummary(),
                                 entry = homepageEntry,
                                 collapseOnSelection = true,
                                 liquidGlassBackdrop = liquidGlassBackdrop,
@@ -344,29 +397,40 @@ fun PreferenceSettingsScreen(
                             var predictiveBackEnabled by remember {
                                 mutableStateOf(
                                     appPrefs.getBoolean(
-                                        com.haooz.chedule.ui.utils.PredictiveBackSettings.KEY_PREDICTIVE_BACK_ANIMATION,
+                                        PredictiveBackSettings.KEY_PREDICTIVE_BACK_ANIMATION,
                                         true
                                     )
                                 )
                             }
-                            SwitchPreference(
-                                title = "预测性返回动画",
-                                summary = "返回手势时页面跟随手指的动画效果",
-                                checked = predictiveBackEnabled,
-                                onCheckedChange = {
-                                    predictiveBackEnabled = it
-                                    com.haooz.chedule.ui.utils.PredictiveBackSettings.enabled = it
-                                    appPrefs.edit {
-                                        putBoolean(
-                                            com.haooz.chedule.ui.utils.PredictiveBackSettings.KEY_PREDICTIVE_BACK_ANIMATION,
-                                            it
-                                        )
+                            if (showPredictiveBackAnimation) {
+                                SwitchPreference(
+                                    title = PreferenceStr.predictiveBack(),
+                                    summary = PreferenceStr.predictiveBackSummary(),
+                                    checked = predictiveBackEnabled,
+                                    onCheckedChange = {
+                                        predictiveBackEnabled = it
+                                        PredictiveBackSettings.enabled = it
+                                        appPrefs.edit {
+                                            putBoolean(
+                                                PredictiveBackSettings.KEY_PREDICTIVE_BACK_ANIMATION,
+                                                it
+                                            )
+                                        }
                                     }
+                                )
+                            }
+                            val weatherVisible = rememberWeatherVisible()
+                            SwitchPreference(
+                                title = PreferenceStr.showWeather(),
+                                summary = PreferenceStr.showWeatherSummary(),
+                                checked = weatherVisible,
+                                onCheckedChange = {
+                                    appPrefs.edit { putBoolean(KEY_TODAY_INFO_CARDS, it) }
                                 }
                             )
                             SwitchPreference(
-                                title = "应用触感反馈",
-                                summary = "点击、滑动、底栏切换等操作的震动反馈",
+                                title = PreferenceStr.hapticFeedback(),
+                                summary = PreferenceStr.hapticFeedbackSummary(),
                                 checked = hapticFeedbackEnabled,
                                 onCheckedChange = {
                                     hapticFeedbackEnabled = it
@@ -378,32 +442,25 @@ fun PreferenceSettingsScreen(
                                     }
                                 }
                             )
-                            SwitchPreference(
-                                title = "下课烟花",
-                                summary = "今日页每天最后一节课结束后播放烟花",
-                                checked = classEndFireworks,
-                                onCheckedChange = {
-                                    classEndFireworks = it
-                                    ClassEndEffectSettings.setFireworks(it)
-                                }
-                            )
-                            SwitchPreference(
-                                title = "隐藏后台",
-                                summary = "返回桌面时，隐藏应用的最近任务卡片",
-                                checked = hideBackground,
-                                onCheckedChange = {
-                                    hideBackground = it
-                                    appPrefs.edit { putBoolean("hide_background", it) }
-                                    onSetTaskExcludedFromRecents(it)
-                                }
-                            )
+                            if (showHideFromRecents) {
+                                SwitchPreference(
+                                    title = PreferenceStr.hideFromRecents(),
+                                    summary = PreferenceStr.hideFromRecentsSummary(),
+                                    checked = hideBackground,
+                                    onCheckedChange = {
+                                        hideBackground = it
+                                        appPrefs.edit { putBoolean("hide_background", it) }
+                                        onSetTaskExcludedFromRecents(it)
+                                    }
+                                )
+                            }
                         }
                     }
                 }
 
                 item {
                     SmallTitle(
-                        text = "数据源",
+                        text = PreferenceStr.dataSources(),
                     )
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -413,7 +470,7 @@ fun PreferenceSettingsScreen(
                             val repoEntry = DropdownEntry(
                                 items = listOf(
                                     DropdownItem(
-                                        text = "Fork源",
+                                        text = PreferenceStr.forkSource(),
                                         selected = repoUrl == "https://gitee.com/com_haooz_account/shiguang_warehouse",
                                         onClick = {
                                             repoUrl = "https://gitee.com/com_haooz_account/shiguang_warehouse"
@@ -440,8 +497,8 @@ fun PreferenceSettingsScreen(
                             )
 
                             OverlayDropdownMenu(
-                                title = "教务数据仓库源",
-                                summary = "更新教务系统数据源的仓库",
+                                title = PreferenceStr.eduRepoSource(),
+                                summary = PreferenceStr.eduRepoSourceSummary(),
                                 entry = repoEntry,
                                 collapseOnSelection = true,
                                 liquidGlassBackdrop = liquidGlassBackdrop,
@@ -450,29 +507,25 @@ fun PreferenceSettingsScreen(
 
                             val weatherSourceEntry = DropdownEntry(
                                 items = listOf(
+                                    "fusion" to WeatherStr.sourceFusion(),
+                                    "xiaomi" to WeatherStr.sourceXiaomi(),
+                                    "weathercn" to WeatherStr.sourceWeatherCn(),
+                                    "openmeteo" to WeatherStr.sourceOpenMeteo(),
+                                ).map { (key, label) ->
                                     DropdownItem(
-                                        text = "聚合接口",
-                                        selected = weatherSource == "itboy",
+                                        text = label,
+                                        selected = weatherSource == key,
                                         onClick = {
-                                            weatherSource = "itboy"
-                                            weatherPrefs.edit { putString("weather_source", "itboy") }
+                                            weatherSource = key
+                                            weatherPrefs.edit { putString("weather_source", key) }
                                             onInvalidateWeatherCache()
                                         }
-                                    ),
-                                    DropdownItem(
-                                        text = "彩云天气",
-                                        selected = weatherSource == "caiyun",
-                                        onClick = {
-                                            weatherSource = "caiyun"
-                                            weatherPrefs.edit { putString("weather_source", "caiyun") }
-                                            onInvalidateWeatherCache()
-                                        }
-                                    ),
-                                )
+                                    )
+                                }
                             )
 
                             OverlayDropdownMenu(
-                                title = "天气数据源",
+                                title = PreferenceStr.weatherDataSource(),
                                 summary = weatherLocationSummary,
                                 entry = weatherSourceEntry,
                                 collapseOnSelection = true,
@@ -483,7 +536,7 @@ fun PreferenceSettingsScreen(
                             val holidaySourceEntry = DropdownEntry(
                                 items = listOf(
                                     DropdownItem(
-                                        text = "国务院",
+                                        text = PreferenceStr.stateCouncil(),
                                         selected = holidaySource == HolidayManager.SOURCE_HOLIDAY_CALENDAR,
                                         onClick = {
                                             holidaySource = HolidayManager.SOURCE_HOLIDAY_CALENDAR
@@ -502,8 +555,8 @@ fun PreferenceSettingsScreen(
                             )
 
                             OverlayDropdownMenu(
-                                title = "节假日数据源",
-                                summary = "假期与调休安排的获取来源",
+                                title = PreferenceStr.holidayDataSource(),
+                                summary = PreferenceStr.holidayDataSourceSummary(),
                                 entry = holidaySourceEntry,
                                 collapseOnSelection = true,
                                 liquidGlassBackdrop = liquidGlassBackdrop,
@@ -540,7 +593,7 @@ private fun ThemeSelectionBox(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .squircleBorder(
+                .continuousBorder(
                     width = 3.dp,
                     color = if (selected) MiuixTheme.colorScheme.primary else Color.Transparent,
                     cornerRadius = 26.dp
@@ -551,7 +604,7 @@ private fun ThemeSelectionBox(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .squircleClip(20.dp)
+                    .continuousClip(20.dp)
             ) {
                 Image(
                     painter = painterResource(drawableRes),

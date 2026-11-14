@@ -20,8 +20,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.ui.text.style.TextAlign
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -40,21 +38,25 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.haooz.chedule.ui.utils.ExtractedShareTools
 import com.haooz.chedule.data.school.AdapterData
 import com.haooz.chedule.data.school.SchoolData
 import com.haooz.chedule.data.school.SchoolRepository
-import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
-import top.yukonga.miuix.kmp.utils.overScrollVertical
-import com.kyant.capsule.ContinuousRoundedRectangle
+import com.haooz.chedule.i18n.ImportStr
+import com.haooz.chedule.ui.components.text.material.Text as Text
+import com.haooz.chedule.ui.utils.ExtractedShareTools
+import com.haooz.chedule.ui.utils.screenWidthDp
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
+import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
+import top.yukonga.miuix.kmp.layout.TopBarMaterialThreshold
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import com.haooz.chedule.ui.utils.screenWidthDp
 
 @Composable
 fun SchoolSelectionScreen(
@@ -66,7 +68,7 @@ fun SchoolSelectionScreen(
     searchQuery: String = "",
     selectedTab: Int = 0,
     topContentPadding: Dp = 0.dp,
-    liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = null,
+    liquidGlassBackdrop: com.haooz.softglass.backdrop.GlassBackdrop? = null,
     onAdapterSelected: (SchoolData, AdapterData) -> Unit
 ) {
     val hapticFeedback = LocalHapticFeedback.current
@@ -100,7 +102,7 @@ fun SchoolSelectionScreen(
     var isProgrammaticScroll by remember { mutableStateOf(false) }
 
     // 程序化滚动（字母条/搜索）不经过 nestedScroll，需监听 listState 同步 contentOffset 和标题栏收起
-    val scrollThresholdPx = with(LocalDensity.current) { 10.dp.toPx() }
+    val scrollThresholdPx = with(LocalDensity.current) { TopBarMaterialThreshold.toPx() }
     var lastCollapsed by remember { mutableStateOf(false) }
     LaunchedEffect(listState) {
         snapshotFlow {
@@ -108,7 +110,8 @@ fun SchoolSelectionScreen(
         }.collect { (index, offset) ->
             val state = scrollBehavior?.state ?: return@collect
             val shouldShow = index > 0 || offset > scrollThresholdPx
-            // 同步 contentOffset 用于按钮阴影
+            // 同步 contentOffset：父级（教务导入）顶栏材质读的就是这个累计量。
+            // 判据是「严格小于阈值」，所以这里多给 1px，保证下一次求值必然翻成 true。
             if (shouldShow && state.contentOffset >= -scrollThresholdPx) {
                 state.contentOffset = -scrollThresholdPx - 1f
             } else if (!shouldShow && state.contentOffset < 0f) {
@@ -125,10 +128,7 @@ fun SchoolSelectionScreen(
     }
 
     val isTablet = screenWidthDp() >= 600
-    val tabletHorizontalPadding = if (isTablet) {
-        val widthDp = screenWidthDp()
-        ((widthDp - 600).coerceIn(0, 600) / 600f * 112 + 16).dp
-    } else 0.dp
+    val tabletHorizontalPadding = if (isTablet) 20.dp else 16.dp
 
     Column(
         modifier = modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)
@@ -137,7 +137,7 @@ fun SchoolSelectionScreen(
             filteredSchools.isEmpty() && !isUpdating -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = if (searchQuery.isBlank()) "暂无学校数据" else "未找到匹配的学校",
+                        text = if (searchQuery.isBlank()) ImportStr.noSchoolData() else ImportStr.noSchoolMatch(),
                         style = MiuixTheme.textStyles.body1,
                         color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                         textAlign = TextAlign.Center,
@@ -154,7 +154,7 @@ fun SchoolSelectionScreen(
                         CircularProgressIndicator()
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            text = "正在检查更新",
+                            text = ImportStr.checkingUpdates(),
                             style = MiuixTheme.textStyles.body2,
                             color = MiuixTheme.colorScheme.onSurfaceVariantActions
                         )
@@ -284,7 +284,7 @@ fun SchoolSelectionScreen(
                                         if (isPostgrad) {
                                             Text(
                                                 modifier = Modifier.padding(start = 4.dp),
-                                                text = "研究生",
+                                                text = ImportStr.categoryPostgraduate(),
                                                 fontSize = 14.sp,
                                                 color = MiuixTheme.colorScheme.onSurfaceVariantActions
                                             )
@@ -420,7 +420,7 @@ fun SchoolSelectionScreen(
                                                 }
                                             } else Modifier
                                         ),
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    textAlign = TextAlign.Center
                                 )
                             }
                         }

@@ -5,7 +5,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.haooz.chedule.data.Course
+import com.haooz.chedule.data.model.Course
 
 // ════════════════════════════════════════════════════════════════════════
 //  网页内容宿主 —— 教务导入用的 WebView 的平台无关契约
@@ -38,6 +38,12 @@ class WebHostConfig(
      * Android 的 WebView 在 Compose 里走自己的布局，不使用这个值。
      */
     val contentBottomPadding: Dp = 0.dp,
+    /** 学校名（原生底部条要展示）；Android / iOS 用不到，默认空。 */
+    val schoolName: String = "",
+    /** 全部课表名（原生底部条的「执行导入」选择目标课表用）。 */
+    val scheduleNames: List<String> = emptyList(),
+    /** 当前课表名（原生选择器的默认项）。 */
+    val currentScheduleName: String = "",
 )
 
 /**

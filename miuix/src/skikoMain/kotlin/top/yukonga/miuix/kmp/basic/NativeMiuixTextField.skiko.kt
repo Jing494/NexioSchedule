@@ -36,8 +36,8 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import top.yukonga.miuix.kmp.squircle.squircleBackground
-import top.yukonga.miuix.kmp.squircle.squircleBorder
+import com.haooz.softglass.shape.continuousBackground
+import com.haooz.softglass.shape.continuousBorder
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private enum class LabelAnimState { Hidden, Placeholder, Normal, Floating }
@@ -59,6 +59,7 @@ actual fun NativeMiuixTextField(
     singleLine: Boolean,
     maxLines: Int,
     minLines: Int,
+    maxLength: Int,
     requestFocus: Boolean,
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -99,7 +100,7 @@ actual fun NativeMiuixTextField(
     ) {
         BasicTextField(
             value = value,
-            onValueChange = onValueChange,
+            onValueChange = { onValueChange(if (it.length > maxLength) it.take(maxLength) else it) },
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(focusRequester)
@@ -116,9 +117,7 @@ actual fun NativeMiuixTextField(
             minLines = minLines,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             decorationBox = { innerTextField ->
-                // useLabelAsPlaceholder 时 label 兼作 hint（有内容即隐藏）——
-                // 与 Android actual 的 EditText.hint 条件一致
-                Box(contentAlignment = Alignment.CenterStart) {
+                Box(contentAlignment = Alignment.TopStart) {
                     if (value.isEmpty() && useLabelAsPlaceholder && label.isNotEmpty()) {
                         Text(
                             text = label,
@@ -206,7 +205,8 @@ actual fun NativeMiuixTextField(
             minLines = minLines,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             decorationBox = { innerTextField ->
-                Box(contentAlignment = Alignment.CenterStart) {
+                // 同 String 重载：占位符贴顶，与 Android 原生 hint 一致
+                Box(contentAlignment = Alignment.TopStart) {
                     if (value.text.isEmpty() && useLabelAsPlaceholder && label.isNotEmpty()) {
                         Text(
                             text = label,
@@ -273,8 +273,8 @@ private fun MiuixTextFieldShell(
 
     Box(
         modifier = modifier
-            .squircleBackground(color = backgroundColor, cornerRadius = cornerRadius)
-            .squircleBorder(width = borderWidth, color = borderColor, cornerRadius = cornerRadius),
+            .continuousBackground(color = backgroundColor, cornerRadius = cornerRadius)
+            .continuousBorder(width = borderWidth, color = borderColor, cornerRadius = cornerRadius),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),

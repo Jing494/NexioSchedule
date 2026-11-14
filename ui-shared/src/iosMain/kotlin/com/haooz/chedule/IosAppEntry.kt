@@ -9,68 +9,80 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.kyant.capsule.ContinuousRoundedRectangle
-import com.kyant.capsule.continuities.G2Continuity
-import com.haooz.chedule.data.AppFiles
-import com.haooz.chedule.data.AppInfo
-import com.haooz.chedule.data.AppStorage
 import com.haooz.chedule.data.IosBackupFileController
 import com.haooz.chedule.data.IosCourseLiveActivity
 import com.haooz.chedule.data.IosCourseNotifier
-import com.haooz.chedule.data.IosWidgetSnapshot
 import com.haooz.chedule.data.IosScheduleFileController
+import com.haooz.chedule.data.storage.IosSqlStorage
 import com.haooz.chedule.data.IosWallpaperBackend
 import com.haooz.chedule.data.IosWallpaperPicker
-import com.haooz.chedule.data.NexioLog
-import com.haooz.chedule.data.NsFileAppFile
-import com.haooz.chedule.data.PrivacyConsent
-import com.haooz.chedule.data.ScheduleChangeSink
-import com.haooz.chedule.data.ScheduleEffects
-import com.haooz.chedule.data.StatsReporter
-import com.haooz.chedule.data.UserDefaultsStore
+import com.haooz.chedule.data.IosWidgetSnapshot
+import com.haooz.chedule.data.platform.NsFileAppFile
 import com.haooz.chedule.data.WallpaperStore
-import com.haooz.chedule.data.defaultDocumentsDir
-import com.haooz.chedule.data.showToast
-import com.haooz.chedule.data.toByteArray
-import com.haooz.chedule.ui.activities.main.CourseScheduleApp
+import com.haooz.chedule.data.platform.defaultDocumentsDir
+import com.haooz.chedule.data.platform.AppFiles
+import com.haooz.chedule.data.platform.AppInfo
+import com.haooz.chedule.data.platform.NexioLog
+import com.haooz.chedule.data.platform.PrivacyConsent
+import com.haooz.chedule.data.platform.ScheduleChangeSink
+import com.haooz.chedule.data.platform.ScheduleEffects
+import com.haooz.chedule.data.platform.StatsReporter
+import com.haooz.chedule.data.platform.showToast
+import com.haooz.chedule.data.storage.AppStorage
+import com.haooz.chedule.data.storage.CourseStorage
+import com.haooz.chedule.data.platform.toByteArray
+import com.haooz.chedule.i18n.L
 import com.haooz.chedule.ui.activities.ScheduleDataManageMode
-import com.haooz.chedule.ui.screens.PrivacyConsentScreen
+import com.haooz.chedule.ui.activities.main.CourseScheduleApp
 import com.haooz.chedule.ui.activities.today.TodayAssistantCard
-import com.haooz.chedule.ui.screens.rememberWeatherIos
-import com.haooz.chedule.ui.utils.IosSharedFileReceiver
-import com.haooz.chedule.ui.utils.IosShareImport
-import com.haooz.chedule.ui.utils.rememberIosShareAction
-import com.haooz.chedule.ui.utils.IosSystemBars
-import com.haooz.chedule.ui.utils.IosReminderController
-import com.haooz.chedule.ui.utils.IosToast
-import com.haooz.chedule.ui.web.rememberIosWebHost
+import com.haooz.chedule.ui.screens.LocalTabletSettingsPaneRouteContent
 import com.haooz.chedule.ui.navigation.AboutRoute
 import com.haooz.chedule.ui.navigation.AiImportRoute
-import com.haooz.chedule.ui.navigation.AppreciateAuthorRoute
 import com.haooz.chedule.ui.navigation.AppNavHost
 import com.haooz.chedule.ui.navigation.AppRoute
 import com.haooz.chedule.ui.navigation.AppRouter
-import com.haooz.chedule.viewmodel.settingsViewModel
+import com.haooz.chedule.ui.navigation.AppreciateAuthorRoute
 import com.haooz.chedule.ui.navigation.BackupAndMigrationRoute
+import com.haooz.chedule.ui.navigation.BackupCenterRoute
 import com.haooz.chedule.ui.navigation.ChangelogRoute
+import com.haooz.chedule.ui.navigation.WeatherRoute
 import com.haooz.chedule.ui.navigation.CommunicationRoute
 import com.haooz.chedule.ui.navigation.CourseManageRoute
 import com.haooz.chedule.ui.navigation.CourseReminderRoute
 import com.haooz.chedule.ui.navigation.CourseTimeSettingsRoute
 import com.haooz.chedule.ui.navigation.EducationalImportRoute
+import com.haooz.chedule.ui.navigation.FeedbackHistoryRoute
+import com.haooz.chedule.ui.navigation.FeedbackRoadmapRoute
+import com.haooz.chedule.ui.navigation.FeedbackRoute
 import com.haooz.chedule.ui.navigation.HolidaySettingsRoute
 import com.haooz.chedule.ui.navigation.LicenseRoute
 import com.haooz.chedule.ui.navigation.LocalAppRouter
-import com.haooz.chedule.ui.navigation.LocalBackupRoute
 import com.haooz.chedule.ui.navigation.PreferenceSettingsRoute
 import com.haooz.chedule.ui.navigation.PrivacyPolicyRoute
 import com.haooz.chedule.ui.navigation.ReminderTestRoute
+import com.haooz.chedule.ui.navigation.ScheduleSettingsRoute
+import com.haooz.chedule.ui.navigation.SettingsRoute
+import com.haooz.chedule.ui.navigation.UpdatePreferencesRoute
 import com.haooz.chedule.ui.navigation.UpdateSettingsRoute
-import com.haooz.chedule.ui.navigation.WebImportRoute
 import com.haooz.chedule.ui.navigation.WebDavSettingsRoute
+import com.haooz.chedule.ui.navigation.WebImportRoute
 import com.haooz.chedule.ui.navigation.WidgetIntroRoute
+import com.haooz.chedule.ui.screens.PrivacyConsentScreen
+import com.haooz.chedule.ui.screens.WeatherBootstrapIos
+import com.haooz.chedule.ui.screens.rememberWeatherIos
+import com.haooz.chedule.ui.utils.IosReminderController
+import com.haooz.chedule.ui.utils.IosWakeUpImport
+import com.haooz.chedule.ui.utils.ShareCodeImport
+import com.haooz.chedule.ui.utils.IosSharedFileReceiver
+import com.haooz.chedule.ui.utils.IosSystemBars
+import com.haooz.chedule.ui.utils.IosToast
+import com.haooz.chedule.ui.utils.rememberIosShareAction
+import com.haooz.chedule.ui.web.rememberIosWebHost
 import com.haooz.chedule.uishared.resources.Res
 import com.haooz.chedule.uishared.resources.about_app_icon
+import com.haooz.chedule.viewmodel.settingsViewModel
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
+import com.haooz.softglass.shape.G2Continuity
 import org.jetbrains.compose.resources.imageResource
 import platform.Foundation.NSBundle
 import platform.Foundation.NSData
@@ -93,23 +105,37 @@ fun bootstrapNexioIos() {
         .objectForInfoDictionaryKey("CFBundleShortVersionString") as? String ?: "unknown"
     AppInfo.init(version)
 
-    // 按名字转发到各自 UserDefaults suite（名字由各业务文件自带，这里不汇总）。
-    // ⚠ 合并成一张表会篡改存量数据的落盘位置，见 UserDefaultsStore 的类注释。
-    AppStorage.init { name -> UserDefaultsStore(name) }
+    // WakeUp 导入要跑无头 WKWebView，实现是 iOS 专有的，注入给共享的 ShareCodeImport
+    ShareCodeImport.wakeUpRunner = { shareKey, script -> IosWakeUpImport.run(shareKey, script) }
+
+    // 与 Android 同一个 nexio.db：键值表 + 课程行表同库同事务。
+    // ⚠ 不能退回 UserDefaults：两端 schema 分叉会让备份/恢复只在一端正确。
+    AppStorage.init { name -> IosSqlStorage.store(name) }
+    // 课程行表接线。取不到就抛，不退回 JSON。
+    CourseStorage.install { IosSqlStorage.courseRows() }
+    // iOS 从第一天就是 nexio.db：没有 blob / UserDefaults 存量可搬，直接记为已迁移。
+    // Android 那边由 LegacyStorageMigration 调 migrateLegacyEntitiesOnce 真正搬数据。
+    runCatching { IosSqlStorage.courseRows().markFullyMigrated() }
+
+    // 语言镜像尽早就位：core 数据类的显示变体（DisplayLang）依赖它；与 CourseScheduleApp 里的恢复同值
+    com.haooz.chedule.i18n.AppLanguage.init(com.haooz.chedule.i18n.LanguageStore.load())
 
     AppFiles.init(
         root = NsFileAppFile(defaultDocumentsDir()),
         readAsset = { path ->
             // 内置学校索引引导用；失败需**抛**，由 SchoolRepository 捕获日志并跳过引导。
             val resolved = NSBundle.mainBundle.pathForResource(path, null)
-                ?: error("内置资源缺失: $path")
+                ?: error(L("内置资源缺失：%s", "Missing built-in resource: %s")(path))
             NSData.dataWithContentsOfFile(resolved)?.toByteArray()
-                ?: error("内置资源读取失败: $path")
+                ?: error(L("内置资源读取失败：%s", "Failed to read built-in resource: %s")(path))
         },
     )
 
     // 壁纸后端：iOS 用 UIImage（JPEG）+ 共享 AppFiles 落盘；与 Android 同一条接口+注入链路。
-    WallpaperStore.backend = IosWallpaperBackend()
+    val wallpaperBackend = IosWallpaperBackend()
+    WallpaperStore.backend = wallpaperBackend
+    // 首帧壁纸同步解码（skia 本身同步）：首帧就要带上用户壁纸，等协程会先画一帧底色再跳。
+    WallpaperStore.synchronousLoader = { wallpaperBackend.loadNow() }
 
     // 原生提示条：把 showToast 接到 UIKit HUD；不注入则 native actual 只打日志，用户「点了没反应」。
     IosToast.install()
@@ -188,8 +214,16 @@ internal fun NexioIosMain(host: IosAppHost) {
             NexioLog.i("IosBootstrap", "AppFiles/NSFileManager 自检：${if (ok) "OK" else "内容不一致"}")
         }.onFailure { NexioLog.e("IosBootstrap", "AppFiles 自检失败：${it.message}", it) }
     }
-    CompositionLocalProvider(LocalAppRouter provides router) {
+    CompositionLocalProvider(
+        LocalAppRouter provides router,
+        // 平板设置右栏用自己的局部 router
+        LocalTabletSettingsPaneRouteContent provides { paneRouter, route ->
+            NexioIosRouteContent(paneRouter, route)
+        },
+    ) {
         Box(Modifier.fillMaxSize()) {
+            // 壳层引导：天气在课表页顶栏也要显示，不能等切到今日页才加载
+            WeatherBootstrapIos()
             // 主界面常驻底座（真课表界面）；未接的宿主能力走默认「无此能力」，入口不渲染而非留死按钮。
                 CourseScheduleApp(
                     privacyConsented = consented,
@@ -217,18 +251,17 @@ internal fun NexioIosMain(host: IosAppHost) {
                             afternoonSections = d.afternoonSections,
                             showClassroom = d.showClassroom,
                             showTeacher = d.showTeacher,
-                            wallpaperBackdrop = d.wallpaperBackdrop,
-                            blurRadius = d.blurRadius,
                             surfaceOpacity = d.surfaceOpacity,
                             // 下课烟花是 Android 专有（LocalContext/nanoTime），iOS 不渲染
                             fireworksOverlay = null,
+                            onOpenWeather = { router.navigate(AppRoute.Weather) },
                         )
                     },
                     // 外部分享进来的文件（Swift 侧 .onOpenURL → IosSharedFileReceiver）
                     sharedFileIntent = IosSharedFileReceiver.pending,
                     onShareIntentConsumed = { IosSharedFileReceiver.clear() },
                     onReadSharedFileText = { uri -> IosSharedFileReceiver.readText(uri) },
-                    // iOS 走 App Store 更新 → 设置页的「更新设置」入口整个不渲染
+                    // iOS 走 App Store 更新 → 设置页的「更新」入口整个不渲染
                     showUpdateSettings = false,
                     // 平板设置两栏的 8 个平台专有 dest 装配（对齐 Android 的 AndroidSettingsScreen）
                     settingsPane = { args ->
@@ -260,7 +293,7 @@ internal fun NexioIosNavigation(host: IosAppHost) {
                 router,
                 mainTransition = mainTransition,
                 onOverlayActivityChanged = { host.navigationOverlayActive = it },
-            ) { route ->
+            ) { _, route ->
                 NexioIosRouteContent(router, route)
             }
             // 隐私同意弹窗：与 Android 同挂载方式（AppNavHost 之后、同层 Box），且须在此层——位于原生
@@ -289,6 +322,22 @@ internal fun NexioIosNavigation(host: IosAppHost) {
 @Composable
 internal fun NexioIosRouteContent(router: AppRouter, route: AppRoute) {
     when (route) {
+        // 设置二级页（原主 pager 第三页）：iOS 走原生文档壳，标题/返回由 NavigationBar 给
+        AppRoute.Settings -> SettingsRoute(
+            router = router,
+            // iOS 走 App Store 更新 → 「更新」入口整个不渲染
+            showUpdateSettings = false,
+            settingsPane = { args ->
+                com.haooz.chedule.ui.screens.IosSettingsScreen(
+                    args = args,
+                    scheduleFileController = fileController,
+                    backupFileController = backupFileController,
+                    reminderController = reminderController,
+                    onHolidayDataChanged = onHolidayDataChanged,
+                )
+            },
+        )
+
         AppRoute.About -> AboutRoute(
             router = router,
             appVersion = AppInfo.version,
@@ -299,20 +348,24 @@ internal fun NexioIosRouteContent(router: AppRouter, route: AppRoute) {
             onExitApp = { platform.posix.exit(0) },
         )
         // 纯文档壳路由，iOS 直接可用
+        AppRoute.ScheduleSettings -> ScheduleSettingsRoute(router)
         AppRoute.Changelog -> ChangelogRoute(router)
+        AppRoute.Weather -> WeatherRoute(router)
         AppRoute.License -> LicenseRoute(router)
         AppRoute.PrivacyPolicy -> PrivacyPolicyRoute(router)
         AppRoute.Communication -> CommunicationRoute(router)
+        AppRoute.Feedback -> FeedbackRoute(router)
+        AppRoute.FeedbackHistory -> FeedbackHistoryRoute(router)
+        AppRoute.FeedbackRoadmap -> FeedbackRoadmapRoute(router)
         AppRoute.AppreciateAuthor -> AppreciateAuthorRoute(router)
         // 带注入的文档壳：iOS 用默认 Noop 能力，剪贴板注入 UIPasteboard
         AppRoute.PreferenceSettings -> PreferenceSettingsRoute(router)
         AppRoute.UpdateSettings -> UpdateSettingsRoute(router)
-        // 本地备份：目录扫描+手动选文件都需原生文件能力。
-        // ⚠ 不传会落到 NoopBackupFileController，点「手动选择文件」静默回调 null，什么都不发生。
-        AppRoute.LocalBackup -> LocalBackupRoute(
+        AppRoute.UpdatePreferences -> UpdatePreferencesRoute(router)
+        // 备份中心：目录扫描+选文件都需原生文件能力，不传会落到 Noop 控制器。
+        AppRoute.ScheduleBackup -> BackupCenterRoute(
             router = router,
             backupFileController = backupFileController,
-            // 全量恢复会写节假日数据 → 重排提醒
             onHolidayDataChanged = onHolidayDataChanged,
         )
         AppRoute.AiImport -> AiImportRoute(
@@ -338,14 +391,14 @@ internal fun NexioIosRouteContent(router: AppRouter, route: AppRoute) {
             CourseReminderRoute(
                 router = router,
                 reminderController = reminderController,
-                testActionLabel = if (islandNotification) "测试灵动岛" else "测试通知",
+                testActionLabel = if (islandNotification) L("测试灵动岛", "Test Dynamic Island")() else L("测试通知", "Test Notification")(),
                 onSendTestNotification = {
                     if (islandNotification) {
                         IosCourseLiveActivity.startTest()
-                        showToast("已启动灵动岛测试")
+                        showToast(L("已启动灵动岛测试", "Dynamic Island test started")())
                     } else {
                         IosCourseNotifier.sendTestNotification()
-                        showToast("已发送测试通知")
+                        showToast(L("已发送测试通知", "Test notification sent")())
                     }
                 },
             )
@@ -355,36 +408,22 @@ internal fun NexioIosRouteContent(router: AppRouter, route: AppRoute) {
         // WebDAV：备份/恢复本体已在 :core；恢复成功后要重排提醒
         AppRoute.WebDavSettings -> WebDavSettingsRoute(
             router = router,
+            backupFileController = backupFileController,
             onHolidayDataChanged = onHolidayDataChanged,
         )
-        // 课表导入/导出/备份：接 iOS 原生文件选择器（UIDocumentPicker）+ 三条口令导入。
+        // iOS 文件选择器（UIDocumentPicker）+ 三条口令导入
         // 口令取回与星链是纯 HTTP（共享 HttpService = NSURLSession），WakeUp 走无头
         // WKWebView（IosWakeUpImport）。口令**导出**仍是 Android 专有。
-        AppRoute.ScheduleImport -> BackupAndMigrationRoute(
+        AppRoute.ImportExport -> BackupAndMigrationRoute(
             router = router,
             mode = ScheduleDataManageMode.Import,
+            switchableModes = listOf(ScheduleDataManageMode.Import, ScheduleDataManageMode.Export),
             scheduleFileController = fileController,
             onHolidayDataChanged = onHolidayDataChanged,
-            onFetchShareCode = { code -> IosShareImport.fetchShareCode(code) },
-            onImportThirdParty = { source, code -> IosShareImport.importThirdParty(source, code) },
+            onFetchShareCode = { code -> ShareCodeImport.fetchShareCode(code) },
+            onImportThirdParty = { source, code -> ShareCodeImport.importThirdParty(source, code) },
         )
-        AppRoute.ScheduleExport -> BackupAndMigrationRoute(
-            router = router,
-            mode = ScheduleDataManageMode.Export,
-            scheduleFileController = fileController,
-            onHolidayDataChanged = onHolidayDataChanged,
-            onFetchShareCode = { code -> IosShareImport.fetchShareCode(code) },
-            onImportThirdParty = { source, code -> IosShareImport.importThirdParty(source, code) },
-        )
-        AppRoute.ScheduleBackup -> BackupAndMigrationRoute(
-            router = router,
-            mode = ScheduleDataManageMode.Backup,
-            scheduleFileController = fileController,
-            onHolidayDataChanged = onHolidayDataChanged,
-            onFetchShareCode = { code -> IosShareImport.fetchShareCode(code) },
-            onImportThirdParty = { source, code -> IosShareImport.importThirdParty(source, code) },
-        )
-        // 课程时间管理 / 课程管理：iOS 没有自由小窗，传 false
+        // 上课时间 / 课程管理：iOS 没有自由小窗，传 false
         AppRoute.CourseTimeSettings -> CourseTimeSettingsRoute(router)
         AppRoute.CourseManage -> CourseManageRoute(router)
         // 教务导入（学校选择）：外壳全在 :ui-shared，无需平台能力（索引更新走共享 HttpService）。

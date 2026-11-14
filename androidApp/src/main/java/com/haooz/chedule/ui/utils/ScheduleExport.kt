@@ -1,8 +1,9 @@
 package com.haooz.chedule.ui.utils
 
-import android.content.ClipData
-import android.content.ClipboardManager
+import android.Manifest
+import android.content.ContentValues
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -10,18 +11,21 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Typeface
+import android.media.MediaScannerConnection
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.text.TextPaint
-import android.view.View
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.google.gson.GsonBuilder
+import com.haooz.chedule.data.platform.showToast
+import com.haooz.chedule.data.repo.CourseRepository
+import com.haooz.chedule.i18n.AndroidMiscStr
+import com.haooz.chedule.i18n.BackupStr
 import java.io.File
 import java.io.FileOutputStream
-import com.google.gson.GsonBuilder
-import com.haooz.chedule.data.Course
-import com.haooz.chedule.data.CourseRepository
-
-import com.haooz.chedule.data.TeachingWeekReorganization
-import com.haooz.chedule.data.TeachingWeekReorganizationRule
-import com.haooz.chedule.data.TimeRoutine
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,9 +35,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
-import java.util.concurrent.TimeUnit
-import com.haooz.chedule.data.showToast
 
 // ════════════════════════════════════════════════════════════════════════
 //  课表导出 —— 单文件全包（分享给其他 App / 分享口令）
@@ -118,13 +119,13 @@ object ShareCodeApi {
                         ""
                     }
                     return@withContext Result.failure(
-                        IllegalStateException(err.ifBlank { "服务器错误 HTTP ${resp.code}" })
+                        IllegalStateException(err.ifBlank { AndroidMiscStr.serverErrorHttpN(resp.code) })
                     )
                 }
                 val json = JSONObject(text)
                 val code = json.optString("code")
                 if (code.isBlank()) {
-                    return@withContext Result.failure(IllegalStateException("服务器未返回口令"))
+                    return@withContext Result.failure(IllegalStateException(AndroidMiscStr.serverNoCodeReturned()))
                 }
                 Result.success(
                     CreateResult(
@@ -143,7 +144,7 @@ object ShareCodeApi {
         try {
             val trimmed = code.trim()
             if (trimmed.isBlank()) {
-                return@withContext Result.failure(IllegalArgumentException("请输入口令"))
+                return@withContext Result.failure(IllegalArgumentException(BackupStr.enterShareCode()))
             }
             val url = "$BASE_URL?code=${java.net.URLEncoder.encode(trimmed, "UTF-8")}"
             val request = Request.Builder().url(url).get().build()
@@ -160,15 +161,15 @@ object ShareCodeApi {
                         IllegalStateException(
                             err.ifBlank {
                                 when (resp.code) {
-                                    404 -> "口令不存在或已过期"
-                                    else -> "服务器错误 HTTP ${resp.code}"
+                                    404 -> BackupStr.shareCodeNotFound()
+                                    else -> AndroidMiscStr.serverErrorHttpN(resp.code)
                                 }
                             }
                         )
                     )
                 }
                 if (json == null || !json.optBoolean("ok", false)) {
-                    return@withContext Result.failure(IllegalStateException("口令不存在或已过期"))
+                    return@withContext Result.failure(IllegalStateException(BackupStr.shareCodeNotFound()))
                 }
                 @Suppress("UNCHECKED_CAST")
                 val data = json.optJSONObject("schedule_data")?.let { obj ->
@@ -176,12 +177,12 @@ object ShareCodeApi {
                     com.google.gson.Gson().fromJson<Map<String, Any>>(obj.toString(), type)
                 }
                 if (data == null) {
-                    return@withContext Result.failure(IllegalStateException("课表数据无效"))
+                    return@withContext Result.failure(IllegalStateException(AndroidMiscStr.scheduleDataInvalid()))
                 }
                 Result.success(
                     FetchResult(
                         code = json.optString("code").ifBlank { trimmed },
-                        scheduleName = json.optString("schedule_name").ifBlank { "分享的课表" },
+                        scheduleName = json.optString("schedule_name").ifBlank { AndroidMiscStr.sharedScheduleName() },
                         scheduleData = data,
                     )
                 )
@@ -260,14 +261,10 @@ object ShareImageGenerator {
         }
     }
 
-    /** 系统分享：图片 + 口令文案 */
-    fun shareCard(context: Context, code: String, scheduleName: String): Boolean {
+    /** 系统分享：图片 + 口令文案（[validMinutes] 用服务端返回的 expires_in，别写死） */
+    fun shareCard(context: Context, code: String, scheduleName: String, validMinutes: Int): Boolean {
         val uri = writeShareImage(context, code) ?: return false
-        val text = buildString {
-            append("我分享了课表「").append(scheduleName).append("」\n")
-            append("口令：").append(code).append("\n")
-            append("打开 Nexio课程表，用口令导入即可（30 分钟内有效）")
-        }
+        val text = AndroidMiscStr.shareTextNN(scheduleName, code, validMinutes)
         val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
             type = "image/png"
             putExtra(android.content.Intent.EXTRA_STREAM, uri)
@@ -276,7 +273,7 @@ object ShareImageGenerator {
         }
         return try {
             context.startActivity(
-                android.content.Intent.createChooser(intent, "分享课表").apply {
+                android.content.Intent.createChooser(intent, AndroidMiscStr.shareScheduleChooser()).apply {
                     addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             )
@@ -284,6 +281,67 @@ object ShareImageGenerator {
         } catch (_: Exception) {
             false
         }
+    }
+}
+
+// ── 3.5 课表图片保存 ─────────────────────────────────────────────
+
+/**
+ * 把学期课表海报写入系统相册（Pictures/NexioSchedule）。
+ *
+ * Android 10+ 走 MediaStore，无需存储权限；旧版本需要 WRITE_EXTERNAL_STORAGE，
+ * 未授权时返回 `false` 由调用方提示。返回 `false` 时调用方提示失败。
+ */
+fun saveScheduleImageToGallery(context: Context, bitmap: Bitmap): Boolean {
+    val fileName = "schedule_${System.currentTimeMillis()}.png"
+    return try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(
+                    MediaStore.Images.Media.RELATIVE_PATH,
+                    "${Environment.DIRECTORY_PICTURES}/NexioSchedule"
+                )
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                ?: return false
+            resolver.openOutputStream(uri)?.use { out ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            } ?: return false
+            values.clear()
+            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+        } else {
+            if (ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                return false
+            }
+            @Suppress("DEPRECATION")
+            val dir = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                "NexioSchedule"
+            ).apply { mkdirs() }
+            val file = File(dir, fileName)
+            FileOutputStream(file).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            }
+            @Suppress("DEPRECATION")
+            MediaScannerConnection.scanFile(
+                context,
+                arrayOf(file.absolutePath),
+                arrayOf("image/png"),
+                null
+            )
+        }
+        true
+    } catch (_: Exception) {
+        false
     }
 }
 
@@ -299,30 +357,36 @@ fun performScheduleShare(
     val repository = CourseRepository.getInstance()
     val scheduleMap = buildShareScheduleMap(repository, scheduleName)
     if (scheduleMap == null) {
-        showToast("「$scheduleName」课表为空，无法分享")
+        showToast(AndroidMiscStr.scheduleEmptyNoShareN(scheduleName))
         return
     }
     onSharingChanged(true)
     scope.launch {
         try {
-            showToast("正在生成分享口令…")
+            showToast(AndroidMiscStr.generatingShareCode())
             val json = GsonBuilder().create().toJson(scheduleMap)
             ShareCodeApi.createShare(scheduleName, json).fold(
                 onSuccess = { created ->
+                    // 有效期以服务端 expires_in 为准，向上取整到分钟，至少 1
+                    val validMinutes = ((created.expiresInSeconds + 59) / 60).coerceAtLeast(1)
                     copyShareCodeToClipboard(context, created.code)
                     val ok = ShareImageGenerator.shareCard(
                         context,
                         created.code,
-                        created.scheduleName
+                        created.scheduleName,
+                        validMinutes,
                     )
                     if (ok) {
-                        showToast("口令已复制：「${created.code}」30 分钟内有效", longDuration = true)
+                        showToast(
+                            AndroidMiscStr.codeCopiedValidN(created.code, validMinutes),
+                            longDuration = true,
+                        )
                     } else {
-                        showToast("口令已复制「${created.code}」，但生成图片失败", longDuration = true)
+                        showToast(AndroidMiscStr.codeCopiedImageFailedN(created.code), longDuration = true)
                     }
                 },
                 onFailure = { e ->
-                    showToast("分享失败：${e.message ?: "网络错误"}")
+                    showToast(AndroidMiscStr.shareFailedN(e.message ?: AndroidMiscStr.networkErrorShort()))
                 }
             )
         } finally {

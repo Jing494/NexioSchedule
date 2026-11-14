@@ -1,6 +1,6 @@
 package com.haooz.chedule.ui.utils
 
-import com.haooz.chedule.data.nowLocalTime
+import com.haooz.chedule.data.util.nowLocalTime
 import kotlinx.datetime.LocalTime
 
 /**

@@ -5,29 +5,30 @@
 package com.haooz.chedule.ui.activities
 
 
+import com.haooz.chedule.ui.components.PageHeaderContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import com.haooz.chedule.ui.components.text.material.Text as Text
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -35,11 +36,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
@@ -47,37 +46,41 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.haooz.chedule.data.AppStorage
-import com.haooz.chedule.data.CourseRepository
-import com.haooz.chedule.data.NexioLog
-import com.haooz.chedule.data.TimeRoutine
-import com.haooz.chedule.data.getStringOrNull
-import com.haooz.chedule.data.hasKey
-import com.haooz.chedule.data.ioDispatcher
-import com.haooz.chedule.data.isJsonNull
-import com.haooz.chedule.data.optInt
-import com.haooz.chedule.data.optJsonArray
-import com.haooz.chedule.data.optString
-import com.haooz.chedule.data.parseJsonArray
-import com.haooz.chedule.data.parseJsonObject
+import com.haooz.chedule.data.model.TimeRoutine
+import com.haooz.chedule.data.platform.NexioLog
+import com.haooz.chedule.data.platform.ioDispatcher
+import com.haooz.chedule.data.platform.showToast
+import com.haooz.chedule.data.repo.CourseRepository
 import com.haooz.chedule.data.school.ScriptRepository
-import com.haooz.chedule.data.showToast
+import com.haooz.chedule.data.storage.AppStorage
+import com.haooz.chedule.data.storage.getStringOrNull
+import com.haooz.chedule.data.util.hasKey
+import com.haooz.chedule.data.util.isJsonNull
+import com.haooz.chedule.data.util.optInt
+import com.haooz.chedule.data.util.optJsonArray
+import com.haooz.chedule.data.util.optString
+import com.haooz.chedule.data.util.parseJsonArray
+import com.haooz.chedule.data.util.parseJsonObject
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.i18n.ImportStr
 import com.haooz.chedule.ui.basic.LiquidTopBarButton
+import com.haooz.chedule.ui.components.text.material.Text as Text
 import com.haooz.chedule.ui.utils.LocalNativeDocumentChrome
 import com.haooz.chedule.ui.utils.NativeDocumentAction
 import com.haooz.chedule.ui.utils.NativeDocumentActionEffect
 import com.haooz.chedule.ui.utils.isAppDarkTheme
 import com.haooz.chedule.ui.web.EduImportSelection
-import com.haooz.chedule.ui.utils.screenWidthDp
 import com.haooz.chedule.viewmodel.CourseViewModel
 import com.haooz.chedule.viewmodel.ScheduleViewModel
 import com.haooz.chedule.viewmodel.SettingsViewModel
 import com.haooz.chedule.viewmodel.courseViewModel
 import com.haooz.chedule.viewmodel.scheduleViewModel
 import com.haooz.chedule.viewmodel.settingsViewModel
-import com.kyant.backdrop.backdrops.LayerBackdrop
-import com.kyant.capsule.ContinuousCapsule
-import com.kyant.capsule.ContinuousRoundedRectangle
+import com.haooz.softglass.backdrop.backdrops.LayerBackdrop
+import com.haooz.softglass.backdrop.backdrops.layerBackdrop
+import com.haooz.softglass.backdrop.backdrops.rememberLayerBackdrop
+import com.haooz.softglass.shape.ContinuousCapsule
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -91,8 +94,6 @@ import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SearchBar
 import top.yukonga.miuix.kmp.basic.Surface
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ChevronBackward
 import top.yukonga.miuix.kmp.icon.extended.Close
@@ -103,6 +104,7 @@ import top.yukonga.miuix.kmp.layout.ProgressiveBlurTopBar
 import top.yukonga.miuix.kmp.layout.collapsibleTopInset
 import top.yukonga.miuix.kmp.layout.isTabletWidth
 import top.yukonga.miuix.kmp.layout.rememberSharedScrollBehavior
+import top.yukonga.miuix.kmp.layout.rememberTopBarMaterialState
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -145,7 +147,7 @@ fun EducationalImportScreen(
         drawRect(backgroundColor)
         drawContent()
     }
-    val liquidGlassBackdrop: LayerBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
+    val liquidGlassBackdrop: LayerBackdrop = com.haooz.softglass.backdrop.backdrops.rememberLayerBackdrop()
     val scrollBehavior = rememberSharedScrollBehavior()
 
     var searchQuery by remember { mutableStateOf("") }
@@ -160,22 +162,19 @@ fun EducationalImportScreen(
     }
 
     val isTablet = isTabletWidth()
-    val tabletHorizontalPadding = if (isTablet) {
-        val widthDp = screenWidthDp()
-        ((widthDp - 600).coerceIn(0, 600) / 600f * 112 + 16).dp
-    } else 0.dp
+    val tabletHorizontalPadding = if (isTablet) 20.dp else 16.dp
     val hapticFeedback = LocalHapticFeedback.current
-    val displayTabs = listOf("学校导入", "通用工具")
+    val displayTabs = listOf(ImportStr.tabSchoolImport(), ImportStr.generalTools())
 
     // 标题发布放在 Scaffold 外：content lambda 会被缓存，放里面不保证重新执行
     SideEffect {
-        nativeChrome?.title = "选择学校"
+        nativeChrome?.title = ImportStr.selectSchool()
         nativeChrome?.tintArgb = chromeTint
     }
     NativeDocumentActionEffect(
         NativeDocumentAction(
             symbol = "arrow.clockwise",
-            label = "更新",
+            label = CommonStr.update(),
             enabled = !isUpdating,
             busy = isUpdating,
             onClick = onForceUpdate,
@@ -233,15 +232,20 @@ fun EducationalImportScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .layerBackdrop(
-                        backdrop,
-                        recordKey = eduRecordKey,
-                        mustRecord = eduMustRecord
+                    .then(
+                        // 无材质档：顶栏走渐变遮罩、玻璃全关，录屏层不挂
+                        if (com.haooz.chedule.ui.utils.AppMaterialSettings.isNoneTier()) Modifier
+                        else Modifier.layerBackdrop(
+                            backdrop,
+                            recordKey = eduRecordKey,
+                            mustRecord = eduMustRecord
+                        )
                     )
             ) {
                 Box(
                     modifier = Modifier.fillMaxSize().then(
-                        Modifier.layerBackdrop(
+                        if (com.haooz.chedule.ui.utils.AppMaterialSettings.isNoneTier()) Modifier
+                        else Modifier.layerBackdrop(
                             liquidGlassBackdrop,
                             recordKey = eduRecordKey,
                             mustRecord = eduMustRecord
@@ -267,17 +271,20 @@ fun EducationalImportScreen(
                 }
             }
 
+            // 本页唯一材质状态：按钮玻璃走全站同一判据（本页遮罩常驻，不接 maskAlpha）
+            val material = rememberTopBarMaterialState(scrollBehavior)
             ProgressiveBlurTopBar(
                 backdrop = liquidGlassBackdrop,
                 height = blurHeight,
                 topInsetAdjustment = nativeBarInset,
             ) {
                 CollapsibleTopAppBar(
-                    title = "选择学校",
-                    largeTitle = "选择学校",
+                    title = ImportStr.selectSchool(),
+                    largeTitle = ImportStr.selectSchool(),
                     showLargeTitle = true,
                     modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
                     scrollBehavior = scrollBehavior,
+                    materialState = material,
                     contentPadding = {},
                     onAlphaChanged = { bd, sh ->
                         searchBackdropAlpha = bd
@@ -290,7 +297,7 @@ fun EducationalImportScreen(
                                 onClick = onFinish,
                                 backdrop = liquidGlassBackdrop,
                                 icon = MiuixIcons.ChevronBackward,
-                                contentDescription = "返回",
+                                contentDescription = CommonStr.back(),
                                 performHapticFeedback = false,
                                 iconSize = 25.dp,
                                 iconOffset = DpOffset(x = (-2).dp, y = 0.dp),
@@ -317,7 +324,7 @@ fun EducationalImportScreen(
                                     onClick = onForceUpdate,
                                     backdrop = liquidGlassBackdrop,
                                     icon = MiuixIcons.Normal.Update,
-                                    contentDescription = "更新",
+                                    contentDescription = CommonStr.update(),
                                     iconSize = 28.dp,
                                     backdropAlpha = backdropAlpha,
                                     shadowAlpha = shadowAlpha,
@@ -328,24 +335,21 @@ fun EducationalImportScreen(
                 )
             }
 
-            // :miuix 拿不到 App 偏好，isLightTheme 需显式传入，否则强制深浅色时底色与文字对不上。
-            // isAppDarkTheme 是 @Composable，必须在组合期先取好，不能塞进下面那个 lambda。
             val searchIsLightTheme = !isAppDarkTheme()
-            Column(
-                modifier = Modifier
-                    // The preceding header reports its height during measurement. Read it
-                    // during layout so the search field starts below it on the first frame.
-                    .padding(top = paddingValues.calculateTopPadding() + CollapsedHeight)
-                    .collapsibleTopInset(scrollBehavior)
-                    .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+            // 与所有文档页共用同一段「标题下方内容」定位（见 PageHeaderContent）
+            PageHeaderContent(
+                paddingValues = paddingValues,
+                scrollBehavior = scrollBehavior,
+                modifier = Modifier.windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
+                ),
             ) {
                 SearchBar(
                     modifier = Modifier.padding(
                         top = 8.dp,
                         bottom = 6.dp,
-                        start = 6.dp + tabletHorizontalPadding,
-                        end = 6.dp + tabletHorizontalPadding
+                        start = (tabletHorizontalPadding - 10.dp).coerceAtLeast(0.dp),
+                        end = (tabletHorizontalPadding - 10.dp).coerceAtLeast(0.dp)
                     ),
                     inputField = {
                         InputField(
@@ -354,7 +358,7 @@ fun EducationalImportScreen(
                             onSearch = { searchExpanded = false },
                             expanded = searchExpanded,
                             onExpandedChange = { searchExpanded = it },
-                            label = "搜索学校",
+                            label = ImportStr.searchSchool(),
                             backdrop = liquidGlassBackdrop,
                             backdropAlpha = searchBackdropAlpha,
                             shadowAlpha = searchShadowAlpha,
@@ -373,7 +377,7 @@ fun EducationalImportScreen(
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth()
-                        .padding(horizontal = 20.dp + tabletHorizontalPadding, vertical = 4.dp),
+                        .padding(horizontal = tabletHorizontalPadding, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     displayTabs.forEachIndexed { index, tabName ->
@@ -483,7 +487,7 @@ internal fun applyPresetTimeSlots(
 
         prefs.edit { remove("preset_time_slots") }
     } catch (e: Exception) {
-        NexioLog.e("EduImport", "应用预设时间段失败: ${e.message}")
+        NexioLog.e("EduImport", ImportStr.logApplyPresetFailed(e.message))
     }
 }
 
@@ -513,9 +517,9 @@ internal fun applyImportedScheduleConfig(
             repository.setClassStartTime(targetScheduleId, startDate)
         }
         applied = true
-        NexioLog.d("EduImport", "应用开学日: raw=$rawStart -> $startDate target=$targetScheduleId")
+        NexioLog.d("EduImport", ImportStr.logApplyStartDate(rawStart, startDate, targetScheduleId))
     } else if (!rawStart.isNullOrBlank()) {
-        NexioLog.w("EduImport", "开学日无法解析，已忽略: $rawStart")
+        NexioLog.w("EduImport", ImportStr.logStartDateIgnored(rawStart))
     }
     if (totalWeeks > 0) {
         if (isTargetCurrent) {
@@ -539,7 +543,7 @@ internal fun applyImportedScheduleConfig(
                 shortBreak = breakDuration.takeIf { it > 0 } ?: 10,
             )
             applied = true
-            NexioLog.d("EduImport", "应用默认节次时长: class=$classDuration break=$breakDuration target=$targetId")
+            NexioLog.d("EduImport", ImportStr.logApplyDurations(classDuration, breakDuration, targetId))
         }
     }
 
@@ -566,7 +570,7 @@ internal fun applyImportedScheduleConfig(
                     } else {
                         scheduleViewModel.saveCoursesToSchedule(targetId, remapped)
                     }
-                    NexioLog.d("EduImport", "按周起始日归一化星期: firstDayOfWeek=$firstDayOfWeek target=$targetId")
+                    NexioLog.d("EduImport", ImportStr.logNormalizeWeekdays(firstDayOfWeek, targetId))
                 }
             }
             applied = true
@@ -583,7 +587,7 @@ internal fun applyImportedScheduleConfig(
         remove("target_schedule_id")
     }
     if (applied) {
-        NexioLog.d("EduImport", "应用课表配置成功: 开学时间=$startDate, 总周数=$totalWeeks, target=$targetScheduleId")
+        NexioLog.d("EduImport", ImportStr.logApplyConfigSuccess(startDate, totalWeeks, targetScheduleId))
     }
 }
 
@@ -634,7 +638,9 @@ internal fun applyComboSchedule(
             return
         }
 
-        val base = repository.getTimeConfig(repository.getScheduleTimeConfigId(targetId))
+        // 目标课表可能未绑定（脚本指定的表 / 历史脏数据）：用「可写」入口先补绑，
+        // 否则下面的 saveTimeConfig 会把组合作息写进它回退到的那套配置
+        val base = repository.getWritableTimeConfig(targetId)
         val morning = base.morningSections
         val afternoon = base.afternoonSections
         val evening = base.eveningSections
@@ -665,7 +671,7 @@ internal fun applyComboSchedule(
 
             TimeRoutine(
                 id = nextId++,
-                name = item.name.ifBlank { comboName.ifBlank { "作息方案" } },
+                name = item.name.ifBlank { comboName.ifBlank { ImportStr.defaultRoutineName() } },
                 effectiveMonth = month,
                 effectiveDay = TimeRoutine.clampDayOfMonth(month, day),
                 // 时间字段以基础配置为准：方案只携带节次时间差量，其余沿用课表当前值
@@ -699,9 +705,9 @@ internal fun applyComboSchedule(
             courseViewModel.refreshEssentialData()
         }
         prefs.edit { remove("combo_schedule") }
-        NexioLog.d("EduImport", "应用组合作息成功: ${routines.size} 个方案 target=$targetId")
+        NexioLog.d("EduImport", ImportStr.logApplyComboSuccess(routines.size, targetId))
     } catch (e: Exception) {
-        NexioLog.e("EduImport", "应用组合作息失败: ${e.message}")
+        NexioLog.e("EduImport", ImportStr.logApplyComboFailed(e.message))
     }
 }
 
@@ -770,7 +776,7 @@ object EduImportUpdater {
                 )
                 prefs.edit { putLong(KEY_LAST_UPDATE_TIME, Clock.System.now().toEpochMilliseconds()) }
             } catch (e: Exception) {
-                NexioLog.e(TAG, "更新失败: ${e.message}")
+                NexioLog.e(TAG, ImportStr.logUpdateFailed(e.message))
             } finally {
                 isUpdating.value = false
                 dataVersion.value++
@@ -787,10 +793,10 @@ object EduImportUpdater {
                     onLog = { }
                 )
                 val msg = when (result) {
-                    0 -> "已是最新版本"
-                    1 -> "更新完成"
-                    -1 -> "更新失败，请检查网络连接"
-                    else -> "更新失败"
+                    0 -> ImportStr.alreadyLatest()
+                    1 -> ImportStr.updateComplete()
+                    -1 -> ImportStr.updateFailedNoNetwork()
+                    else -> ImportStr.updateFailed()
                 }
                 // Toast 必须回主线程（Main 是 kotlinx-coroutines 的跨平台 dispatcher）。⚠ 与迁移前逐字一致，勿改。
                 withContext(Dispatchers.Main) { showToast(msg) }
@@ -799,8 +805,8 @@ object EduImportUpdater {
                     prefs.edit { putLong(KEY_LAST_UPDATE_TIME, Clock.System.now().toEpochMilliseconds()) }
                 }
             } catch (e: Exception) {
-                NexioLog.e(TAG, "手动更新失败: ${e.message}")
-                withContext(Dispatchers.Main) { showToast("更新失败") }
+                NexioLog.e(TAG, ImportStr.logManualUpdateFailed(e.message))
+                withContext(Dispatchers.Main) { showToast(ImportStr.updateFailed()) }
             } finally {
                 isUpdating.value = false
                 dataVersion.value++

@@ -1,7 +1,20 @@
 package com.haooz.chedule.data
 
 import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
+import com.haooz.chedule.data.backup.decodeCourses
+import com.haooz.chedule.data.backup.decodeLongList
+import com.haooz.chedule.data.backup.decodeScheduleFolders
+import com.haooz.chedule.data.backup.decodeStringList
+import com.haooz.chedule.data.backup.encodeCourses
+import com.haooz.chedule.data.backup.encodeScheduleFolders
+import com.haooz.chedule.data.backup.encodeStringList
+import com.haooz.chedule.data.backup.encodeTimeConfig
+import com.haooz.chedule.data.backup.parseTimeConfigSnapshotOrNull
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.model.TimeConfig
+import com.haooz.chedule.data.storage.ScheduleFolder
+import com.haooz.chedule.data.util.jsonToPlainValue
+import com.haooz.chedule.data.util.parseJsonElement
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -76,7 +89,24 @@ class GsonParitySyntheticTest {
     @Test
     fun `新编码器的课程 JSON 与 Gson 语义一致`() {
         val courses = sampleCourses()
-        assertEquals(semantic(gson.toJson(courses)), semantic(encodeCourses(courses)))
+        // 备注是后加字段：空值不落盘，存量课程 JSON 才能逐字不变。
+        // Gson 走反射会把空 note / 空 weekNotes 一起写出来 —— 这条差异是有意的，比较前剔掉。
+        assertEquals(
+            dropEmptyNoteFields(semantic(gson.toJson(courses))),
+            semantic(encodeCourses(courses)),
+        )
+    }
+
+    /** 递归删掉空备注字段：`note` 为 ""、`weekNotes` 为空对象。 */
+    private fun dropEmptyNoteFields(value: Any?): Any? = when (value) {
+        is Map<*, *> -> value.entries
+            .filterNot { (key, item) ->
+                (key == "note" && item == "") ||
+                    (key == "weekNotes" && (item as? Map<*, *>)?.isEmpty() == true)
+            }
+            .associate { it.key.toString() to dropEmptyNoteFields(it.value) }
+        is List<*> -> value.map { dropEmptyNoteFields(it) }
+        else -> value
     }
 
     @Test

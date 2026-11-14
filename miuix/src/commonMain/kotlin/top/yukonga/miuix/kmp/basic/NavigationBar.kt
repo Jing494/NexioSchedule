@@ -31,7 +31,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
@@ -56,7 +55,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.sp
-import top.yukonga.miuix.kmp.squircle.squircleBackground
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
+import com.haooz.softglass.shape.continuousBackground
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.Platform
 import top.yukonga.miuix.kmp.utils.platform
@@ -292,7 +292,7 @@ fun FloatingNavigationBar(
     defaultWindowInsetsPadding: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    val shape = RoundedCornerShape(cornerRadius)
+    val shape = ContinuousRoundedRectangle(cornerRadius)
 
     val navBarBottomPadding = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom).asPaddingValues().calculateBottomPadding()
     val bottomPaddingValue = when (platform()) {
@@ -335,7 +335,7 @@ fun FloatingNavigationBar(
                 .then(
                     if (showDivider) {
                         Modifier
-                            .squircleBackground(
+                            .continuousBackground(
                                 color = MiuixTheme.colorScheme.dividerLine,
                                 cornerRadius = cornerRadius,
                             )
@@ -358,7 +358,7 @@ fun FloatingNavigationBar(
                         Modifier
                     },
                 )
-                .squircleBackground(color = color, cornerRadius = cornerRadius)
+                .continuousBackground(color = color, cornerRadius = cornerRadius)
                 .then(modifier)
                 .padding(horizontal = FloatingNavigationBarDefaults.HorizontalPadding)
                 .align(horizontalAlignment)

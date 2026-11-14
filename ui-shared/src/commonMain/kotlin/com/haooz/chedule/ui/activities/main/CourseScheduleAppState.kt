@@ -19,7 +19,6 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -27,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedback
@@ -38,71 +36,89 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import com.haooz.chedule.data.AppearanceConfig
-import com.haooz.chedule.data.AppearanceStore
-import com.haooz.chedule.data.Course
-import com.haooz.chedule.data.CourseRepository
-import com.haooz.chedule.data.HolidayManager
-import com.haooz.chedule.data.SwitchCardSnapshotStore
-import com.haooz.chedule.data.TeachingWeekReorganizationRule
-import com.haooz.chedule.data.ThemeMode
-import com.haooz.chedule.data.UpdateController
 import com.haooz.chedule.data.WallpaperStore
 import com.haooz.chedule.data.WallpaperTransform
-import com.haooz.chedule.data.todayLocalDate
+import com.haooz.chedule.data.appearance.AppearanceConfig
+import com.haooz.chedule.data.appearance.AppearanceStore
+import com.haooz.chedule.data.appearance.ThemeMode
+import com.haooz.chedule.data.holiday.TeachingWeekReorganizationRule
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.platform.UpdateController
+import com.haooz.chedule.data.repo.CourseRepository
+import com.haooz.chedule.data.util.todayLocalDate
+import com.haooz.chedule.ui.activities.classschedule.ScheduleGridGeometry
+import com.haooz.chedule.ui.activities.classschedule.ScheduleViewMode
 import com.haooz.chedule.ui.activities.today.TodayAssistantCardData
+import com.haooz.chedule.ui.components.PageSwitchState
 import com.haooz.chedule.ui.components.SharedFileIntent
-import com.haooz.chedule.ui.effects.motion.CUSTOMIZE_COVER_FADE_MILLIS
-import com.haooz.chedule.ui.effects.motion.CUSTOMIZE_COVER_HOLD_MILLIS
-import com.haooz.chedule.ui.effects.motion.CUSTOMIZE_COVER_SCALE_MILLIS
-import com.haooz.chedule.ui.effects.motion.CustomizePageEasing
+import com.haooz.chedule.ui.effects.motion.MORPH_BACKGROUND_SHRINK
 import com.haooz.chedule.ui.effects.motion.OobeCubicOutEasing
 import com.haooz.chedule.ui.effects.motion.OobeQuartOutEasing
 import com.haooz.chedule.ui.navigation.AppRouter
-import com.haooz.chedule.ui.activities.classschedule.ScheduleGridGeometry
 import com.haooz.chedule.ui.utils.FeatureLog
 import com.haooz.chedule.ui.utils.HostNavigationState
-import com.haooz.chedule.ui.utils.PagerTakeoverGestureState
 import com.haooz.chedule.ui.utils.ScreenCornerRadiiPx
+import com.haooz.chedule.ui.utils.TodayViewMode
 import com.haooz.chedule.ui.utils.TransitionLayerSnapshot
 import com.haooz.chedule.ui.utils.captureScreenWithNativeChrome
-import com.haooz.chedule.ui.utils.clipDuringTransition
-import com.haooz.chedule.ui.utils.clipScreenCorners
+import com.haooz.chedule.ui.utils.freezeSource
+import com.haooz.chedule.ui.utils.loadScheduleViewMode
+import com.haooz.chedule.ui.utils.loadTodayViewMode
+import com.haooz.chedule.ui.utils.saveScheduleViewMode
+import com.haooz.chedule.ui.utils.saveTodayViewMode
 import com.haooz.chedule.viewmodel.CourseViewModel
 import com.haooz.chedule.viewmodel.ScheduleViewModel
 import com.haooz.chedule.viewmodel.SettingsViewModel
 import com.haooz.chedule.viewmodel.ShiftViewModel
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.LayerBackdrop
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.isoDayNumber
-import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
+import com.haooz.softglass.backdrop.GlassBackdrop
+import com.haooz.softglass.backdrop.backdrops.LayerBackdrop
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.isoDayNumber
+import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
+import top.yukonga.miuix.kmp.utils.OverScrollState
 
 /**
- * 课表主界面的全部可变状态与交互逻辑。
+ * 课表主界面的状态与交互逻辑，由 [CourseScheduleApp] 用 `remember` 持有。
  *
- * 从 `CourseScheduleApp.kt` 拆出：主函数只负责「注入上下文 + 跑组合副作用 + 画 UI」，
- * 具体状态都挂在这里。实例由 `remember { }` 持有，生命周期与原局部 `remember` 一致。
+ * 字段分三类，不要混用：
+ * 1. `by mutableStateOf(...)`：界面状态，读写都参与重组；
+ * 2. 普通 `var`：每次重组由外壳同步的当前值快照，只在外壳里写，子组合读它不订阅；
+ * 3. `lateinit var`：组合期创建、注入一次即不变的实例。
  *
- * ⚠ 这里的字段分三类，别混：
- * 1. `by mutableStateOf(...)` —— 真正的界面状态（原来是 `remember { mutableStateOf }`）。
- * 2. `var xxx: T = 默认` —— 每次重组由 Composable 侧同步的「当前值快照」
- *    （原来是 Composable 里的 `val xxx = ...` 或 `collectAsState()`）；不要在这边改。
- * 3. `lateinit var xxx` —— 组合期创建的实例（PagerState / GraphicsLayer / Density…），
- *    注入一次后不变。
+ * `Animatable.value` 一律只在 draw 阶段读，避免逐帧动画触发重组。
  */
 
-/** 拖到边缘后每一页之间的驻留时间：卡片停在热区里，每满 500ms 翻一页 */
+/** 拖到边缘后每一页之间的驻留时间：卡片停在热区里，每满 500ms 翻一页。 */
 private const val EDGE_AUTO_PAGE_INTERVAL_MS = 500L
+
+/** 浮动卡片飞行时长（ns）：粘贴 / 覆盖 / 交换 / 回程共用一条时间轴。 */
+private const val FLIGHT_DURATION_NANOS = 480_000_000f
+
+/**
+ * 平板主界面专属的切页转场参数（手机走横向平移，iOS 原生底栏不走这里）。
+ *
+ * 双页共存由 `tabletTransitionFrom` + [CourseScheduleAppState.tabletTabTransition] 驱动：
+ * 切页前登记旧页，宿主在转场期间同时组合并绘制新旧两页。进度是 0..1 的 float state，
+ * 空闲置 1（终态），不要用 -1 当哨兵 —— 收尾那一帧会被 `coerceIn(0,1)` 当成 0，
+ * 新旧页 alpha 当场反转。
+ */
+internal object TabletTabTransitionSpec {
+    /** 旧页 1.0 → SCALE_MIN，新页 SCALE_MIN → 1.0 */
+    const val SCALE_MIN = 0.98f
+    const val MAX_BLUR_DP = 8f
+    const val DURATION_MS = 270
+}
 
 @Stable
 class CourseScheduleAppState {
@@ -113,21 +129,23 @@ class CourseScheduleAppState {
     lateinit var settingsViewModel: SettingsViewModel
     lateinit var shiftViewModel: ShiftViewModel
     lateinit var router: AppRouter
-    lateinit var liquidGlassBackdrop: LayerBackdrop
-    /**
-     * 顶栏那一层的玻璃采样层：只录顶栏本身。它自己是玻璃，采的是
-     * [liquidGlassBackdrop]；录出来的这一层给更上面的组合层用。
-     */
-    lateinit var topBarSampleBackdrop: LayerBackdrop
-    /** 底栏那一层的玻璃采样层，用途同 [topBarSampleBackdrop] */
+    /** 壁纸单录一层（屏幕坐标、静态）：页内顶栏/菜单采样「壁纸 + 本页内容」时壁纸来自这里。 */
+    lateinit var wallpaperBackdrop: LayerBackdrop
+    /** 各页只录内容（不含顶栏/菜单），底栏、侧栏、浮层靠它们采样。 */
+    lateinit var todayContentBackdrop: LayerBackdrop
+    lateinit var scheduleContentBackdrop: LayerBackdrop
+    lateinit var shiftContentBackdrop: LayerBackdrop
+    lateinit var settingsContentBackdrop: LayerBackdrop
+    lateinit var courseManageContentBackdrop: LayerBackdrop
+    lateinit var switchScheduleContentBackdrop: LayerBackdrop
+    /** 壁纸 + 所有页面内容；底栏、侧栏、详情浮层采样用，不含顶栏/菜单以免循环采样。 */
+    lateinit var mainContentBackdrop: GlassBackdrop
+    /** 底栏自身的采样层（底栏是玻璃，采 [mainContentBackdrop]）；宿主自绘底栏时不创建。 */
     lateinit var bottomBarSampleBackdrop: LayerBackdrop
-    /**
-     * [liquidGlassBackdrop] + 顶栏 + 底栏 的组合层 = 「比底栏还高一层」的采样层。
-     * 画在弹窗层的东西（「更多」下拉菜单、OverlayDialog）采它，玻璃里才看得到顶栏/底栏。
-     * 顶栏/底栏自己**不能**采它（会采到自己，见 LayerBackdropModifier 的循环采样问题）。
-     */
-    lateinit var overlayGlassBackdrop: Backdrop
-    lateinit var sharedWallpaperBackdrop: LayerBackdrop
+    /** 「回到今日 / 本周」悬浮钮的采样层，与底栏一起进 [overlayGlassBackdrop]；自身不采本层。 */
+    lateinit var backToNowSampleBackdrop: LayerBackdrop
+    /** [mainContentBackdrop] + 底栏（+ 悬浮钮）= 比底栏高一层的采样层，供 OverlayDialog 使用。 */
+    lateinit var overlayGlassBackdrop: GlassBackdrop
     lateinit var windowInfo: WindowInfo
     lateinit var densityProvider: Density
     lateinit var detailLayerLayoutDirection: LayoutDirection
@@ -140,15 +158,20 @@ class CourseScheduleAppState {
     lateinit var scheduleScrollState: ScrollState
     lateinit var todayListState: LazyListState
     lateinit var screenCornerRadius: ScreenCornerRadiiPx
-    lateinit var pagerState: PagerState
-    lateinit var todayPagerState: PagerState
-    lateinit var mainPagerState: PagerState
+    /** 周页横向位置。 */
+    lateinit var weekPageState: PageSwitchState
+
+    /** 今日页翻日横向位置。 */
+    lateinit var todayPageState: PageSwitchState
+    /** 主 tab 位置来源：手机自绘平移，平板 / iOS 纵向 pager。 */
+    lateinit var mainTabPosition: MainTabPosition
+    /** 手机端平移状态。 */
+    lateinit var mainTabSwitchState: PageSwitchState
+    /** 竖排分支 pager，手机端为 null。 */
+    var verticalMainPagerState: PagerState? = null
 
     /** 长距跳转的借位页：让相邻页临时显示目标周，滑一页就到位（见 [PagerJumpNeighbor]） */
     val weekJumpNeighbor = PagerJumpNeighbor()
-
-    /** 周 pager 的手势接管状态：借位跳周被手势打断时同步平移落页基准（组合期由 MainContent 注入） */
-    var weekPagerGestureState: PagerTakeoverGestureState? = null
 
     /** 同上，今日页按天 */
     val todayJumpNeighbor = PagerJumpNeighbor()
@@ -156,6 +179,13 @@ class CourseScheduleAppState {
     var settingsScrollBehavior: SharedScrollBehavior? = null
     var todayScrollBehavior: SharedScrollBehavior? = null
     var scheduleScrollBehavior: SharedScrollBehavior? = null
+
+    /**
+     * 首页越界状态：顶栏画在 `Scaffold(topBar)` 槽、内容在 content 槽，两者必须读**同一个**
+     * `LocalOverScrollState` 实例，顶栏材质判据的「停在顶部向下回弹」那一支才活。
+     * 只建一份（同一时刻只有一页在滚），由 [CourseScheduleAppMainContent] 提供给整棵 Scaffold。
+     */
+    val mainOverScrollState: OverScrollState = OverScrollState()
     lateinit var mainContentNestedScroll: NestedScrollConnection
 
     // ── 2. 每次重组同步的当前值（别在这边写）────────────────────────────────
@@ -178,13 +208,9 @@ class CourseScheduleAppState {
     var courses: List<Course> = emptyList()
     var dayRange: List<Int> = emptyList()
     var weekDates: List<LocalDate> = emptyList()
-    var settingsPageClipShape: Shape? = null
-    var settingsTopBarClipShape: Shape? = null
-    var settingsCardOnScreen: () -> Boolean = { false }
     var latestScreenWPx: Float = 0f
     var latestScreenHPx: Float = 0f
     var latestMainTabSelected: (Int) -> Unit = {}
-    var cancelUnfinishedMainTabAnim: () -> Unit = {}
     var pushCutoutChromeOffset: (Double) -> Unit = {}
     var isTablet: Boolean = false
     var screenWPx: Float = 0f
@@ -197,7 +223,12 @@ class CourseScheduleAppState {
      */
     var glowAlpha by mutableFloatStateOf(0f)
     var persistedScheduleThemeMode: ThemeMode = ThemeMode.FOLLOW_APP
-    var initialCombWallpaperIsLight: Boolean? = null
+
+    /**
+     * 搭配未加载完时的壁纸测光兜底。直接读盘上快照（与 [buildCombination] 同源），
+     * 所以加载完不会跳主题；留 null 会让首帧按系统深浅画，壁纸到位再翻一次。
+     */
+    var initialCombWallpaperIsLight: Boolean? = AppearanceStore.getWallpaperIsLight()
 
     // ── 3. 宿主注入的平台能力 ─────────────────────────────────────────────
     var privacyConsented: Boolean = true
@@ -208,6 +239,8 @@ class CourseScheduleAppState {
     var onPickWallpaperImage: (((ImageBitmap?) -> Unit) -> Unit)? = null
     var onShareSchedule: ((scheduleName: String, onSharingChanged: (Boolean) -> Unit) -> Unit)? =
         null
+    /** 学期课表预览「保存为图片」：出好的海报交给宿主落盘；`null` 时下载按钮不显示（非 Android 宿主）。 */
+    var onSaveScheduleImage: ((ImageBitmap) -> Unit)? = null
     var onReadSharedFileText: ((String) -> String?)? = null
     var sharedFileIntent: SharedFileIntent? = null
     var onShareIntentConsumed: () -> Unit = {}
@@ -240,24 +273,19 @@ class CourseScheduleAppState {
     // 供今日/课程表卡片玻璃采样：录的是共享壁纸层，不是页内透明占位
     val totalSections get() = morningSections + afternoonSections + eveningSections
 
-    // 只在「返回」时刷新；冷启动首次 onResume 时 ViewModel 刚加载完，再全量刷会拖慢首屏
-    // 节假日/调休保存不走课程 reload；resume 时对比 HolidayManager 版本，变了才 bump dataVersion
-    var seenHolidayVersion by mutableLongStateOf(HolidayManager.getVersion())
     val navBarStyle get() = if (isTablet) "rail" else "standard"
     val nativeBottomBar get() = hostNavigation != null && !isTablet
     val useVerticalMainPager
         get() = isTablet ||
                 (nativeBottomBar && hostNavigation?.usesVerticalTabTransitions == true)
 
-    // 首帧后预热 RenderEffect，避免首次开 BlurBottomSheet 掉帧
+    /** 首帧预热 RenderEffect 用的模糊半径（px），由外壳按当前密度算好。 */
     var warmupBlurPx: Float = 0f
-    var blurWarmupReady by mutableStateOf(false)
 
     // 侧栏展开状态用全局对象；内容让位只在 layout 读进度，避免整树每帧重组
     // 侧栏伸缩后强制续录 + 顶栏糊层重采样：否则采样停在旧帧，切页才会恢复
     val railBlurResampleEpoch = mutableIntStateOf(0)
     val railForceRecordFrames = intArrayOf(0)
-    var showCourseDetailPopup by mutableStateOf(false)
     var detailCourses by mutableStateOf<List<Course>>(emptyList())
     var detailCardLeft by mutableFloatStateOf(0f)
     var detailCardTop by mutableFloatStateOf(0f)
@@ -265,11 +293,14 @@ class CourseScheduleAppState {
     var detailCardHeight by mutableFloatStateOf(0f)
     var detailSnapshot by mutableStateOf<TransitionLayerSnapshot?>(null)
     var showDetail by mutableStateOf(false)
+    /** 详情页是否已放行播放展开动画（见 openCourseDetail：先上屏卡态，再藏源卡拍快照） */
+    var detailMorphStarted by mutableStateOf(false)
 
     // 详情页退出中：主内容提前恢复绘制（快照垫底），画出来后再撤快照。见 onBackStart。
     var detailExiting by mutableStateOf(false)
     var detailFromToday by mutableStateOf(false)
     var detailTargetWeek by mutableIntStateOf(0)
+    /** 进详情前要藏掉的源卡片：先藏再截整页，快照里才不会留下它 */
     var hiddenCourseIds by mutableStateOf(setOf<String>())
     var isDraggingCard by mutableStateOf(false)
     // 被浮层顶替的 (课程 id, 周次)。必须带周次：多周课在每一周都是同一条记录，
@@ -281,7 +312,6 @@ class CourseScheduleAppState {
 
     // 速度/采样时间只在 spring 起始读；offset 走 floatingOffset* 的 graphicsLayer，不进组合
     val dragMotion = DragMotionHolder()
-    var draggedCardBackdrop by mutableStateOf<Backdrop?>(null)
     var draggedWeek by mutableIntStateOf(1)
 
     // 源卡片所在的**列**星期（几何坐标）。调课日列的数据星期 ≠ 列星期，
@@ -373,10 +403,13 @@ class CourseScheduleAppState {
     var shortcutMenuVisible by mutableStateOf(false)
     var shortcutMenuPosition by mutableStateOf(Offset.Zero)
     var shortcutMenuSize by mutableStateOf(IntSize.Zero)
-    var shortcutMenuBackdrop by mutableStateOf<Backdrop?>(null)
+    var shortcutMenuBackdrop by mutableStateOf<GlassBackdrop?>(null)
 
     // 左移时菜单右边缘对齐卡片右边缘
     var shortcutMenuAnchorWidth by mutableFloatStateOf(0f)
+
+    /** 长按菜单是否给「复制」：时间轴是只读视图，复制/粘贴按节次跨度落位，不给 */
+    var shortcutMenuAllowCopy by mutableStateOf(true)
 
     // (星期, 起始节次)；粘贴目标=长按格
     // columnDay 用于格子高亮；addDay/addWeek 供「添加」默认落到调课来源星期/周
@@ -392,7 +425,6 @@ class CourseScheduleAppState {
     var customizeSnapshot by mutableStateOf<ImageBitmap?>(null)
     var snapshotCoverBitmap by mutableStateOf<ImageBitmap?>(null)
     var isCustomizeExiting by mutableStateOf(false)
-    var customizeExitTargetScale by mutableFloatStateOf(1f)
     val customizeExitScale = Animatable(1f)
     val customizeExitAlpha = Animatable(1f)
     var isWindowCutoutActive by mutableStateOf(false)
@@ -401,7 +433,6 @@ class CourseScheduleAppState {
     var customizeCoverActive by mutableStateOf(false)
     val customizeCoverScale = Animatable(1f)
     val customizeCoverAlpha = Animatable(1f)
-    val wallpaperRepository = CourseRepository()
     var combinations by mutableStateOf(listOf<ScheduleCombination>())
     var currentCombinationIndex by mutableIntStateOf(0)
     var wallpaperBitmap by mutableStateOf(WallpaperStore.currentImageBitmap())
@@ -445,7 +476,6 @@ class CourseScheduleAppState {
     // 各页预先固定的主题（与 selectedTab 无关）
     // 今日页与课程表页壁纸恒同步，故两者共用同一壁纸锁定主题
     val todayPageForcedDark get() = wallpaperForcedDark
-    val settingsPageForcedDark: Boolean? get() = null
 
     // 顶栏/底栏等 chrome 跟当前页有效主题
     val forcedDark
@@ -471,7 +501,6 @@ class CourseScheduleAppState {
     var originalWallpaperBitmap by mutableStateOf<ImageBitmap?>(null)
     var originalWallpaperOffset by mutableStateOf(wallpaperOffset)
     var originalWallpaperScale by mutableFloatStateOf(wallpaperScale)
-    var originalSnapshot by mutableStateOf<ImageBitmap?>(null)
 
     // 退出（非应用）时还原主题锁定
     var originalWallpaperIsLight by mutableStateOf<Boolean?>(null)
@@ -481,39 +510,49 @@ class CourseScheduleAppState {
     var isApplyingCustomize by mutableStateOf(false)
     var pendingEnterCutout by mutableStateOf(false)
 
-    // 外观从当前搭配派生，编辑只写 combinations；未加载时回退启动缓存防冷启动闪默认值
+    // 外观从当前搭配派生，编辑只写 combinations；未加载时回退启动缓存防冷启动闪默认值。
+    // ⚠ 保持未钳制的纯派生：存档保存（AppearanceStore.saveCardBlur 等）与外观编辑页都走它；
+    // 无材质档的「卡片模糊/折射渲染强制关」在 CourseScheduleApp 的 displayAppearance 处做。
     fun currentAppearance(): AppearanceConfig =
         combinations.getOrNull(currentCombinationIndex)
             ?.let { AppearanceConfig.fromCombination(it) }
             ?: AppearanceStore.cachedConfig
 
-    fun applyAppearance(value: AppearanceConfig) {
+    /** 只改当前搭配；下标越界（尚未加载）时忽略。 */
+    fun updateCurrentCombination(transform: (ScheduleCombination) -> ScheduleCombination) {
         val idx = currentCombinationIndex
         if (idx in combinations.indices) {
-            combinations = combinations.toMutableList().also { list ->
-                list[idx] = list[idx].copy(
-                    cardBlurRadius = value.cardBlurRadius,
-                    cardAlpha = value.cardAlpha.coerceIn(0f, 1f),
-                    cardSurfaceAlpha = value.cardSurfaceAlpha.coerceIn(0f, 1f),
-                    cardHeight = value.cardHeight,
-                    cardCornerRadius = value.cardCornerRadius,
-                    wallpaperBrightness = value.wallpaperBrightness,
-                    showBreakDividers = value.showBreakDividers,
-                    cardContentAlignment = value.cardContentAlignment,
-                    cardTextColor = value.cardTextColor,
-                    cardTextScale = value.cardTextScale,
-                    showClassroom = value.showClassroom,
-                    showTeacher = value.showTeacher,
-                    cardRefraction = value.cardRefraction,
-                    wallpaperBlur = value.wallpaperBlur
-                )
-            }
+            combinations = combinations.toMutableList().also { it[idx] = transform(it[idx]) }
+        }
+    }
+
+    fun applyAppearance(value: AppearanceConfig) {
+        updateCurrentCombination {
+            it.copy(
+                cardBlurRadius = value.cardBlurRadius,
+                cardAlpha = value.cardAlpha.coerceIn(0f, 1f),
+                cardSurfaceAlpha = value.cardSurfaceAlpha.coerceIn(0f, 1f),
+                cardHeight = value.cardHeight,
+                cardCornerRadius = value.cardCornerRadius,
+                wallpaperBrightness = value.wallpaperBrightness,
+                showBreakDividers = value.showBreakDividers,
+                showWeekGridLines = value.showWeekGridLines,
+                cardContentAlignment = value.cardContentAlignment,
+                cardTextColor = value.cardTextColor,
+                cardTextScale = value.cardTextScale,
+                showClassroom = value.showClassroom,
+                showTeacher = value.showTeacher,
+                cardRefraction = value.cardRefraction,
+                cardEdgeThickness = value.cardEdgeThickness,
+                cardRim = value.cardRim,
+                wallpaperBlur = value.wallpaperBlur
+            )
         }
     }
 
     /**
-     * 搭配读取唯一入口：冷启动 IO 路径与伴生缓存路径都走这里。
-     * 两份逐字段复制的构造曾是 bug 温床，新增外观字段只需改此处。
+     * 搭配读取唯一入口：冷启动 IO 路径与伴生缓存路径都走这里。新增外观字段只改这一处
+     * （两份逐字段复制的构造漏一处就静默丢字段）。
      */
     fun buildCombination(bitmap: ImageBitmap?) =
         ScheduleCombination(
@@ -531,17 +570,70 @@ class CourseScheduleAppState {
             cardCornerRadius = AppearanceStore.getCardCornerRadius(),
             wallpaperBrightness = AppearanceStore.getWallpaperBrightness(),
             showBreakDividers = AppearanceStore.getShowBreakDividers(),
+            showWeekGridLines = AppearanceStore.getShowWeekGridLines(),
             cardContentAlignment = AppearanceStore.getCardContentAlignment(),
             cardTextColor = AppearanceStore.getCardTextColor(),
             cardTextScale = AppearanceStore.getCardTextScale(),
             showClassroom = AppearanceStore.getShowClassroom(),
             showTeacher = AppearanceStore.getShowTeacher(),
             cardRefraction = AppearanceStore.getCardRefraction(),
+            cardEdgeThickness = AppearanceStore.getCardEdgeThickness(),
+            cardRim = AppearanceStore.getCardRim(),
             wallpaperIsLight = AppearanceStore.getWallpaperIsLight(),
             wallpaperBlur = AppearanceStore.getWallpaperBlur()
         )
 
-    // 加载单搭配；有伴生缓存则跳过 IO
+    /**
+     * 首帧搭配：壁纸位图 + 参数一起读，必须在画 UI 之前调用（见 `CourseScheduleApp`）。
+     *
+     * 壁纸由宿主在 Application 阶段就后台解码好（[WallpaperStore.synchronousLoader]），
+     * 这里只是取结果；没赶上才等它剩下的时间。没有壁纸/平台没提供通道时就是无壁纸搭配。
+     */
+    fun ensureInitialCombination() {
+        if (combinations.isNotEmpty()) return
+        val bitmap = WallpaperStore.currentImageBitmap()
+            ?: WallpaperStore.synchronousLoader?.invoke()?.also { WallpaperStore.setCached(it) }
+        installInitialCombination(bitmap)
+    }
+
+    /** 装上首个搭配并把壁纸变换摆到当前屏。 */
+    fun installInitialCombination(bitmap: ImageBitmap?) {
+        if (combinations.isNotEmpty()) return
+        val comb = buildCombination(bitmap)
+        // 单搭配恒为下标 0
+        combinations = listOf(comb)
+        currentCombinationIndex = 0
+
+        val curW = latestScreenWPx
+        val curH = latestScreenHPx
+        val refW = AppearanceStore.getOffsetRefW()
+        val refH = AppearanceStore.getOffsetRefH()
+        // 有参考尺寸且与当前屏不一致时重映射；旧数据 ref=0 时原样加载
+        val (mappedOffset, mappedScale) =
+            if (refW > 0f && refH > 0f && (refW != curW || refH != curH)) {
+                remapWallpaperForScreen(comb.offset, comb.scale, comb.bitmap, refW, refH, curW, curH)
+            } else {
+                comb.offset to comb.scale
+            }
+        wallpaperBitmap = comb.bitmap
+        wallpaperOffset = mappedOffset
+        // 不把当前方向的 minScale 写回用户 scale：绘制层已 max(scale, minScale)，
+        // 这里烘焙会导致旋转回原方向时缩放被抬高、画面错位
+        wallpaperScale = mappedScale
+        wallpaperScreenRef = curW to curH
+        savedWallpaperBitmap = comb.bitmap
+        savedWallpaperOffset = mappedOffset
+        savedWallpaperScale = mappedScale
+        savedAppearance = AppearanceConfig.fromCombination(comb)
+        originalWallpaperBitmap = comb.bitmap
+        originalWallpaperOffset = mappedOffset
+        originalWallpaperScale = mappedScale
+        if (mappedOffset != comb.offset || mappedScale != comb.scale) {
+            updateCurrentCombination { it.copy(offset = mappedOffset, scale = mappedScale) }
+        }
+        WallpaperStore.saveTransform(mappedOffset, mappedScale)
+    }
+
     // 横竖屏（含自由窗口）尺寸变化：把当前显示中的变换从旧屏重映射到新屏
     val cutoutMainScale = Animatable(1f)
     var cutoutCenterYRatio by mutableFloatStateOf(0.5f)
@@ -560,8 +652,8 @@ class CourseScheduleAppState {
     // 页面坐标系 → 窗口坐标系的换算偏移
     var switchContentRootX by mutableFloatStateOf(0f)
 
-    // 保留在 Activity 层不是为了防止销毁（详情页期间主内容已不再移出组合），
-    // 而是液态玻璃重录要读它们的「滚动中 / 弹窗开合」（liquidGlassMustRecord、liquidGlassRecordKey）
+    // 提到 Activity 层是为了让液态玻璃重录能在外层读到「滚动中 / 弹窗开合」
+    // （liquidGlassMustRecord、liquidGlassRecordKey），不是为了防销毁。
     val scheduleSelectedCourse = mutableStateOf<Course?>(null)
     val scheduleSelectedCourses = mutableStateOf<List<Course>>(emptyList())
     val scheduleShowCourseDetail = mutableStateOf(false)
@@ -573,27 +665,29 @@ class CourseScheduleAppState {
     var switchAnimForward by mutableStateOf(false)
     var switchAnimRunning by mutableStateOf(false)
 
-    // Await a schedule reload before recording the return layer.
+    // 返回前先等课表重载完，再录返回图层
     var switchReloadJob by mutableStateOf<Job?>(null)
     val switchAnimProgress = Animatable(0f)
     val managePageBlurRadius = Animatable(0f)
+
+    // 详情 morph 的整屏背景快照：录一帧主内容后独立缩放，避免实时内容缩放导致的整页重组
+    var detailBackgroundSnapshot by mutableStateOf<TransitionLayerSnapshot?>(null)
+    val detailBackgroundScale = Animatable(1f)
 
     // 仅课程长按菜单模糊；空白格菜单不模糊
     val shortcutMenuBlurRadius = Animatable(0f)
     val switchReturnBgScrim = Animatable(0f)
 
-    // 切换课表：进入方向要复用「上次退出录到的卡片」，但**图层跨不过组合销毁** ——
-    // `GraphicsLayer.record{}` 里 `drawLayer(x)` 存的是对 x 的引用，切换页一销毁那层就废。
-    // 所以只能在退出那一帧把卡片区域**固化成位图**（位图不依赖任何组合），
-    // 下次进入直接画它。进入方向因此零录制。
+    // 切换课表：进入方向复用「上次退出录到的卡片」，但**图层跨不过组合销毁** ——
+    // `drawLayer(x)` 存的是对 x 的引用，切换页一销毁就废。所以退出那一帧把卡片区域固化成位图
+    //（位图不依赖组合），下次进入直接画它 ⇒ 进入方向零录制。
     var retainedSwitchCardBitmap by mutableStateOf<ImageBitmap?>(null)
     /**
      * **课程表页面（主界面）这一屏的整屏原生快照**，含 UITabBar / 导航栏（iOS 专有）。
      *
-     * 切换课表的进入 morph 需要「主界面整屏图」当主内容层，而 Compose 的 `screenGraphicsLayer`
-     * 录不到原生 chrome（底栏会缺一条）。所以在点「切换课表」、切换页还没上屏之前截这一张，
-     * 由 `SwitchMorphOverlay` 直接当主内容画。Android/桌面该函数恒为 null，走原来的图层。
-     * 用完（动画结束）立刻释放 —— 整屏图 ~12MB。
+     * 切换课表的进入 morph 需要整屏图当主内容层，而 Compose 的 `screenGraphicsLayer` 录不到
+     * 原生 chrome（底栏会缺一条）。所以在点「切换课表」、切换页上屏之前截这一张。
+     * Android / 桌面恒为 null。用完立刻释放 —— 整屏图 ~12MB。
      */
     var mainScreenShot by mutableStateOf<ImageBitmap?>(null)
 
@@ -601,9 +695,7 @@ class CourseScheduleAppState {
     // 本次形变要画的卡片位图（只有进入方向用；退出方向仍用实时卡片图层）。
     var switchCardBitmap by mutableStateOf<ImageBitmap?>(null)
 
-    // 读回上次会话退出时固化的卡片快照：位图活不过进程，只有文件能留到下次启动。
-    // 桌面上 Store 未初始化/无实现，返回 null，退化成会话内复用。
-    // Retain drawing commands on demand for snapshots and schedule-library morphs.
+    // 按需保留绘制指令，供整屏快照与切换课表的形变使用（位图/文件那层见 SwitchCardSnapshotStore）
     class MainSnapshotRequester {
         var lastRecordedToken: Int = 0
     }
@@ -612,7 +704,7 @@ class CourseScheduleAppState {
     var mainSnapshotToken by mutableIntStateOf(0)
     suspend fun prepareMainContentLayer() {
         val token = ++mainSnapshotToken
-        // Recording retains drawing commands; no bitmap allocation or CPU rasterization.
+        // record 只保留绘制指令，不分配位图、不做 CPU 光栅化
         while (mainSnapshotRequester.lastRecordedToken < token) {
             withFrameNanos { }
         }
@@ -637,7 +729,6 @@ class CourseScheduleAppState {
         }
     }
 
-    var blurSnapshotJob by mutableStateOf<Job?>(null)
     val currentDayOfWeek get() = todayLocalDate().dayOfWeek.isoDayNumber
     val teachingWeekRepository = CourseRepository.getInstance()
 
@@ -645,24 +736,23 @@ class CourseScheduleAppState {
     val basePage get() = (currentWeek - 1).coerceIn(0, (totalWeeks - 1).coerceAtLeast(0))
     val todayMaxDateOffset get() = 1000
 
-    // 主 tab 平移容器：仅点底栏/侧栏 tab 驱动。手机端只有 3 页，
-    // 后两页（课程管理/切换课表）只有平板侧栏才到得了，按 5 页建会让它们常驻组合树白陪跑。
-    val mainPagerPageCount get() = if (isShiftMode) 2 else if (navBarStyle == "rail") 5 else 3
-
-    // 程序化切 tab 期间为 true，避免 currentPage 在动画中途把 selectedTab 拉回去
-    var mainTabProgrammatic by mutableStateOf(false)
+    // 主 tab 平移容器：仅点底栏 / 侧栏 tab 驱动。
+    // 手机 2 页（今日 / 课表，设置已是二级页）；排班模式 1 页；平板 rail 5 页（含设置 / 课程管理 / 切换课表）。
+    val mainPagerPageCount get() = when {
+        navBarStyle == "rail" -> if (isShiftMode) 2 else 5
+        isShiftMode -> 1
+        else -> 2
+    }
 
     // 当前可见页背后是不是壁纸，决定高光亮度（见 InteractiveHighlight 的 peak）。
     val pageBehindHasWallpaper
         get() = wallpaperBitmap != null &&
                 !isShiftMode &&
-                mainPagerState.currentPage in 0..1
+                mainTabPosition.currentPage in 0..1
 
-    // 二级页侧栏点选主 tab（无转场回来后处理）
-    var lastAutoPage by mutableIntStateOf(0)
-    var lastAutoWeek by mutableIntStateOf(0)
-
-    // 切 tab 时强制放掉周 pager 上可能残留的 scroll 锁。
+    /**
+     * 今日页当前选中的星期几（1..7）。0 = 还没初始化，外壳在首帧前补成今天。
+     */
     var todaySelectedDayOfWeek by mutableIntStateOf(0)
     var todayIsToday by mutableStateOf(true)
     var scrollToTodayTrigger by mutableIntStateOf(0)
@@ -675,7 +765,7 @@ class CourseScheduleAppState {
     // 基线必须用 currentPage：手动翻页过半页标题/日期行就该跟着换
     val currentViewingWeek: Int
         get() {
-            val live = pagerState.currentPage + 1
+            val live = weekPageState.currentPage + 1
             val target = pendingViewingWeek
             return if (target >= 1 && target != live) target else live
         }
@@ -683,64 +773,109 @@ class CourseScheduleAppState {
     // dataVersion + courses 引用都进 key：调课 size 可能不变，只靠 size 会让智能周末星期行停在旧值
     val viewingIsHoliday get() = viewModel.isWeekHoliday(currentViewingWeek)
 
-    // 设置页的「卡片」圆角 = 屏幕圆角（与 [AppNavHost] 的转场裁切同一把尺）
-    val settingsPageIndex get() = if (isShiftMode) 1 else 2
-
-    // 顶栏糊带：只圆**顶部两角**（四角全圆会把 120dp 高的糊带变成药丸）
-    // 平板（rail）主界面切页是瞬时的（scrollToPage，无动画），圆角卡片机制不参与。
+    // 主界面切页不做圆角裁切：各 tab 页都方角铺满。
+    // 平板（rail）走自己的缩放 / 模糊淡入淡出转场（见 TabletTabTransitionSpec），
+    // 位置仍是瞬时 snapTo，所以这里依旧不需要为横向平移动画撑满尺寸。
     val mainTabTransitionAnimated get() = navBarStyle != "rail"
     val settingsPageClipModifier
-        get() =
-            if (mainTabTransitionAnimated) {
-                Modifier
-                    .fillMaxSize()
-                    .clipScreenCorners(settingsPageClipShape)
-            } else {
-                Modifier
-            }
-    val settingsTopBarClipModifier
-        get() =
-            if (mainTabTransitionAnimated) {
-                Modifier.clipDuringTransition(settingsTopBarClipShape, settingsCardOnScreen)
-            } else {
-                Modifier
-            }
+        get() = if (mainTabTransitionAnimated) Modifier.fillMaxSize() else Modifier
     val mainTabAnimation = arrayOfNulls<Job>(1)
     val mainTabGeneration = intArrayOf(0)
+
+    // 平板专属切页转场进度；每帧写 float state，绘制期读，动画不触发任何重组。
+    // 初值 1 = 终态（与稳态画面一致），空闲时也停在 1。
+    val tabletTabTransition = mutableFloatStateOf(1f)
+
+    // 转场旧页：必须在切页之前登记，否则宿主在切页那一帧就把旧页 dispose 了，
+    // 双页共存会变成「旧页销毁后重新组合」，状态和首帧都保不住。
+    var tabletTransitionFrom by mutableIntStateOf(-1)
+
+    // 组合期开关：只有转场期间才让页面槽位挂 graphicsLayer。空闲时一个全屏 layer 都不留，
+    // 否则侧栏展开 / 折叠重排时玻璃采样会贴着旧层走，展开过程乱闪（折叠方向正常）。
+    var tabletTabTransitionActive by mutableStateOf(false)
+
+    /** 平板切 tab：登记旧页 → 立即切页 → 旧/新两页交叉。 */
+    private suspend fun playTabletTabTransition(from: Int, switch: suspend () -> Unit) {
+        // 三个状态在同一次同步写里落定，任何一步跨帧都会让 active=true 那一帧读到上次的
+        // 进度 1（新页 alpha=1）→ 表现成「点击瞬间就切页」。
+        tabletTransitionFrom = from
+        tabletTabTransition.floatValue = 0f
+        tabletTabTransitionActive = true
+        switch()
+        // 逐帧写 float state：graphicsLayer 订阅 draw 阶段，不用赌 Animatable.value 的可观察性
+        animate(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = tween(
+                TabletTabTransitionSpec.DURATION_MS,
+                easing = FastOutSlowInEasing,
+            ),
+        ) { value, _ ->
+            tabletTabTransition.floatValue = value
+        }
+        // p=1 时新页 alpha=1 / scale=1 / blur=0，与稳态像素一致：
+        // 先清旧页登记再摘 layer，中间没有任何跳变。
+        tabletTransitionFrom = -1
+        tabletTabTransitionActive = false
+    }
+
     val onMainTabSelected: (Int) -> Unit = { index ->
-        if (index in 0 until mainPagerPageCount &&
-            (index != selectedTab || mainPagerState.currentPage != index)
+        // 侧栏「滑选 + clickable」可能对同一次抬手各触发一次：目标页正在切过去时忽略重复调用，
+        // 否则第二个任务会掐断正在播的转场。
+        val duplicate = index == selectedTab && mainTabAnimation[0]?.isActive == true
+        if (!duplicate && index in 0 until mainPagerPageCount &&
+            (index != selectedTab || mainTabPosition.currentPage != index)
         ) {
-            if (index != selectedTab) {
-                hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            }
+            // 起点必须取「当前真正显示的页」：selectedTab 可能已被别的入口提前写成目标页
+            // （预览切页、重复点击），拿它当 from 会让新页被当成旧页，播缩小+模糊的反向动画。
+            val from = mainTabPosition.currentPage
             val generation = ++mainTabGeneration[0]
             mainTabAnimation[0]?.cancel()
-            mainTabProgrammatic = true
             selectedTab = index
             mainTabAnimation[0] = coroutineScope.launch {
                 try {
-                    if (todayPagerState.isScrollInProgress) todayPagerState.cancelScroll()
-                    if (pagerState.isScrollInProgress) pagerState.cancelScroll()
-                    if (mainPagerState.isScrollInProgress) mainPagerState.cancelScroll()
-                    if (navBarStyle == "rail") mainPagerState.scrollToPage(index)
-                    else mainPagerState.animateMainTabTo(index)
+                    if (todayPageState.isAnimating) todayPageState.cancel()
+                    if (weekPageState.isAnimating) weekPageState.cancel()
+                    if (navBarStyle == "rail") {
+                        if (mainTabPosition.isAnimating) mainTabPosition.cancel()
+                        // from == index 说明目标页已在前台（重复触发）：只对齐位置，不再播转场，
+                        // 否则旧/新页角色会落到同一页上。
+                        if (from != index) {
+                            playTabletTabTransition(from) { mainTabPosition.snapTo(index) }
+                        } else {
+                            mainTabPosition.snapTo(index)
+                        }
+                    } else mainTabPosition.animateTo(index)
                     FeatureLog.t(
                         "主页",
                         "tab",
                         "idx=$index shift=$isShiftMode rail=${navBarStyle == "rail"}"
                     )
                 } finally {
-                    if (mainTabGeneration[0] == generation) mainTabProgrammatic = false
+                    if (mainTabGeneration[0] == generation) {
+                        // 动画被手势 / 生命周期掐断时：进度、旧页登记、layer 开关全部归位，
+                        // pager 一定对齐目标页，否则会停在「旧页还挂着、页面却没切」的状态。
+                        withContext(NonCancellable) {
+                            tabletTabTransition.floatValue = 1f
+                            tabletTransitionFrom = -1
+                            tabletTabTransitionActive = false
+                            val target = selectedTab.coerceIn(
+                                0,
+                                (mainTabPosition.pageCount - 1).coerceAtLeast(0)
+                            )
+                            if (mainTabPosition.currentPage != target) {
+                                mainTabPosition.snapTo(target)
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
-    // 外观页弹窗让位时主内容的纵向位移，改由主内容自己的 graphicsLayer 块直推
-    // 引用固定，避免每帧新建 lambda 让 iOS 侧 update() 比对失败。
-    // 内容区（切天/周）一有横向手势：立刻取消未完成的主 tab 平移，吸回当前页，避免露出隔壁页
-    // 固定实例：lambda 每次重组都新建，不能拿它当 remember key
+    // ── 浮动卡片：落地 / 飞行 / 吸附 ─────────────────────────────────────────
+    // 下面这些都是固定实例（`val ... = {}`），不要改成每次重组新建的 lambda：
+    // 它们会被传进绘制层与手势回调，换引用等于换掉一整条动画的所有者。
     val triggerLandRipple: (Offset) -> Unit = { center ->
         landRippleCenter = center
         landRippleToken++
@@ -755,32 +890,43 @@ class CourseScheduleAppState {
         swapFlightCourse = null
     }
 
-    // 退场动画结束后再清状态，让原卡片 alpha 恢复 1
+    /**
+     * 浮层收尾的统一定额：位置、缩放、拖拽残留全部归零。
+     *
+     * 松手吸附、取消、粘贴飞行、交换飞行走的是同一份收尾，任何一处漏一个字段都会留下
+     * 「卡片没了但原卡还隐藏着」这类幽灵状态，所以只留这一个入口。
+     */
+    private suspend fun settleFloatingCard() {
+        isDraggingCard = false
+        floatingCardVisible = false
+        draggingCourseSlots = emptySet()
+        draggedCardCourse = null
+        dragMotion.reset()
+        setPendingDropTarget(null)
+        isSnapping = false
+        isPasteFlight = false
+        // 重置入场初值，避免下次首帧残留 1.0 造成抖动
+        floatingScale.snapTo(0.94f)
+        floatingOffsetX.floatValue = 0f
+        floatingOffsetY.floatValue = 0f
+    }
+
+    /** 直接取消浮层（返回键 / 点空白 / 无有效落点）：先弹回 1.0 再收尾，让原卡片的 alpha 平滑恢复。 */
     val dismissFloatingCard: () -> Unit = {
         stopConflictHover()
         clearSwapFlight()
-        // 浮层可能不走 onCourseDragEnd 就被关掉（返回键/点空白等），自动翻周必须一起停
+        // 浮层可能不走 onCourseDragEnd 就被关掉，自动翻周必须一起停
         stopEdgeAutoPage()
-        // 高光/提示都看它：不在收尾路径里复位会一直亮着
+        // 高光 / 提示都看它：不在收尾路径里复位会一直亮着
         isFloatingCardDragging = false
-        // 浮层都没了，冲突选择/二次确认不能留在屏幕上
+        // 浮层都没了，冲突选择 / 二次确认不能留在屏幕上
         showRescheduleConflictDialog = false
         pendingConflictResolution = null
         conflictConfirmResolution = null
         pendingConflictCourse = null
         coroutineScope.launch {
             floatingScale.animateTo(1f, tween(durationMillis = 180))
-            isDraggingCard = false
-            floatingCardVisible = false
-            draggingCourseSlots = emptySet()
-            draggedCardCourse = null
-            dragMotion.reset()
-            setPendingDropTarget(null)
-            isSnapping = false
-            // 重置入场初值，避免下次首帧残留 1.0 造成抖动
-            floatingScale.snapTo(0.94f)
-            floatingOffsetX.floatValue = 0f
-            floatingOffsetY.floatValue = 0f
+            settleFloatingCard()
         }
     }
 
@@ -799,6 +945,46 @@ class CourseScheduleAppState {
                 val local = (raw - landStart) / (1f - landStart)
                 1f + 0.05f * sin(PI * local).toFloat()
             }
+        }
+    }
+
+    /**
+     * 浮动卡片的飞行节奏：位置按缓入缓出插值，缩放 1 → [peakScale] → 1 再轻弹落地，
+     * 落地前 80% 触发一次涟漪。粘贴、覆盖、交换、回程四条路径共用同一份时序。
+     *
+     * @param startX 起始相对偏移（相对浮层锚点）
+     * @param endX 终点相对偏移（相对浮层锚点，不是相对起点）
+     * @param rippleCenter 涟漪中心（绝对坐标，飞行途中才求值）
+     * @param onFrame 每帧回调；交换飞行用它同步第二张卡片的位移与缩放
+     */
+    private suspend fun runFloatingFlight(
+        startX: Float,
+        startY: Float,
+        endX: Float,
+        endY: Float,
+        peakScale: Float = 1.4f,
+        rippleCenter: () -> Offset,
+        onFrame: suspend (t: Float, scale: Float) -> Unit = { _, _ -> },
+    ) {
+        val moveEase = CubicBezierEasing(0.55f, 0f, 0.45f, 1f)
+        val durationNanos = FLIGHT_DURATION_NANOS
+        var rippleFired = false
+        val startNanos = withFrameNanos { it }
+        while (true) {
+            val now = withFrameNanos { it }
+            val raw = ((now - startNanos).toFloat() / durationNanos).coerceIn(0f, 1f)
+            val t = moveEase.transform(raw)
+            floatingOffsetX.floatValue = startX + (endX - startX) * t
+            floatingOffsetY.floatValue = startY + (endY - startY) * t
+            val scale = pasteFlightScaleAt(raw, peakScale)
+            floatingScale.snapTo(scale)
+            onFrame(t, scale)
+            // 快落地时先开涟漪
+            if (!rippleFired && raw >= 0.8f) {
+                rippleFired = true
+                triggerLandRipple(rippleCenter())
+            }
+            if (raw >= 1f) break
         }
     }
 
@@ -918,8 +1104,8 @@ class CourseScheduleAppState {
             fingerX >= width - zone -> 1
             else -> 0
         }
-        val exhausted = (dir == -1 && pagerState.currentPage <= 0) ||
-            (dir == 1 && pagerState.currentPage >= lastPage)
+        val exhausted = (dir == -1 && weekPageState.currentPage <= 0) ||
+            (dir == 1 && weekPageState.currentPage >= lastPage)
         val nextDir = if (exhausted) 0 else dir
         edgeAutoPageEnabled = enabled
         edgeAutoPageLatestDir = nextDir
@@ -963,15 +1149,15 @@ class CourseScheduleAppState {
                     if (edgeAutoPageStopRequested || !edgeAutoPageEnabled ||
                         edgeAutoPageLatestDir != nextDir
                     ) break
-                    val current = pagerState.currentPage
+                    val current = weekPageState.currentPage
                     val target = (current + nextDir).coerceIn(0, lastPage)
                     if (target == current) break
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     edgeAutoPageAnimating = true
                     try {
-                        // 与「返回本周」同一根滑入曲线（±1 页，走 JumpLandingSpec）
-                        pagerState.jumpToPageSmoothly(target)
-                    } catch (e: CancellationException) {
+                        // 与「返回本周」同一条曲线。
+                        weekPageState.jumpToPageSmoothly(target)
+                    } catch (_: CancellationException) {
                         // 第二根手指开始滑 pager（UserInput 优先级更高）会取消这次翻页；
                         // 本 Job 自己没被取消就继续等下一轮，别把持续翻页整条打死。
                         if (!isActive) break
@@ -1002,17 +1188,17 @@ class CourseScheduleAppState {
      * 被打断（用户反向滑 / 抢占）立即撤掉，标题回到真实页。
      */
     suspend fun jumpToWeek(targetWeek: Int) {
-        val lastPage = (pagerState.pageCount - 1).coerceAtLeast(0)
+        val lastPage = (weekPageState.pageCount - 1).coerceAtLeast(0)
         val dest = (targetWeek - 1).coerceIn(0, lastPage)
         // 目标周按落点页算，避免「总周数」与 pageCount 不一致时标题落到界外
         pendingViewingWeek = dest + 1
         try {
-            pagerState.jumpToPageSmoothly(dest, weekJumpNeighbor, weekPagerGestureState)
+            weekPageState.jumpToPageSmoothly(dest, weekJumpNeighbor)
         } catch (e: CancellationException) {
             pendingViewingWeek = 0
             throw e
         } finally {
-            if (pagerState.currentPage != dest) pendingViewingWeek = 0
+            if (weekPageState.currentPage != dest) pendingViewingWeek = 0
         }
     }
 
@@ -1033,65 +1219,65 @@ class CourseScheduleAppState {
         edgeAutoPageDirection = 0
     }
 
-    // spring 带回弹吸进目标格，中段开涟漪
+    /**
+     * spring 吸附：把浮层从当前位置回弹到 [targetOffsetX]/[targetOffsetY]（相对锚点），
+     * 带手指甩出的初速度，120ms 后在中途开一圈落地涟漪，动画结束即收尾。
+     */
+    private fun snapFloatingCardTo(targetOffsetX: Float, targetOffsetY: Float, rippleCenter: Offset) {
+        coroutineScope.launch {
+            isSnapping = true
+            launch {
+                delay(120.milliseconds)
+                triggerLandRipple(rippleCenter)
+            }
+            val positionSpec = spring<Float>(
+                dampingRatio = 0.58f,
+                stiffness = Spring.StiffnessMediumLow
+            )
+            val scaleSpec = spring<Float>(
+                dampingRatio = 0.7f,
+                stiffness = Spring.StiffnessMedium
+            )
+            // 三条动画必须一起跑完再收尾，串行会让卡片先缩放后位移。
+            // 用 kotlinx 的 coroutineScope 作用域函数（同名属性 coroutineScope 会遮蔽简单名）。
+            kotlinx.coroutines.coroutineScope {
+                launch {
+                    animateFloatState(
+                        floatingOffsetX, targetOffsetX, positionSpec, dragMotion.velocityX
+                    )
+                }
+                launch {
+                    animateFloatState(
+                        floatingOffsetY, targetOffsetY, positionSpec, dragMotion.velocityY
+                    )
+                }
+                launch { floatingScale.animateTo(1f, scaleSpec) }
+            }
+            settleFloatingCard()
+        }
+    }
+
+    /** 拖到有效落点松手：吸进目标格。 */
     val snapFloatingCardToTarget: (dayOfWeek: Int, startSection: Int, sectionSpan: Int) -> Unit =
         { day, section, span ->
             val targetCenter = computeTargetCenter(day, section, span)
             if (targetCenter != null) {
-                val targetOffsetX = targetCenter.x - draggedCardPosition.x
-                val targetOffsetY = targetCenter.y - draggedCardPosition.y
-                coroutineScope.launch {
-                    isSnapping = true
-                    // 拖拽期已在 floatingOffset* 上 snapTo，无需再从 draggedCardOffset 拷贝
-                    launch {
-                        delay(120.milliseconds)
-                        triggerLandRipple(targetCenter)
-                    }
-                    val snapSpec = spring<Float>(
-                        dampingRatio = 0.58f,
-                        stiffness = Spring.StiffnessMediumLow
-                    )
-                    val scaleSpec = spring<Float>(
-                        dampingRatio = 0.7f,
-                        stiffness = Spring.StiffnessMedium
-                    )
-                    val jobX = launch {
-                        animateFloatState(
-                            floatingOffsetX,
-                            targetOffsetX,
-                            snapSpec,
-                            dragMotion.velocityX
-                        )
-                    }
-                    val jobY = launch {
-                        animateFloatState(
-                            floatingOffsetY,
-                            targetOffsetY,
-                            snapSpec,
-                            dragMotion.velocityY
-                        )
-                    }
-                    val jobScale = launch {
-                        floatingScale.animateTo(1f, scaleSpec)
-                    }
-                    jobX.join(); jobY.join(); jobScale.join()
-                    isDraggingCard = false
-                    floatingCardVisible = false
-                    draggingCourseSlots = emptySet()
-                    draggedCardCourse = null
-                    dragMotion.reset()
-                    setPendingDropTarget(null)
-                    isSnapping = false
-                    floatingScale.snapTo(0.94f)
-                    floatingOffsetX.floatValue = 0f
-                    floatingOffsetY.floatValue = 0f
-                }
+                snapFloatingCardTo(
+                    targetOffsetX = targetCenter.x - draggedCardPosition.x,
+                    targetOffsetY = targetCenter.y - draggedCardPosition.y,
+                    rippleCenter = targetCenter,
+                )
             } else {
                 dismissFloatingCard()
             }
         }
 
-    // 粘贴飞行：复用长按浮层直线飞向目标格；无法定位时直接回调
+    /** 原地松手：吸回长按瞬间的原格中心，落地节奏与吸到新格完全一致。 */
+    val snapFloatingCardToOrigin: () -> Unit = {
+        snapFloatingCardTo(0f, 0f, draggedCardPosition)
+    }
+
+    /** 粘贴飞行：复用长按浮层从源格直线飞向目标格；几何取不到时直接回调。 */
     val playPasteFlightAnimation: (
         source: Course,
         targetDay: Int,
@@ -1108,7 +1294,7 @@ class CourseScheduleAppState {
         if (sourceCenter != null && targetCenter != null && sourceBounds != null && sectionH != null && sectionH > 0f) {
             coroutineScope.launch {
                 delay(120.milliseconds) // 等弹窗退场
-                // 原卡片保持可见（复制语义）
+                // 原卡片保持可见（复制语义，不清 draggingCourseSlots）
                 draggedCardCourse = source
                 draggedWeek = currentViewingWeek
                 draggedCardPosition = sourceCenter
@@ -1126,36 +1312,15 @@ class CourseScheduleAppState {
                 floatingOffsetY.floatValue = 0f
                 floatingScale.snapTo(1f)
 
-                val dx = targetCenter.x - sourceCenter.x
-                val dy = targetCenter.y - sourceCenter.y
-                val peakScale = 1.4f
-                val durationNanos = 480_000_000L
-                val moveEase = CubicBezierEasing(0.55f, 0f, 0.45f, 1f)
-                var rippleFired = false
-                val startNanos = withFrameNanos { it }
-                while (true) {
-                    val now = withFrameNanos { it }
-                    val raw = ((now - startNanos).toFloat() / durationNanos).coerceIn(0f, 1f)
-                    val t = moveEase.transform(raw)
-                    floatingOffsetX.floatValue = dx * t
-                    floatingOffsetY.floatValue = dy * t
-                    floatingScale.snapTo(pasteFlightScaleAt(raw, peakScale))
-                    // 快落地时先开涟漪
-                    if (!rippleFired && raw >= 0.8f) {
-                        rippleFired = true
-                        triggerLandRipple(targetCenter)
-                    }
-                    if (raw >= 1f) break
-                }
-
+                runFloatingFlight(
+                    startX = 0f,
+                    startY = 0f,
+                    endX = targetCenter.x - sourceCenter.x,
+                    endY = targetCenter.y - sourceCenter.y,
+                    rippleCenter = { targetCenter },
+                )
                 // 落地后立刻换成真实课程，避免双影
-                floatingCardVisible = false
-                isSnapping = false
-                isPasteFlight = false
-                draggedCardCourse = null
-                floatingOffsetX.floatValue = 0f
-                floatingOffsetY.floatValue = 0f
-                floatingScale.snapTo(0.94f)
+                settleFloatingCard()
                 onFinished()
             }
         } else {
@@ -1163,88 +1328,27 @@ class CourseScheduleAppState {
         }
     }
 
-    // 原地长按松手，spring 吸回原位
-    val snapFloatingCardToOrigin: () -> Unit = {
-        // 吸回原位也算「落地」：锚点即长按瞬间的原格中心，落地节奏与吸到新格一致
-        val originCenter = draggedCardPosition
-        coroutineScope.launch {
-            isSnapping = true
-            launch {
-                delay(120.milliseconds)
-                triggerLandRipple(originCenter)
-            }
-            val snapSpec = spring<Float>(
-                dampingRatio = 0.58f,
-                stiffness = Spring.StiffnessMediumLow
-            )
-            val scaleSpec = spring<Float>(
-                dampingRatio = 0.7f,
-                stiffness = Spring.StiffnessMedium
-            )
-            val jobX = launch {
-                animateFloatState(floatingOffsetX, 0f, snapSpec, dragMotion.velocityX)
-            }
-            val jobY = launch {
-                animateFloatState(floatingOffsetY, 0f, snapSpec, dragMotion.velocityY)
-            }
-            val jobScale = launch { floatingScale.animateTo(1f, scaleSpec) }
-            jobX.join(); jobY.join(); jobScale.join()
-            isDraggingCard = false
-            floatingCardVisible = false
-            draggingCourseSlots = emptySet()
-            draggedCardCourse = null
-            dragMotion.reset()
-            setPendingDropTarget(null)
-            isSnapping = false
-            floatingScale.snapTo(0.94f)
-            floatingOffsetX.floatValue = 0f
-            floatingOffsetY.floatValue = 0f
-        }
-    }
-
-    // 粘贴节奏飞行：从悬停 offset 飞到 destOffset 后收起
+    /** 冲突取消 / 覆盖确认：沿用粘贴节奏从当前悬停位置飞到 [destOffsetX]/[destOffsetY]。 */
     fun flyFloatingCardWithPasteMotion(destOffsetX: Float, destOffsetY: Float) {
         stopConflictHover()
         coroutineScope.launch {
             isSnapping = true
             isPasteFlight = true
-            val startX = floatingOffsetX.floatValue
-            val startY = floatingOffsetY.floatValue
-            val peakScale = 1.4f
-            val durationNanos = 480_000_000L
-            val moveEase = CubicBezierEasing(0.55f, 0f, 0.45f, 1f)
             floatingScale.snapTo(1f)
-            var rippleFired = false
-            val startNanos = withFrameNanos { it }
-            while (true) {
-                val now = withFrameNanos { it }
-                val raw = ((now - startNanos).toFloat() / durationNanos).coerceIn(0f, 1f)
-                val t = moveEase.transform(raw)
-                floatingOffsetX.floatValue = startX + (destOffsetX - startX) * t
-                floatingOffsetY.floatValue = startY + (destOffsetY - startY) * t
-                floatingScale.snapTo(pasteFlightScaleAt(raw, peakScale))
-                if (!rippleFired && raw >= 0.8f) {
-                    rippleFired = true
-                    triggerLandRipple(
-                        Offset(
-                            draggedCardPosition.x + destOffsetX,
-                            draggedCardPosition.y + destOffsetY
-                        )
+            runFloatingFlight(
+                startX = floatingOffsetX.floatValue,
+                startY = floatingOffsetY.floatValue,
+                endX = destOffsetX,
+                endY = destOffsetY,
+                rippleCenter = {
+                    Offset(
+                        draggedCardPosition.x + destOffsetX,
+                        draggedCardPosition.y + destOffsetY
                     )
-                }
-                if (raw >= 1f) break
-            }
-            isDraggingCard = false
-            floatingCardVisible = false
-            draggingCourseSlots = emptySet()
-            draggedCardCourse = null
-            setPendingDropTarget(null)
-            isSnapping = false
-            isPasteFlight = false
-            floatingOffsetX.floatValue = 0f
-            floatingOffsetY.floatValue = 0f
-            floatingScale.snapTo(0.94f)
+                },
+            )
             clearSwapFlight()
+            settleFloatingCard()
         }
     }
 
@@ -1349,50 +1453,28 @@ class CourseScheduleAppState {
                     isSnapping = true
                     isPasteFlight = true
                     floatingScale.snapTo(1f)
-                    val srcStartX = floatingOffsetX.floatValue
-                    val srcStartY = floatingOffsetY.floatValue
-                    val srcEndX = targetCenter.x - draggedCardPosition.x
-                    val srcEndY = targetCenter.y - draggedCardPosition.y
                     // 冲突课飞向源周：跨周时只到相邻页同位置（屏幕外一屏），
                     // 不飞回真实源周（可能隔好几页，用户也看不到）
                     val sourceHome = sourceHomeCenter(source)
                     val tgtEndX = sourceHome.x - occupiedCenter.x
                     val tgtEndY = sourceHome.y - occupiedCenter.y
 
-                    val peakScale = 1.4f
-                    val durationNanos = 480_000_000L
-                    val moveEase = CubicBezierEasing(0.55f, 0f, 0.45f, 1f)
-                    var rippleFired = false
-                    val startNanos = withFrameNanos { it }
-                    while (true) {
-                        val now = withFrameNanos { it }
-                        val raw = ((now - startNanos).toFloat() / durationNanos).coerceIn(0f, 1f)
-                        val t = moveEase.transform(raw)
-                        floatingOffsetX.floatValue = srcStartX + (srcEndX - srcStartX) * t
-                        floatingOffsetY.floatValue = srcStartY + (srcEndY - srcStartY) * t
-                        swapFlightOffsetX.snapTo(tgtEndX * t)
-                        swapFlightOffsetY.snapTo(tgtEndY * t)
-                        val scale = pasteFlightScaleAt(raw, peakScale)
-                        floatingScale.snapTo(scale)
-                        swapFlightScale.snapTo(scale)
-                        if (!rippleFired && raw >= 0.8f) {
-                            rippleFired = true
-                            triggerLandRipple(targetCenter)
-                        }
-                        if (raw >= 1f) break
-                    }
+                    // 两张卡片交叉飞行：主卡片各自插值到目标格，冲突卡同步位移与缩放
+                    runFloatingFlight(
+                        startX = floatingOffsetX.floatValue,
+                        startY = floatingOffsetY.floatValue,
+                        endX = targetCenter.x - draggedCardPosition.x,
+                        endY = targetCenter.y - draggedCardPosition.y,
+                        rippleCenter = { targetCenter },
+                        onFrame = { t, scale ->
+                            swapFlightOffsetX.snapTo(tgtEndX * t)
+                            swapFlightOffsetY.snapTo(tgtEndY * t)
+                            swapFlightScale.snapTo(scale)
+                        },
+                    )
 
                     clearSwapFlight()
-                    isDraggingCard = false
-                    floatingCardVisible = false
-                    draggingCourseSlots = emptySet()
-                    draggedCardCourse = null
-                    setPendingDropTarget(null)
-                    isSnapping = false
-                    isPasteFlight = false
-                    floatingOffsetX.floatValue = 0f
-                    floatingOffsetY.floatValue = 0f
-                    floatingScale.snapTo(0.94f)
+                    settleFloatingCard()
                     swapFlightOffsetX.snapTo(0f)
                     swapFlightOffsetY.snapTo(0f)
                     swapFlightScale.snapTo(1f)
@@ -1514,10 +1596,11 @@ class CourseScheduleAppState {
         detailTargetWeek = targetWeek
         // 重新进入：上次退出若没来得及复位（异常路径），这里兜底
         detailExiting = false
-        detailSnapshot = cardLayer?.takeIf {
+        val cardSource = cardLayer?.takeIf {
             it.layer.size.width > 0 && it.layer.size.height > 0
-        }?.let { source ->
-            // Retain child layer dependencies above lazy and responsive source branches.
+        }
+        detailSnapshot = cardSource?.let { source ->
+            // 子图层依赖要保留在上面的 lazy / 响应式分支之外
             retainedDetailLayer.record(
                 densityProvider,
                 detailLayerLayoutDirection,
@@ -1525,28 +1608,45 @@ class CourseScheduleAppState {
             ) {
                 drawLayer(source.layer)
             }
-            val snapshot = TransitionLayerSnapshot(retainedDetailLayer, source.bounds)
-            // 再异步冻结一份位图：`drawLayer` 只是**活引用** —— 源行随后就被
-            // hiddenCourseIds 藏掉，退出 morph 重放出来就只剩玻璃背景、没有文字
-            //（进入时源还活着，所以只有退出缺内容）。光栅化后与源图层彻底脱钩。
-            // 进入 morph 先用活引用（和以前一致），位图就绪后原地替换；退出时用的就是它。
-            coroutineScope.launch {
-                val frozen = runCatching { source.layer.toImageBitmap() }.getOrNull()
-                    ?: return@launch
-                if (detailSnapshot === snapshot) {
-                    detailSnapshot = snapshot.copy(frozen = frozen)
-                }
-            }
-            snapshot
+            TransitionLayerSnapshot(retainedDetailLayer, source.bounds)
         }
-        hiddenCourseIds = setOf(courseIdToHide)
-        showDetail = true
-        // 详情 morph 只做下层模糊，不做缩放（整屏离屏层是掉帧第一来源）
+        // 先藏源卡片、再录整屏背景
+        detailMorphStarted = false
         coroutineScope.launch {
-            managePageBlurRadius.animateTo(
-                HostNavigationState.DETAIL_BACKDROP_BLUR_DP,
-                animationSpec = tween(540, easing = OobeQuartOutEasing)
-            )
+            // 卡片快照先冻结成位图
+            val cardSnapshot = detailSnapshot
+            if (cardSource != null && cardSnapshot != null) {
+                runCatching { cardSource.layer.toImageBitmap() }.getOrNull()
+                    ?.let { cardSnapshot.frozen = it }
+            }
+            // 详情页先按「起点卡态」上屏
+            // 同一帧再藏掉源卡片，下一帧起浮层卡就接替了它的位置
+            showDetail = true
+            // 没有卡片快照就没有浮层卡接替位置，此时不能藏源卡，否则会露白
+            hiddenCourseIds = if (cardSnapshot != null) setOf(courseIdToHide) else emptySet()
+            // 这里录制到的是「源卡已隐藏」后的绘制，快照自然不含源卡片
+            prepareMainContentLayer()
+            val background = TransitionLayerSnapshot(screenGraphicsLayer)
+            // 背景要 3×3 平铺整屏：先光栅化，形变期间只画一张纹理
+            background.freezeSource()
+            detailBackgroundSnapshot = background
+            detailBackgroundScale.snapTo(1f)
+            // 快照层上屏后再放行动画，展开首帧不会空洞
+            withFrameNanos { }
+            withFrameNanos { }
+            detailMorphStarted = true
+            launch {
+                managePageBlurRadius.animateTo(
+                    HostNavigationState.DETAIL_BACKDROP_BLUR_DP,
+                    animationSpec = tween(580, easing = OobeQuartOutEasing)
+                )
+            }
+            launch {
+                detailBackgroundScale.animateTo(
+                    MORPH_BACKGROUND_SHRINK,
+                    animationSpec = tween(580, easing = OobeQuartOutEasing)
+                )
+            }
         }
     }
 
@@ -1556,18 +1656,12 @@ class CourseScheduleAppState {
         FeatureLog.t("课表外观", "enter")
         coroutineScope.launch {
             delay(CUSTOMIZE_ENTRY_DELAY_MS.milliseconds)
-            val screenW = windowInfo.containerSize.width.toFloat()
-            customizeExitTargetScale = (screenW * 0.65f) / screenW
             val oldCombSnapshots = combinations.mapNotNull { it.snapshot }
             combinations = combinations.map { it.copy(snapshot = null) }
             delay(50.milliseconds)
-            // 复制为独立 ARGB_8888 切断引用
-            // 截不到（OOM）就不做开洞快照，直接照常进搭配页
+            // 截不到（OOM）就不做开洞快照，直接照常进搭配页。
             val captured = captureMainContentBitmap()
-            val currentSnapshot = captured?.let { snap ->
-                // ImageBitmap 本就是独立快照（toImageBitmap 读回），无需再 copy 一份
-                snap
-            }
+            val currentSnapshot = captured
             val oldCustomize = customizeSnapshot
             val oldCover = snapshotCoverBitmap
             customizeSnapshot = currentSnapshot
@@ -1607,7 +1701,6 @@ class CourseScheduleAppState {
             originalWallpaperBitmap = wallpaperBitmap
             originalWallpaperOffset = wallpaperOffset
             originalWallpaperScale = wallpaperScale
-            originalSnapshot = combinations.getOrNull(0)?.snapshot
             originalWallpaperIsLight = combinations.getOrNull(0)?.wallpaperIsLight
             originalCombination = combinations.getOrNull(0)
         }
@@ -1626,18 +1719,15 @@ class CourseScheduleAppState {
             wallpaperScale = autoScale
             WallpaperStore.saveTransform(Offset.Zero, autoScale)
             val isLight = WallpaperStore.measureLightness(picked)
-            val idx = currentCombinationIndex
-            if (idx in combinations.indices) {
-                combinations = combinations.toMutableList().also { list ->
-                    list[idx] = list[idx].copy(
-                        bitmap = picked,
-                        // 清掉旧快照，搭配预览回退显示新壁纸，避免「选完没反应」
-                        snapshot = null,
-                        offset = Offset.Zero,
-                        scale = autoScale,
-                        wallpaperIsLight = isLight
-                    )
-                }
+            updateCurrentCombination {
+                it.copy(
+                    bitmap = picked,
+                    // 清掉旧快照，搭配预览回退显示新壁纸，避免「选完没反应」
+                    snapshot = null,
+                    offset = Offset.Zero,
+                    scale = autoScale,
+                    wallpaperIsLight = isLight
+                )
             }
             // 旧壁纸已离开当前 combination/显示引用后再回收（避开缓存与仍被展示的同一对象）
             coroutineScope.launch {
@@ -1659,28 +1749,40 @@ class CourseScheduleAppState {
     var switchExiting by mutableStateOf(false)
     var switchMainLayerJob by mutableStateOf<Job?>(null)
 
-    // Keep the destination hidden until its anchor and the source layer are ready.
+    // 锚点与源图层都就绪之前，先让目标页保持隐藏
     var switchPreparingLayer by mutableStateOf(false)
 
-    // Re-record the source layer before returning to a different schedule.
+    // 回到另一张课表前要重新录源图层
     var scheduleChanged by mutableStateOf(false)
     var showMorePopup by mutableStateOf(false)
     var showTodayMorePopup by mutableStateOf(false)
+
+    /** 课表页呈现方式（网格 / 时间轴），落盘在 app_theme_prefs 的 schedule_view_mode */
+    var scheduleViewMode by mutableStateOf(loadScheduleViewMode())
+
+    /**
+     * 切换视图模式：先更新内存再落盘，UI 不等磁盘回调。
+     * 名字避开 `setScheduleViewMode` —— 会与 `var` 的自动 setter 撞 JVM 签名。
+     */
+    fun applyScheduleViewMode(mode: ScheduleViewMode) {
+        if (scheduleViewMode == mode) return
+        scheduleViewMode = mode
+        saveScheduleViewMode(mode)
+    }
+
+    /** 今日页呈现方式（周网格 / 时间轴），落盘在 app_theme_prefs 的 today_view_mode */
+    var todayViewMode by mutableStateOf(loadTodayViewMode())
+
+    fun applyTodayViewMode(mode: TodayViewMode) {
+        if (todayViewMode == mode) return
+        todayViewMode = mode
+        saveTodayViewMode(mode)
+    }
 
     // 按钮原地随菜单展开淡出，形成"按钮连贯变为菜单"的单一动画
     val morePopupFraction = Animatable(0f)
     val todayMorePopupFraction = Animatable(0f)
 
-    // 「更多」占位槽实测顶部位置（px，root 坐标）：布局期上报，菜单据此定位，避免首帧 inset 未到而偏位
-    val moreSlotTopPx = mutableFloatStateOf(0f)
-
-    // 占位槽在开洞/切页期间仍在顶层顶栏里，照常采样：关掉采样会让 moreSlotTopPx
-    // 冻结在进页前旧高度，菜单错位且仍可点。
-    val canSampleMoreSlot get() = !isWindowCutoutActive
-
-    // 顶栏滚动材质透明度；两个顶栏各自一份，避免切页时互相覆盖。
-    val scheduleMaterialAlpha = mutableStateOf(0f)
-    val todayMaterialAlpha = mutableFloatStateOf(0f)
     var todayJumpToDateTrigger by mutableIntStateOf(0)
     val isViewingCurrentWeek get() = currentViewingWeek == currentWeek
     fun openScheduleLibrary() {
@@ -1690,7 +1792,7 @@ class CourseScheduleAppState {
         switchExiting = false
         switchAnimForward = true
         if (showSwitchSchedule) {
-            // Interrupt the exit at its current progress; keep the live page and snapshots.
+            // 从当前进度打断退场，保留活页与快照
             switchAnimJob?.cancel()
             switchPendingReverse = false
             switchPreparingLayer = false

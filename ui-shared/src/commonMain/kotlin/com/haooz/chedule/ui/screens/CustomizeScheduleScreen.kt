@@ -37,13 +37,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,10 +60,14 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -83,29 +83,44 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
-import com.haooz.chedule.data.AppearanceConfig
-import com.haooz.chedule.data.CardContentAlignment
-import com.haooz.chedule.data.CardRefractionLevel
-import com.haooz.chedule.data.CardTextColor
-import com.haooz.chedule.data.ThemeMode
-import com.haooz.chedule.data.formatOneDecimal
+import com.haooz.chedule.data.appearance.AppearanceConfig
+import com.haooz.chedule.data.appearance.AppearanceStore
+import com.haooz.chedule.data.appearance.CardContentAlignment
+import com.haooz.chedule.data.appearance.CardEdgeThickness
+import com.haooz.chedule.data.appearance.CardRefractionLevel
+import com.haooz.chedule.data.appearance.CardTextColor
+import com.haooz.chedule.data.appearance.ThemeMode
+import com.haooz.chedule.data.util.formatOneDecimal
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.i18n.SchedStr
+import com.haooz.chedule.ui.activities.classschedule.ScheduleViewMode
 import com.haooz.chedule.ui.basic.LiquidTopBarButton
 import com.haooz.chedule.ui.basic.OverlayDropdownMenu
+import com.haooz.chedule.ui.components.text.material.Text as Text
 import com.haooz.chedule.ui.effects.liquidglass.InteractiveHighlight
 import com.haooz.chedule.ui.effects.motion.CustomizePageEasing
+import com.haooz.softglass.glass.BrightTone
+import com.haooz.softglass.glass.CustomizeFill
+import com.haooz.softglass.glass.SOFT_GLASS_LIVE_SHADER
+import com.haooz.chedule.ui.glass.ScheduleSoftGlassStyle
+import com.haooz.softglass.glass.applySoftGlass
+import com.haooz.chedule.ui.utils.AppMaterialSettings
 import com.haooz.chedule.ui.utils.ScreenCornerRadiiPx
+import com.haooz.chedule.ui.utils.TodayViewMode
 import com.haooz.chedule.ui.utils.addScreenCornerRect
 import com.haooz.chedule.ui.utils.isAppDarkTheme
-import com.haooz.chedule.ui.utils.rememberDefaultEdgeLight
 import com.haooz.chedule.ui.utils.screenHeightDp
 import com.haooz.chedule.ui.utils.screenWidthDp
 import com.haooz.chedule.ui.utils.toShape
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.edgelight.edgeLight
-import com.kyant.backdrop.effects.vibrancy
-import com.kyant.backdrop.shadow.Shadow
-import com.kyant.capsule.ContinuousCapsule
+import com.haooz.softglass.backdrop.backdrops.layerBackdrop as liquidGlassLayerBackdrop
+import com.haooz.softglass.backdrop.drawBackdrop
+import com.haooz.softglass.backdrop.effects.blur as backdropBlur
+import com.haooz.softglass.backdrop.effects.runtimeShaderEffect
+import com.haooz.softglass.backdrop.shadow.Shadow
+import com.haooz.softglass.shape.ContinuousCapsule
+import com.haooz.chedule.ui.components.sheetContentBottomInset
+import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -131,16 +146,21 @@ import top.yukonga.miuix.kmp.icon.extended.Months
 import top.yukonga.miuix.kmp.layout.isTabletWidth
 import top.yukonga.miuix.kmp.overlay.BlurBottomSheet
 import top.yukonga.miuix.kmp.overlay.BlurBottomSheetTablet
+import top.yukonga.miuix.kmp.overlay.LocalBlurBottomSheetContentExpanded
 import top.yukonga.miuix.kmp.overlay.LocalSheetContentBackdrop
 import top.yukonga.miuix.kmp.overlay.LocalSheetTopBarMaterial
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.NavigationBackHandlerFor
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import kotlin.math.absoluteValue
-import kotlin.math.roundToInt
-import kotlin.time.Duration.Companion.milliseconds
-import com.kyant.backdrop.backdrops.layerBackdrop as liquidGlassLayerBackdrop
+
+/** 外观页在全屏遮罩上挖洞后铺的底色（与外壳 `shellBackground` 同一色值）。 */
+private val CustomizePageBackground = Color(0xFF1A1A1A)
+
+/** 外观页两颗顶栏胶囊的柔光 shader 缓存键：尺寸与材质各异，不能共用 uniform。
+ * 中段预览切换胶囊不使用玻璃，故没有对应 key。 */
+private const val LIVE_CANCEL_CAPSULE_GLASS_KEY = "NexioSoftGlassLiveCustomizeCancel"
+private const val LIVE_APPLY_CAPSULE_GLASS_KEY = "NexioSoftGlassLiveCustomizeApply"
 
 /** 挖洞遮罩路径缓存：尺寸/圆角不变时只 translate，避免每帧重建 squircle */
 private class CutoutPathCache {
@@ -167,9 +187,17 @@ private class CutoutPathCache {
             this.holeH = holeH
             this.corners = corners
             path.rewind()
-            path.fillType = PathFillType.EvenOdd
-            path.addRect(Rect(-screenW * 2f, -screenH * 2f, screenW * 3f, screenH * 3f))
-            path.addScreenCornerRect(width = holeW, height = holeH, corners = corners)
+            val outer = Path().apply {
+                addRect(Rect(-screenW * 2f, -screenH * 2f, screenW * 3f, screenH * 3f))
+            }
+            val hole = Path().apply {
+                addScreenCornerRect(width = holeW, height = holeH, corners = corners)
+            }
+            if (!path.op(outer, hole, PathOperation.Difference)) {
+                path.addPath(outer)
+                path.addPath(hole)
+                path.fillType = PathFillType.EvenOdd
+            }
         }
         return path
     }
@@ -211,6 +239,12 @@ fun CustomizeScheduleScreen(
     // 外观配置：编辑器以 AppearanceConfig 整体读写，避免逐字段回调散点
     appearance: AppearanceConfig = AppearanceConfig(),
     onAppearanceChange: (AppearanceConfig) -> Unit = {},
+    /** 课表页当前呈现方式（周网格 / 时间轴）。外观页里改它，回主界面即生效。 */
+    scheduleViewMode: ScheduleViewMode = ScheduleViewMode.WEEK,
+    onScheduleViewModeChange: (ScheduleViewMode) -> Unit = {},
+    /** 今日页呈现方式（可独立于课表页）：周网格 / 时间轴 */
+    todayViewMode: TodayViewMode = TodayViewMode.WEEK,
+    onTodayViewModeChange: (TodayViewMode) -> Unit = {},
     hasWallpaper: Boolean = false,
     /** 预览页：0=今日，1=课程表；椭圆滑块与取消/应用同一行 */
     previewPage: Int = 0,
@@ -224,8 +258,10 @@ fun CustomizeScheduleScreen(
     val densityObj = LocalDensity.current
     // ── 开洞微调旋钮 ────────────────────────────────────────────────────────
     // 竖向：正值=下移；横向：负值=左移
-    val cutoutOffsetDp = if (rightChromeReserved) (-16).dp else 0.dp
+    val cutoutOffsetDp = if (rightChromeReserved) (-16).dp else (-10).dp
     val cutoutOffsetXDp = if (rightChromeReserved) (-56).dp else 0.dp
+    // 洞/卡片圆角下限：
+    val cutoutMinCornerPx = with(densityObj) { 20.dp.toPx() }
     val cutoutOffsetTargetPx = with(densityObj) { cutoutOffsetDp.toPx() }
     val cutoutOffsetXTargetPx = with(densityObj) { cutoutOffsetXDp.toPx() }
     val sheetOffsetTargetPx = with(densityObj) { 90.dp.toPx() }
@@ -246,8 +282,10 @@ fun CustomizeScheduleScreen(
     }
 
 
-    val liquidGlassBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop {
-        drawRect(Color.Transparent)
+    // 纯采样层：只借坐标，不采真实像素。必须铺不透明底色 —— softglass 0.1.1 起空内容
+    // 会按采样 alpha 压成全透明，顶栏取消/应用胶囊的材质会整个消失。
+    val liquidGlassBackdrop = com.haooz.softglass.backdrop.backdrops.rememberLayerBackdrop {
+        drawRect(CustomizePageBackground)
     }
     val liquidGlassDropdownColors = DropdownDefaults.dropdownColors(
         containerColor = Color.Transparent,
@@ -255,8 +293,59 @@ fun CustomizeScheduleScreen(
     )
 
     val primaryColor = MiuixTheme.colorScheme.primary
-    val exitContainerColor = Color(0xFF363636).copy(0.8f)
+    val exitContainerColor = Color(0xFF363636)
+        .copy(AppMaterialSettings.solidSurfaceAlpha(0.8f))
     val exitIconColor = Color.White
+
+    val isDarkTheme = isAppDarkTheme()
+    val capsuleBlurDp = AppMaterialSettings.glassBlurDp()
+    val capsuleGlassOn = AppMaterialSettings.glassEffectsEnabled()
+    // 取消按钮：走自定义颜色混合，颜色单独传；改下面两个色值就能微调深浅。
+    // 比 ThemeFill 的 #181818 / 纯白更淡，让同行的主题色「应用」更突出。
+    val cancelGlassColor = Color(0xFF5C5C5C)
+    val cancelGlassStyle = AppMaterialSettings.chromeGlassStyle(
+        base = ScheduleSoftGlassStyle,
+        isDark = isDarkTheme,
+        fill = CustomizeFill(cancelGlassColor),
+        tone = BrightTone,
+    )
+    val applyGlassStyle = AppMaterialSettings.chromeGlassStyle(
+        base = ScheduleSoftGlassStyle,
+        isDark = isDarkTheme,
+        fill = CustomizeFill(primaryColor),
+        tone = BrightTone,
+    )
+    val capsuleShapeBlock: () -> Shape = remember { { ContinuousCapsule() } }
+    val cancelGlassEffects: com.haooz.softglass.backdrop.GlassEffectScope.() -> Unit =
+        remember(capsuleBlurDp, capsuleGlassOn, cancelGlassStyle) {
+            {
+                if (capsuleGlassOn) {
+                    backdropBlur(capsuleBlurDp.dp.toPx())
+                    runtimeShaderEffect(
+                        key = LIVE_CANCEL_CAPSULE_GLASS_KEY,
+                        shaderString = SOFT_GLASS_LIVE_SHADER,
+                        uniformShaderName = "content",
+                    ) {
+                        applySoftGlass(style = cancelGlassStyle, width = size.width, height = size.height)
+                    }
+                }
+            }
+        }
+    val applyGlassEffects: com.haooz.softglass.backdrop.GlassEffectScope.() -> Unit =
+        remember(capsuleBlurDp, capsuleGlassOn, applyGlassStyle) {
+            {
+                if (capsuleGlassOn) {
+                    backdropBlur(capsuleBlurDp.dp.toPx())
+                    runtimeShaderEffect(
+                        key = LIVE_APPLY_CAPSULE_GLASS_KEY,
+                        shaderString = SOFT_GLASS_LIVE_SHADER,
+                        uniformShaderName = "content",
+                    ) {
+                        applySoftGlass(style = applyGlassStyle, width = size.width, height = size.height)
+                    }
+                }
+            }
+        }
 
     var showApplyLoading by remember { mutableStateOf(false) }
     LaunchedEffect(isApplyingCustomize) {
@@ -303,6 +392,11 @@ fun CustomizeScheduleScreen(
             appearance.showBreakDividers
         )
     }
+    var showWeekGridLinesValue by remember(currentCombinationIndex, sheetResetKey) {
+        mutableStateOf(
+            appearance.showWeekGridLines
+        )
+    }
     var cardContentAlignmentValue by remember(
         currentCombinationIndex,
         sheetResetKey
@@ -315,7 +409,7 @@ fun CustomizeScheduleScreen(
     var cardTextScaleValue by remember(
         currentCombinationIndex,
         sheetResetKey
-    ) { mutableStateOf(appearance.cardTextScale) }
+    ) { mutableFloatStateOf(appearance.cardTextScale) }
     var showClassroomValue by remember(currentCombinationIndex, sheetResetKey) {
         mutableStateOf(appearance.showClassroom)
     }
@@ -327,6 +421,16 @@ fun CustomizeScheduleScreen(
         sheetResetKey
     ) { mutableStateOf(appearance.cardRefraction) }
     LaunchedEffect(appearance.cardRefraction) { cardRefractionValue = appearance.cardRefraction }
+    var cardEdgeValue by remember(
+        currentCombinationIndex,
+        sheetResetKey
+    ) { mutableStateOf(appearance.cardEdgeThickness) }
+    LaunchedEffect(appearance.cardEdgeThickness) { cardEdgeValue = appearance.cardEdgeThickness }
+    var cardRimValue by remember(
+        currentCombinationIndex,
+        sheetResetKey
+    ) { mutableStateOf(appearance.cardRim) }
+    LaunchedEffect(appearance.cardRim) { cardRimValue = appearance.cardRim }
     var wallpaperBlurValue by remember(
         currentCombinationIndex,
         sheetResetKey
@@ -345,20 +449,27 @@ fun CustomizeScheduleScreen(
         }
     }
 
+    // 无材质档：卡片模糊/折射设置锁死，写回时保留存档原值——
+    // 屏内这两个值来自钳制后的 appearance（恒 0/OFF），直接写回会把用户的存档清掉
+    val materialNone = com.haooz.chedule.ui.utils.AppMaterialSettings.isNoneTier()
+
     fun buildAppearance() = AppearanceConfig(
-        cardBlurRadius = effectValue,
+        cardBlurRadius = if (materialNone) AppearanceStore.getCardBlur() else effectValue,
         cardAlpha = cardAlphaValue,
         cardSurfaceAlpha = cardSurfaceAlphaValue,
         cardHeight = cardHeightValue,
         cardCornerRadius = cardCornerRadiusValue,
         wallpaperBrightness = wallpaperBrightnessValue,
         showBreakDividers = showBreakDividersValue,
+        showWeekGridLines = showWeekGridLinesValue,
         cardContentAlignment = cardContentAlignmentValue,
         cardTextColor = cardTextColorValue,
         cardTextScale = cardTextScaleValue,
         showClassroom = showClassroomValue,
         showTeacher = showTeacherValue,
-        cardRefraction = cardRefractionValue,
+        cardRefraction = if (materialNone) AppearanceStore.getCardRefraction() else cardRefractionValue,
+        cardEdgeThickness = cardEdgeValue,
+        cardRim = cardRimValue,
         wallpaperBlur = wallpaperBlurValue
     )
     LaunchedEffect(effectValue, cardAlphaValue, cardSurfaceAlphaValue) { onAppearanceChange(buildAppearance()) }
@@ -370,6 +481,9 @@ fun CustomizeScheduleScreen(
     LaunchedEffect(showBreakDividersValue) {
         onAppearanceChange(buildAppearance())
     }
+    LaunchedEffect(showWeekGridLinesValue) {
+        onAppearanceChange(buildAppearance())
+    }
     LaunchedEffect(cardContentAlignmentValue) {
         onAppearanceChange(buildAppearance())
     }
@@ -378,20 +492,16 @@ fun CustomizeScheduleScreen(
     LaunchedEffect(showClassroomValue) { onAppearanceChange(buildAppearance()) }
     LaunchedEffect(showTeacherValue) { onAppearanceChange(buildAppearance()) }
     LaunchedEffect(cardRefractionValue) { onAppearanceChange(buildAppearance()) }
+    LaunchedEffect(cardEdgeValue) { onAppearanceChange(buildAppearance()) }
+    LaunchedEffect(cardRimValue) { onAppearanceChange(buildAppearance()) }
     LaunchedEffect(wallpaperBlurValue) { onAppearanceChange(buildAppearance()) }
 
     val customizeButtonAlpha = remember { Animatable(1f) }
-
-    val pageCount = combinations.size.coerceAtLeast(1)
-    val initialPage = 0
-    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { pageCount })
 
     val animProgress = remember { Animatable(0f) }
     var animDone by remember { mutableStateOf(false) }
     var isPageAnimating by remember { mutableStateOf(true) }
     val buttonScaleAnim = remember { Animatable(1.5f) }
-    val pagerSpacing = remember { Animatable(-140f) }
-    val exitProgress = remember { Animatable(0f) }
 
     var isCutoutActive by remember { mutableStateOf(false) }
     var isCutoutAnimating by remember { mutableStateOf(false) }
@@ -403,7 +513,6 @@ fun CustomizeScheduleScreen(
     val cutoutOffsetX = remember { Animatable(0f) }
     // 与 MainActivity 共享同一 Animatable，弹窗开合时两边同帧同步位移
     val sheetOffsetY = sheetOffsetShared
-    val cutoutEnterProgress = remember { Animatable(0f) }
     val cutoutPathCache = remember { CutoutPathCache() }
     val toolOffsetTargetPx = with(densityObj) { 80.dp.toPx() }
     val toolAlphaAnim = remember { Animatable(0f) }
@@ -422,34 +531,23 @@ fun CustomizeScheduleScreen(
     }
 
     // ── 入场时间轴 ───────────────────────────────────────────────────────
-    // 这些动画在封面快照盖满全屏时就开始跑；硬约束：全部元素须在
-    // CUSTOMIZE_COVER_WINDOW_MILLIS（封面撤除时刻）内落地，否则封面没了按钮/工具栏还在飞，
-    // 观感脱节。每个 ENTER_* 的 (delay + duration) 都必须 ≤ 该窗口，改动前先核对。
     LaunchedEffect(Unit) {
         coroutineScope {
             launch {
                 animProgress.animateTo(
                     targetValue = 1f,
-                    animationSpec = tween(ENTER_CARD_MILLIS, easing = CustomizePageEasing)
+                    animationSpec = tween(ENTER_SNAPSHOT_SCALE_MILLIS, easing = CustomizePageEasing)
                 )
                 animDone = true
                 isPageAnimating = false
             }
             launch {
-                pagerSpacing.animateTo(
-                    -10f,
-                    tween(ENTER_PAGER_SPACING_MILLIS, easing = CustomizePageEasing)
-                )
-            }
-            launch {
-                delay(ENTER_BUTTON_DELAY_MILLIS.toLong())
                 buttonScaleAnim.animateTo(
                     1f,
                     tween(ENTER_BUTTON_MILLIS, easing = CustomizePageEasing)
                 )
             }
             launch {
-                delay(ENTER_TOOL_DELAY_MILLIS.toLong())
                 coroutineScope {
                     launch {
                         toolAlphaAnim.animateTo(
@@ -476,14 +574,7 @@ fun CustomizeScheduleScreen(
 
     LaunchedEffect(isExiting) {
         if (isExiting) {
-            exitProgress.snapTo(0f)
             coroutineScope {
-                launch {
-                    exitProgress.animateTo(
-                        1f,
-                        tween(500, easing = CustomizePageEasing)
-                    )
-                }
                 launch {
                     buttonScaleAnim.animateTo(
                         1.5f,
@@ -549,12 +640,6 @@ fun CustomizeScheduleScreen(
                         tween(400, easing = CustomizePageEasing)
                     )
                 }
-                launch {
-                    cutoutEnterProgress.animateTo(
-                        1f,
-                        tween(400, easing = CustomizePageEasing)
-                    )
-                }
             }
             cardHidden = true
             isCutoutAnimating = false
@@ -582,13 +667,6 @@ fun CustomizeScheduleScreen(
                         tween(400, easing = CustomizePageEasing)
                     )
                 }
-                launch {
-                    cutoutEnterProgress.animateTo(
-                        0f,
-                        tween(400, easing = CustomizePageEasing)
-                    )
-                }
-                launch { pagerState.animateScrollToPage(currentCombinationIndex) }
             }
         }
     }
@@ -687,13 +765,15 @@ fun CustomizeScheduleScreen(
                     val animW = size.width * cardScaleAnim.value
                     val animH = animW * aspect
                     val p = cutoutProgress.value
-                    val cutoutCorners = screenCornerRadius.scaled(cardScaleAnim.value * p)
+                    val cutoutCorners =
+                        screenCornerRadius.scaled(cardScaleAnim.value * p)
+                            .coerceAtLeast(cutoutMinCornerPx)
 
                     val left = cardCenterX + ((cardCenterX - animW / 2f) - cardCenterX) * p
                     val top = cardCenterY + ((cardCenterY - animH / 2f) - cardCenterY) * p
 
                     if (p <= 0f) {
-                        drawRect(color = Color(0xFF1A1A1A))
+                        drawRect(color = CustomizePageBackground)
                     } else {
                         // 形状不变、仅位置变时走缓存 translate，squircle 不重建
                         val cached = cutoutPathCache.obtain(
@@ -704,7 +784,7 @@ fun CustomizeScheduleScreen(
                             corners = cutoutCorners
                         )
                         translate(left, top) {
-                            drawPath(cached, color = Color(0xFF1A1A1A))
+                            drawPath(cached, color = CustomizePageBackground)
                         }
                     }
                 }
@@ -728,9 +808,6 @@ fun CustomizeScheduleScreen(
             val cutoutToBottomGap = (screenH - cutoutBottom).coerceAtLeast(0f)
             val toolNudgeDp = 8.dp
             val toolBottomPadding = with(densityObj) {
-                // ⚠ 末尾那个 2/3 是还原静止位置用的，不是随手取的系数：旧式（onSizeChanged
-                // 挂在 padding 外，量到含 padding 的高度）是自指方程 P = (G - H - P)/2 + 8dp，
-                // 其唯一解正好 = 本式 2/3；修掉振荡后不补它，工具栏会停在公式原值（约 116px 而非 77px）。
                 val raw = (cutoutToBottomGap / 2f - toolRowHeightPx / 2f).toDp() + toolNudgeDp
                 val restored = raw * (2f / 3f)
                 if (restored < 0.dp) 0.dp else restored
@@ -741,10 +818,6 @@ fun CustomizeScheduleScreen(
             val targetScale = minOf(targetScaleX, targetScaleY)
 
             val currentScale = 1f + (targetScale - 1f) * enterValue
-            // ⚠ 必须与卡片 cardOffsetY 的位移项逐项一致：`0.028H` 已由下面
-            // TransformOrigin(0.5f, 0.58f) 的缩放原点承担（0.028/0.35 == 0.08），但
-            // `cutoutOffsetY` / `sheetOffsetY` 原点管不着；留 0f 会在 animDone 交接时让卡片
-            // 比覆盖层高 |o|*(1-prog)（落位 o=-10dp → 约 7dp），观感是开洞区域底部上跳一下。
             val currentTranslationY =
                 (cutoutOffsetY.value + sheetOffsetY.value) * (1f - cutoutScaleProg)
             // 横向同理（弹窗无横向让位，故不含 sheetOffset）
@@ -754,125 +827,91 @@ fun CustomizeScheduleScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .then(
-                        // 弹窗打开时不录 liquidGlassBackdrop，只依赖 anySheetOpen 布尔，避免 backdrop 就绪引发结构变更重组
-                        if (anySheetOpen) Modifier
-                        else Modifier.liquidGlassLayerBackdrop(liquidGlassBackdrop),
+                        if (com.haooz.chedule.ui.utils.AppMaterialSettings.isNoneTier()) {
+                            Modifier
+                        } else {
+                            Modifier.liquidGlassLayerBackdrop(
+                                liquidGlassBackdrop,
+                                // 采样层内容恒为同一片底色，玻璃只借它的坐标与图层，像素永不变化
+                                // ⇒ 恒定指纹：首帧录一次后每帧跳过重录，弹窗期间也一样。
+                                // 节点必须常驻：一旦 detach，onDetach 会把 layerCoordinates 置空，
+                                // drawBackdrop 整笔 return ⇒ 顶栏「取消 / 应用」的材质瞬间消失。
+                                recordKey = "customize-empty-backdrop"
+                            )
+                        },
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                HorizontalPager(
-                    state = pagerState,
+                // 单搭配：
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer { alpha = if (cardHidden) 0f else 1f },
-                    beyondViewportPageCount = 1,
-                    pageSpacing = pagerSpacing.value.dp,
-                    userScrollEnabled = false
-                ) { page ->
-                    val pageOffset =
-                        ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction).absoluteValue
-                    val targetCardScale = 1f - pageOffset * 0.35f
-                    val baseCardAlpha = 1f
-                    val isExitingNow = isExiting && exitProgress.value < 1f
-                    val enterDelayed = if (pageOffset > 0.001f && !animDone) {
-                        val delayThreshold = (pageOffset * 0.01f).coerceIn(0f, 0.01f)
-                        ((enterValue - delayThreshold) / (1f - delayThreshold)).coerceIn(0f, 1f)
-                    } else 1f
-                    val cutoutScaleBoost = if (pageOffset > 0.001f) {
-                        (1.2f - targetCardScale) * cutoutEnterProgress.value
-                    } else 0f
-                    val cardScale = when {
-                        isExitingNow && pageOffset > 0.001f -> {
-                            targetCardScale + (1.4f - targetCardScale) * exitProgress.value
-                        }
-
-                        pageOffset > 0.001f && !animDone -> {
-                            2.0f + (targetCardScale - 2.0f) * enterDelayed
-                        }
-
-                        else -> targetCardScale + cutoutScaleBoost
-                    }
-                    // 离当前页越近 zIndex 越大，当前卡在最上方
-                    val zOrdinal = (pageCount - pageOffset).coerceAtLeast(0f)
-
+                    contentAlignment = Alignment.Center
+                ) {
+                    val cardScaleProg =
+                        ((cardScaleAnim.value - 0.65f) / (1f - 0.65f)).coerceIn(0f, 1f)
+                    val cardBaseOffsetY =
+                        screenH * 0.028f + cutoutOffsetY.value + sheetOffsetY.value
+                    val cardOffsetY = cardBaseOffsetY * (1f - cardScaleProg)
+                    // 与 drawBehind 里洞的横向位移逐项一致（含 (1 - prog) 淡出），否则洞与卡片错位
+                    val cardOffsetX = cutoutOffsetX.value * (1f - cardScaleProg)
+                    val comb = combinations.firstOrNull()
+                    // 单搭配：这一页就是当前搭配
+                    val isCurrentComb = currentCombinationIndex == 0
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .zIndex(zOrdinal),
-                        contentAlignment = Alignment.Center
+                            .width(cardWidthDp)
+                            .height(cardHeightDp)
+                            .offset(
+                                x = with(densityObj) { cardOffsetX.toDp() },
+                                y = with(densityObj) { cardOffsetY.toDp() }
+                            )
+                            // 与遮罩洞用同一套圆角（含 20dp 下限），否则卡片露直角、洞是圆的
+                            .clip(
+                                screenCornerRadius.scaled(cardScaleAnim.value)
+                                    .coerceAtLeast(cutoutMinCornerPx)
+                                    .toShape(densityObj)
+                            )
                     ) {
-                        val cardScaleProg =
-                            ((cardScaleAnim.value - 0.65f) / (1f - 0.65f)).coerceIn(0f, 1f)
-                        val cardBaseOffsetY =
-                            screenH * 0.028f + cutoutOffsetY.value + sheetOffsetY.value
-                        val cardOffsetY = cardBaseOffsetY * (1f - cardScaleProg)
-                        // 与 drawBehind 里洞的横向位移逐项一致（含 (1 - prog) 淡出），否则洞与卡片错位
-                        val cardOffsetX = cutoutOffsetX.value * (1f - cardScaleProg)
-                        val comb = combinations.getOrNull(page)
-                        val isCurrentComb = page == currentCombinationIndex
-                        // 缩放中心固定为屏幕中心，稳态与动画终点一致，无跳变
-                        val signedRelativePosition =
-                            (page - pagerState.currentPage) - pagerState.currentPageOffsetFraction
-                        val pageSpacingPx = with(densityObj) { pagerSpacing.value.dp.toPx() }
-                        val cardCenterOffsetX = signedRelativePosition * (screenW + pageSpacingPx)
-                        val pivotOriginX = 0.5f - cardCenterOffsetX / cardWidthPx
-                        val pivotOriginY = 0.5f + (screenH * 0.08f - cardOffsetY) / cardHeightPx
                         Box(
                             modifier = Modifier
-                                .width(cardWidthDp)
-                                .height(cardHeightDp)
-                                .offset(
-                                    x = with(densityObj) { cardOffsetX.toDp() },
-                                    y = with(densityObj) { cardOffsetY.toDp() }
+                                .fillMaxSize()
+                                .clickable(
+                                    enabled = !cardHidden && !isCutoutActive,
+                                    onClick = {}
                                 )
-                                .graphicsLayer {
-                                    scaleX = cardScale
-                                    scaleY = cardScale
-                                    transformOrigin = TransformOrigin(pivotOriginX, pivotOriginY)
-                                    alpha = baseCardAlpha
-                                }
-                                .clip(screenCornerRadius.scaled(cardScaleAnim.value).toShape(densityObj))
                         ) {
-                            val combIdx = page
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clickable(
-                                        enabled = !cardHidden && !isCutoutActive,
-                                        onClick = {}
+                            // 当前搭配：刚选完壁纸时 comb.snapshot 被清掉，优先实时壁纸，避免旧快照盖住新图
+                            val previewBitmap = when {
+                                isCurrentComb && wallpaperBitmap != null && comb?.snapshot == null ->
+                                    wallpaperBitmap
+                                isCurrentComb && snapshot != null && animDone && !cardHidden ->
+                                    snapshot
+                                comb?.snapshot != null -> comb.snapshot
+                                comb?.wallpaper != null -> comb.wallpaper
+                                else -> null
+                            }
+                            if (previewBitmap != null) {
+                                Image(
+                                    bitmap = previewBitmap,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color(0xFF363636)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = SchedStr.combinationN(1),
+                                        color = Color.White.copy(alpha = 0.6f),
+                                        fontSize = 16.sp,
+                                        textAlign = TextAlign.Center,
                                     )
-                            ) {
-                                // 当前搭配：刚选完壁纸时 comb.snapshot 被清掉，优先实时壁纸，避免旧快照盖住新图
-                                val previewBitmap = when {
-                                    isCurrentComb && wallpaperBitmap != null && comb?.snapshot == null ->
-                                        wallpaperBitmap
-                                    isCurrentComb && snapshot != null && animDone && !cardHidden ->
-                                        snapshot
-                                    comb != null && comb.snapshot != null -> comb.snapshot
-                                    comb != null && comb.wallpaper != null -> comb.wallpaper
-                                    else -> null
-                                }
-                                if (previewBitmap != null) {
-                                    Image(
-                                        bitmap = previewBitmap,
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(Color(0xFF363636)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = "搭配 ${combIdx + 1}",
-                                            color = Color.White.copy(alpha = 0.6f),
-                                            fontSize = 16.sp,
-                                            textAlign = TextAlign.Center,
-                                        )
-                                    }
                                 }
                             }
                         }
@@ -890,7 +929,7 @@ fun CustomizeScheduleScreen(
                     val latestScreenHPx by rememberUpdatedState(screenHPx)
 
                     var bounceBackTrigger by remember { mutableIntStateOf(0) }
-                    var gestureEndScale by remember { mutableStateOf(1f) }
+                    var gestureEndScale by remember { mutableFloatStateOf(1f) }
                     LaunchedEffect(bounceBackTrigger) {
                         if (bounceBackTrigger > 0 && gestureEndScale < latestMinWallpaperScale) {
                             animate(
@@ -970,6 +1009,7 @@ fun CustomizeScheduleScreen(
                             scaleX = buttonScale
                             scaleY = buttonScale
                             transformOrigin = TransformOrigin(0.5f, 0.5f)
+                            compositingStrategy = CompositingStrategy.ModulateAlpha
                         },
                     contentAlignment = Alignment.TopCenter
                 ) {
@@ -988,6 +1028,21 @@ fun CustomizeScheduleScreen(
                         val applyHighlight =
                             remember(animationScope) { InteractiveHighlight(animationScope) }
                         val hapticFeedback = LocalHapticFeedback.current
+                        // 无材质档的实色底：按引用比较，必须 remember 成稳定 lambda。
+                        val cancelOnDrawSurface: DrawScope.() -> Unit =
+                            remember(exitContainerColor, exitHighlight) {
+                                {
+                                    drawRect(exitContainerColor)
+                                    drawRect(Color.Black.copy(alpha = 0.03f * exitHighlight.pressProgress))
+                                }
+                            }
+                        val applyOnDrawSurface: DrawScope.() -> Unit =
+                            remember(primaryColor, applyHighlight) {
+                                {
+                                    drawRect(primaryColor.copy(AppMaterialSettings.solidSurfaceAlpha(0.8f)))
+                                    drawRect(Color.Black.copy(alpha = 0.03f * applyHighlight.pressProgress))
+                                }
+                            }
                         val resolvedPreview = previewPage.coerceIn(0, 1)
                         // 选中滑块位置动画：0=今日，1=课程表
                         val thumbProgress = remember { Animatable(if (previewPage.coerceIn(0, 1) == 1) 1f else 0f) }
@@ -1006,12 +1061,8 @@ fun CustomizeScheduleScreen(
                                 .height(40.dp)
                                 .drawBackdrop(
                                     backdrop = liquidGlassBackdrop,
-                                    shape = { ContinuousCapsule() },
-                                    effects = {
-                                        vibrancy()
-                                    },
-                                    highlight = null,
-                                    shadow = { Shadow(alpha = 0.3f) },
+                                    shape = capsuleShapeBlock,
+                                    effects = cancelGlassEffects,
                                     layerBlock = {
                                         val progress = exitHighlight.pressProgress
                                         val scale = 1f + 2f.dp.toPx() / 40.dp.toPx() * progress
@@ -1023,14 +1074,8 @@ fun CustomizeScheduleScreen(
                                         translationY =
                                             size.minDimension * 0.05f * offset.y / size.maxDimension
                                     },
-                                    onDrawSurface = {
-                                        drawRect(exitContainerColor)
-                                        drawRect(Color.Black.copy(alpha = 0.03f * exitHighlight.pressProgress))
-                                    }
-                                )
-                                .edgeLight(
-                                    shape = ContinuousCapsule(),
-                                    edgeLight = rememberDefaultEdgeLight(baseColor = exitContainerColor),
+                                    // 柔光自己画玻璃色，叠容器色会盖住折射；无材质档必须留实色底。
+                                    onDrawSurface = if (capsuleGlassOn) null else cancelOnDrawSurface,
                                 )
                                 .clickable(
                                     interactionSource = null,
@@ -1047,27 +1092,20 @@ fun CustomizeScheduleScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "取消",
+                                text = CommonStr.cancel(),
                                 color = exitIconColor,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Medium
                             )
                         }
                         // 中段：今日 / 课程表 预览切换（椭圆滑块，与取消/应用同行）
+                        // 不用玻璃：只留纯色底 + 圆角，既不采样也不挂 shader，白色图标靠底色保证对比度。
                         Box(
                             modifier = Modifier
                                 .width(120.dp)
                                 .height(40.dp)
-                                .drawBackdrop(
-                                    backdrop = liquidGlassBackdrop,
-                                    shape = { ContinuousCapsule() },
-                                    effects = {
-                                        vibrancy()
-                                    },
-                                    highlight = null,
-                                    shadow = { Shadow(alpha = 0.3f) },
-                                    onDrawSurface = { drawRect(exitContainerColor) }
-                                )
+                                .clip(ContinuousCapsule())
+                                .background(exitContainerColor)
                                 .padding(3.dp)
                         ) {
                             Box(modifier = Modifier.fillMaxSize()) {
@@ -1100,7 +1138,7 @@ fun CustomizeScheduleScreen(
                                     ) {
                                         Icon(
                                             imageVector = MiuixIcons.Album,
-                                            contentDescription = "今日",
+                                            contentDescription = CommonStr.today(),
                                             modifier = Modifier.size(20.dp),
                                             tint = if (resolvedPreview == 0) Color.White
                                             else Color.White.copy(alpha = 0.75f)
@@ -1123,7 +1161,7 @@ fun CustomizeScheduleScreen(
                                     ) {
                                         Icon(
                                             imageVector = MiuixIcons.Months,
-                                            contentDescription = "课程表",
+                                            contentDescription = SchedStr.schedule(),
                                             modifier = Modifier.size(20.dp),
                                             tint = if (resolvedPreview == 1) Color.White
                                             else Color.White.copy(alpha = 0.75f)
@@ -1138,12 +1176,8 @@ fun CustomizeScheduleScreen(
                                 .height(40.dp)
                                 .drawBackdrop(
                                     backdrop = liquidGlassBackdrop,
-                                    shape = { ContinuousCapsule() },
-                                    effects = {
-                                        vibrancy()
-                                    },
-                                    highlight = null,
-                                    shadow = { Shadow(alpha = 0.3f) },
+                                    shape = capsuleShapeBlock,
+                                    effects = applyGlassEffects,
                                     layerBlock = {
                                         val progress = applyHighlight.pressProgress
                                         val scale = 1f + 2f.dp.toPx() / 40.dp.toPx() * progress
@@ -1155,14 +1189,8 @@ fun CustomizeScheduleScreen(
                                         translationY =
                                             size.minDimension * 0.05f * offset.y / size.maxDimension
                                     },
-                                    onDrawSurface = {
-                                        drawRect(primaryColor.copy(0.8f))
-                                        drawRect(Color.Black.copy(alpha = 0.03f * applyHighlight.pressProgress))
-                                    }
-                                )
-                                .edgeLight(
-                                    shape = ContinuousCapsule(),
-                                    edgeLight = rememberDefaultEdgeLight(baseColor = primaryColor),
+                                    // 柔光自己画玻璃色，叠容器色会盖住折射；无材质档必须留实色底。
+                                    onDrawSurface = if (capsuleGlassOn) null else applyOnDrawSurface,
                                 )
                                 .clickable(
                                     interactionSource = null,
@@ -1181,7 +1209,7 @@ fun CustomizeScheduleScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "应用",
+                                SchedStr.applyChanges(),
                                 color = Color.White,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Medium
@@ -1207,7 +1235,7 @@ fun CustomizeScheduleScreen(
                                 orbitingDotSize = 2.7.dp,
                             )
                             Text(
-                                text = "正在应用",
+                                text = SchedStr.applying(),
                                 color = Color.White,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium
@@ -1265,7 +1293,7 @@ fun CustomizeScheduleScreen(
                             Box(
                                 modifier = Modifier
                                     .size(56.dp)
-                                    .clip(CircleShape)
+                                    .clip(ContinuousCapsule())
                                     .background(if (hasWallpaper) Color(0xFFB71C1C) else Color(0xFF363636))
                                     .clickable {
                                         if (hasWallpaper) onClearWallpaper() else onPickWallpaper()
@@ -1274,7 +1302,7 @@ fun CustomizeScheduleScreen(
                             ) {
                                 Icon(
                                     imageVector = if (hasWallpaper) MiuixIcons.Normal.Close else MiuixIcons.Image,
-                                    contentDescription = if (hasWallpaper) "清除壁纸" else "壁纸",
+                                    contentDescription = if (hasWallpaper) SchedStr.clearWallpaper() else SchedStr.wallpaper(),
                                     modifier = Modifier.size(26.dp),
                                     tint = Color.White
                                 )
@@ -1289,7 +1317,7 @@ fun CustomizeScheduleScreen(
                             VerticalDivider(
                                 Modifier
                                     .height(36.dp)
-                                    .clip(CircleShape),
+                                    .clip(ContinuousCapsule()),
                                 thickness = 2.dp,
                                 color = Color(0xFF363636)
                             )
@@ -1303,14 +1331,14 @@ fun CustomizeScheduleScreen(
                             Box(
                                 modifier = Modifier
                                     .size(56.dp)
-                                    .clip(CircleShape)
+                                    .clip(ContinuousCapsule())
                                     .background(Color(0xFF363636))
                                     .clickable { showEffectSheet = true },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = MiuixIcons.Background,
-                                    contentDescription = "效果",
+                                    contentDescription = SchedStr.effects(),
                                     modifier = Modifier.size(28.dp),
                                     tint = Color.White
                                 )
@@ -1325,14 +1353,14 @@ fun CustomizeScheduleScreen(
                             Box(
                                 modifier = Modifier
                                     .size(56.dp)
-                                    .clip(CircleShape)
+                                    .clip(ContinuousCapsule())
                                     .background(Color(0xFF363636))
                                     .clickable { showCustomizeSheet = true },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = MiuixIcons.GridView,
-                                    contentDescription = "自定义",
+                                    contentDescription = SchedStr.customize(),
                                     tint = Color.White
                                 )
                             }
@@ -1373,7 +1401,7 @@ fun CustomizeScheduleScreen(
                         backdrop = LocalSheetContentBackdrop.current
                             ?: liquidGlassBackdrop,
                         icon = MiuixIcons.Normal.Close,
-                        contentDescription = "关闭",
+                        contentDescription = CommonStr.close(),
                         modifier = Modifier.padding(start = startPad),
                         iconSize = 24.dp,
                         containerColor = if (MiuixTheme.isDynamicColor) MiuixTheme.colorScheme.surfaceContainerHigh
@@ -1403,11 +1431,11 @@ fun CustomizeScheduleScreen(
                             )
                         } else {
                             DropdownEntry(
-                                items = listOf(DropdownItem(text = "跟随应用", selected = true, onClick = {}))
+                                items = listOf(DropdownItem(text = SchedStr.followApp(), selected = true, onClick = {}))
                             )
                         }
                         OverlayDropdownMenu(
-                            title = "默认主题",
+                            title = SchedStr.defaultTheme(),
                             entry = themeModeEntry,
                             collapseOnSelection = true,
                             enabled = hasWallpaper,
@@ -1419,7 +1447,7 @@ fun CustomizeScheduleScreen(
                     SheetCard {
                         Column {
                             SliderItem(
-                                label = "壁纸亮度",
+                                label = SchedStr.wallpaperBrightness(),
                                 value = wallpaperBrightnessValue,
                                 valueRange = -50f..50f,
                                 keyPoints = listOf(0f),
@@ -1437,7 +1465,7 @@ fun CustomizeScheduleScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "壁纸模糊",
+                                    text = SchedStr.wallpaperBlur(),
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 17.sp,
                                     color = if (hasWallpaper) MiuixTheme.colorScheme.onSurface
@@ -1454,10 +1482,10 @@ fun CustomizeScheduleScreen(
                     SheetCard {
                         Column {
                             SliderItem(
-                                label = "卡片着色程度",
+                                label = SchedStr.cardTint(),
                                 value = cardAlphaValue,
                                 valueRange = 0f..1f,
-                                keyPoints = listOf(0.15f),
+                                keyPoints = listOf(0.12f),
                                 enabled = true,
                                 onValueChange = { cardAlphaValue = it },
                                 quantize = { (it * 100f).roundToInt() / 100f },
@@ -1466,10 +1494,10 @@ fun CustomizeScheduleScreen(
                                 parseInput = { it.toFloatOrNull()?.let { v -> (v / 100f).coerceIn(0f, 1f) } }
                             )
                             SliderItem(
-                                label = "卡片不透明度",
+                                label = SchedStr.cardOpacity(),
                                 value = cardSurfaceAlphaValue,
                                 valueRange = 0f..1f,
-                                keyPoints = listOf(0.15f),
+                                keyPoints = listOf(0.34f),
                                 enabled = hasWallpaper,
                                 onValueChange = { if (hasWallpaper) cardSurfaceAlphaValue = it },
                                 quantize = { (it * 100f).roundToInt() / 100f },
@@ -1477,24 +1505,79 @@ fun CustomizeScheduleScreen(
                                 displayValue = { (it * 100).roundToInt().toString() },
                                 parseInput = { it.toFloatOrNull()?.let { v -> (v / 100f).coerceIn(0f, 1f) } }
                             )
+                        }
+                    }
+                    SheetCard {
+                        Column {
                             SliderItem(
-                                label = "卡片模糊",
+                                label = SchedStr.cardBlur(),
                                 value = effectValue,
-                                valueRange = 0f..20f,
-                                keyPoints = listOf(4f),
-                                enabled = hasWallpaper,
+                                // **px 单位**，值就是 σ：直接喂 shader，不做 density 换算、也没有隐藏倍率。
+                                // 0..24px（上限见 CARD_BLUR_MAX_PX），默认 12px。
+                                valueRange = 0f..24f,
+                                keyPoints = listOf(12f),
+                                // 无材质档锁死：卡片模糊/折射整体关（渲染侧同步强制 0）
+                                enabled = hasWallpaper &&
+                                    !com.haooz.chedule.ui.utils.AppMaterialSettings.isNoneTier(),
                                 // 整数吸附，避免留下显示为 0 却仍有一丝模糊的小数
                                 onValueChange = { if (hasWallpaper) effectValue = it },
-                                quantize = { it.roundToInt().coerceIn(0, 20).toFloat() },
-                                suffix = "dp",
+                                quantize = { it.roundToInt().coerceIn(0, 24).toFloat() },
+                                suffix = "px",
                                 displayValue = { it.roundToInt().toString() },
-                                parseInput = { it.toFloatOrNull()?.coerceIn(0f, 20f) }
+                                parseInput = { it.toFloatOrNull()?.coerceIn(0f, 80f) },
+                                disabledText = if (com.haooz.chedule.ui.utils.AppMaterialSettings.isNoneTier()) {
+                                    SchedStr.noMaterial()
+                                } else {
+                                    SchedStr.wallpaperRequired()
+                                }
                             )
                             RefractionItem(
                                 value = cardRefractionValue,
-                                enabled = hasWallpaper,
-                                onValueChange = { if (hasWallpaper) cardRefractionValue = it }
+                                // 无材质档整体关（渲染侧同步强制 OFF），其余档都可调
+                                enabled = hasWallpaper &&
+                                    !AppMaterialSettings.isNoneTier(),
+                                onValueChange = { if (hasWallpaper) cardRefractionValue = it },
+                                disabledText = if (AppMaterialSettings.isNoneTier()) {
+                                    SchedStr.noMaterial()
+                                } else {
+                                    SchedStr.wallpaperRequired()
+                                }
                             )
+                            EdgeThicknessItem(
+                                value = cardEdgeValue,
+                                // 只乘在文件默认的 edgeWidth 上（×0.8 / ×1 / ×1.2 / ×1.5），不改默认值
+                                enabled = hasWallpaper &&
+                                    !com.haooz.chedule.ui.utils.AppMaterialSettings.isNoneTier(),
+                                onValueChange = { if (hasWallpaper) cardEdgeValue = it },
+                                disabledText = if (com.haooz.chedule.ui.utils.AppMaterialSettings.isNoneTier()) {
+                                    SchedStr.noMaterial()
+                                } else {
+                                    SchedStr.wallpaperRequired()
+                                }
+                            )
+                            // 高光描边：倒角带上的方向光，课表页与今日页同一开关（出厂默认开）
+                            // 每一档材质都有这圈光（无材质档只是模糊/折射归零），所以只按有无壁纸判可用
+                            val rimEnabled = hasWallpaper
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = SchedStr.cardRim(),
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 17.sp,
+                                    color = if (rimEnabled) MiuixTheme.colorScheme.onSurface
+                                    else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                )
+                                Switch(
+                                    checked = cardRimValue,
+                                    enabled = rimEnabled,
+                                    onCheckedChange = { if (rimEnabled) cardRimValue = it }
+                                )
+                            }
                         }
                     }
                 }
@@ -1502,11 +1585,13 @@ fun CustomizeScheduleScreen(
                     SheetCard {
                         Column {
                             SliderItem(
-                                label = "课程卡片高度",
+                                label = SchedStr.courseCardHeight(),
                                 value = cardHeightValue,
                                 valueRange = 34f..92f,
                                 keyPoints = listOf(54f),
-                                enabled = true,
+                                // 时间轴高度由真实时长决定，卡高档位无效：禁用并写明原因，否则像「拖了没反应」
+                                enabled = scheduleViewMode != ScheduleViewMode.TIMELINE,
+                                disabledText = SchedStr.timelineFixedHeight(),
                                 onValueChange = { cardHeightValue = it },
                                 quantize = { (it.roundToInt() / 2 * 2).toFloat() },
                                 suffix = "dp",
@@ -1514,7 +1599,7 @@ fun CustomizeScheduleScreen(
                                 parseInput = { it.toFloatOrNull()?.coerceIn(34f, 92f) }
                             )
                             SliderItem(
-                                label = "课程卡片圆角",
+                                label = SchedStr.courseCardCornerRadius(),
                                 value = cardCornerRadiusValue,
                                 valueRange = 0f..48f,
                                 keyPoints = listOf(10f),
@@ -1539,7 +1624,7 @@ fun CustomizeScheduleScreen(
                                 }
                             )
                             OverlayDropdownMenu(
-                                title = "卡片内容对齐方式",
+                                title = SchedStr.cardContentAlignment(),
                                 entry = contentAlignmentEntry,
                                 collapseOnSelection = true,
                                 liquidGlassBackdrop = LocalSheetContentBackdrop.current
@@ -1556,7 +1641,7 @@ fun CustomizeScheduleScreen(
                                 }
                             )
                             OverlayDropdownMenu(
-                                title = "卡片文字颜色",
+                                title = SchedStr.cardTextColor(),
                                 entry = textColorEntry,
                                 collapseOnSelection = true,
                                 liquidGlassBackdrop = LocalSheetContentBackdrop.current
@@ -1564,7 +1649,7 @@ fun CustomizeScheduleScreen(
                                 dropdownColors = liquidGlassDropdownColors,
                             )
                             SliderItem(
-                                label = "卡片文字缩放比例",
+                                label = SchedStr.cardTextScale(),
                                 value = cardTextScaleValue,
                                 valueRange = 0.5f..2.0f,
                                 keyPoints = listOf(1.0f),
@@ -1588,7 +1673,7 @@ fun CustomizeScheduleScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "显示地点",
+                                    text = SchedStr.showClassroom(),
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 17.sp,
                                     color = MiuixTheme.colorScheme.onSurface
@@ -1606,7 +1691,7 @@ fun CustomizeScheduleScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "显示教师",
+                                    text = SchedStr.showTeacher(),
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 17.sp,
                                     color = MiuixTheme.colorScheme.onSurface
@@ -1619,31 +1704,118 @@ fun CustomizeScheduleScreen(
                         }
                     }
                     SheetCard {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "午休晚休分界线",
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 17.sp,
-                                color = MiuixTheme.colorScheme.onSurface
+                        Column {
+                            // 视图与分界线同卡：后者是否可用取决于前者
+                            val viewModeEntry = DropdownEntry(
+                                items = listOf(
+                                    DropdownItem(
+                                        text = SchedStr.viewAsWeek(),
+                                        selected = scheduleViewMode == ScheduleViewMode.WEEK,
+                                        onClick = {
+                                            onScheduleViewModeChange(ScheduleViewMode.WEEK)
+                                        }
+                                    ),
+                                    DropdownItem(
+                                        text = SchedStr.viewAsTimeline(),
+                                        selected = scheduleViewMode == ScheduleViewMode.TIMELINE,
+                                        onClick = {
+                                            onScheduleViewModeChange(ScheduleViewMode.TIMELINE)
+                                        }
+                                    ),
+                                )
                             )
-                            Switch(
-                                checked = showBreakDividersValue,
-                                onCheckedChange = { showBreakDividersValue = it }
+                            OverlayDropdownMenu(
+                                title = SchedStr.viewAs(),
+                                entry = viewModeEntry,
+                                collapseOnSelection = true,
+                                liquidGlassBackdrop = LocalSheetContentBackdrop.current
+                                    ?: liquidGlassBackdrop,
+                                dropdownColors = liquidGlassDropdownColors,
                             )
+                            // 今日页可以单独选视图，与课表页互不影响
+                            val todayViewModeEntry = DropdownEntry(
+                                items = listOf(
+                                    DropdownItem(
+                                        text = SchedStr.viewAsWeek(),
+                                        selected = todayViewMode == TodayViewMode.WEEK,
+                                        onClick = {
+                                            onTodayViewModeChange(TodayViewMode.WEEK)
+                                        }
+                                    ),
+                                    DropdownItem(
+                                        text = SchedStr.viewAsTimeline(),
+                                        selected = todayViewMode == TodayViewMode.TIMELINE,
+                                        onClick = {
+                                            onTodayViewModeChange(TodayViewMode.TIMELINE)
+                                        }
+                                    ),
+                                )
+                            )
+                            OverlayDropdownMenu(
+                                title = SchedStr.todayViewAs(),
+                                entry = todayViewModeEntry,
+                                collapseOnSelection = true,
+                                liquidGlassBackdrop = LocalSheetContentBackdrop.current
+                                    ?: liquidGlassBackdrop,
+                                dropdownColors = liquidGlassDropdownColors,
+                            )
+                            // 时间轴没有节次网格（纵轴是连续时间），下面两个开关都置灰
+                            val weekGridEnabled = scheduleViewMode == ScheduleViewMode.WEEK
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = SchedStr.weekGridLines(),
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 17.sp,
+                                    color = MiuixTheme.colorScheme.onSurface.copy(
+                                        alpha = if (weekGridEnabled) 1f else 0.4f
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Switch(
+                                    checked = showWeekGridLinesValue,
+                                    onCheckedChange = { showWeekGridLinesValue = it },
+                                    enabled = weekGridEnabled
+                                )
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = SchedStr.breakDividers(),
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 17.sp,
+                                    color = MiuixTheme.colorScheme.onSurface.copy(
+                                        alpha = if (weekGridEnabled) 1f else 0.4f
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Switch(
+                                    checked = showBreakDividersValue,
+                                    onCheckedChange = { showBreakDividersValue = it },
+                                    enabled = weekGridEnabled
+                                )
+                            }
                         }
                     }
                 }
 
+                // 手机版两个弹窗的默认（半屏吸附）高度统一为屏幕 48%；
+                val defaultSheetContentHeight = screenHeightDp().dp * 0.52f
+
                 if (isTablet) {
                     BlurBottomSheetTablet(
                         show = showEffectSheet,
-                        title = "效果",
+                        title = SchedStr.effects(),
                         sheetMaxHeight = 320.dp,
                         isBottomAligned = true,
                         onDismissRequest = { showEffectSheet = false },
@@ -1657,35 +1829,38 @@ fun CustomizeScheduleScreen(
                                 .scrollEndHaptic(
                                     hapticFeedbackType = HapticFeedbackType.TextHandleMove
                                 )
-                                .verticalScroll(rememberScrollState()),
+                                .verticalScroll(rememberScrollState())
+                                .sheetContentBottomInset(isTablet),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             Spacer(Modifier.height(56.dp))
                             effectSheetContent()
-                            Spacer(Modifier.height(4.dp))
                         }
                     }
                 } else {
                     BlurBottomSheet(
                         show = showEffectSheet,
-                        title = "效果",
+                        title = SchedStr.effects(),
                         onDismissRequest = { showEffectSheet = false },
                         startAction = { sheetCloseButton({ showEffectSheet = false }, 18.dp) }
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = 580.dp)
+                                .then(
+                                    if (LocalBlurBottomSheetContentExpanded.current) Modifier.fillMaxHeight()
+                                    else Modifier.height(defaultSheetContentHeight)
+                                )
                                 .overScrollVertical()
                                 .scrollEndHaptic(
                                     hapticFeedbackType = HapticFeedbackType.TextHandleMove
                                 )
-                                .verticalScroll(rememberScrollState()),
+                                .verticalScroll(rememberScrollState())
+                                .sheetContentBottomInset(isTablet),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             Spacer(Modifier.height(58.dp))
                             effectSheetContent()
-                            Spacer(Modifier.height(240.dp))
                         }
                     }
                 }
@@ -1693,7 +1868,7 @@ fun CustomizeScheduleScreen(
                 if (isTablet) {
                     BlurBottomSheetTablet(
                         show = showCustomizeSheet,
-                        title = "自定义",
+                        title = SchedStr.customize(),
                         sheetMaxHeight = 320.dp,
                         isBottomAligned = true,
                         onDismissRequest = { showCustomizeSheet = false },
@@ -1707,35 +1882,38 @@ fun CustomizeScheduleScreen(
                                 .scrollEndHaptic(
                                     hapticFeedbackType = HapticFeedbackType.TextHandleMove
                                 )
-                                .verticalScroll(rememberScrollState()),
+                                .verticalScroll(rememberScrollState())
+                                .sheetContentBottomInset(isTablet),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             Spacer(Modifier.height(56.dp))
                             customizeSheetContent()
-                            Spacer(Modifier.height(4.dp))
                         }
                     }
                 } else {
                     BlurBottomSheet(
                         show = showCustomizeSheet,
-                        title = "自定义",
+                        title = SchedStr.customize(),
                         onDismissRequest = { showCustomizeSheet = false },
                         startAction = { sheetCloseButton({ showCustomizeSheet = false }, 16.dp) }
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = 580.dp)
+                                .then(
+                                    if (LocalBlurBottomSheetContentExpanded.current) Modifier.fillMaxHeight()
+                                    else Modifier.height(defaultSheetContentHeight)
+                                )
                                 .overScrollVertical()
                                 .scrollEndHaptic(
                                     hapticFeedbackType = HapticFeedbackType.TextHandleMove
                                 )
-                                .verticalScroll(rememberScrollState()),
+                                .verticalScroll(rememberScrollState())
+                                .sheetContentBottomInset(isTablet),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             Spacer(Modifier.height(58.dp))
                             customizeSheetContent()
-                            Spacer(Modifier.height(240.dp))
                         }
                     }
                 }
@@ -1761,7 +1939,7 @@ private fun SheetCard(
 }
 
 @Composable
-private fun SliderItem(
+internal fun SliderItem(
     label: String,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
@@ -1776,6 +1954,8 @@ private fun SliderItem(
     suffix: String = "",
     displayValue: (Float) -> String = { it.roundToInt().toString() },
     parseInput: (String) -> Float? = { it.toFloatOrNull() },
+    /** 禁用时的右侧文案（默认「需设置壁纸」；无材质档传「无材质」） */
+    disabledText: String = SchedStr.wallpaperRequired(),
 ) {
     // 聚焦编辑期间不回写外部 value，避免打断输入
     var textInput by remember { mutableStateOf(displayValue(value)) }
@@ -1837,7 +2017,7 @@ private fun SliderItem(
                 }
             } else {
                 Text(
-                    text = "需设置壁纸",
+                    text = disabledText,
                     fontSize = 14.sp,
                     color = textColor
                 )
@@ -1871,6 +2051,8 @@ private fun RefractionItem(
     value: CardRefractionLevel,
     enabled: Boolean,
     onValueChange: (CardRefractionLevel) -> Unit,
+    /** 禁用时的右侧文案（默认「需设置壁纸」；无材质档传「无材质」） */
+    disabledText: String = SchedStr.wallpaperRequired(),
 ) {
     val levels = CardRefractionLevel.entries
     val lastIndex = levels.lastIndex
@@ -1894,7 +2076,7 @@ private fun RefractionItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "卡片折射",
+                text = SchedStr.cardRefraction(),
                 fontWeight = FontWeight.Medium,
                 fontSize = 17.sp,
                 color = textColor,
@@ -1910,7 +2092,7 @@ private fun RefractionItem(
                 )
             } else {
                 Text(
-                    text = "需设置壁纸",
+                    text = disabledText,
                     fontSize = 14.sp,
                     color = textColor
                 )
@@ -1939,29 +2121,80 @@ private fun RefractionItem(
     }
 }
 
+/**
+ * 边缘厚度（较小 ×0.8 / 默认 ×1.0 / 较大 ×1.2 / 最大 ×1.5）。
+ *
+ * 与 [RefractionItem] 同一个交互形态：位置连续跟手，取整只作用于对外提交。
+ * 档位是**倍率**，乘在 `SoftGlassStyle.edgeWidth` 的文件默认值上。
+ */
 @Composable
-private fun SliderCard(
-    label: String,
-    value: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
-    keyPoints: List<Float>,
+private fun EdgeThicknessItem(
+    value: CardEdgeThickness,
     enabled: Boolean,
-    onValueChange: (Float) -> Unit,
-    suffix: String = "",
-    displayValue: (Float) -> String = { it.roundToInt().toString() },
-    parseInput: (String) -> Float? = { it.toFloatOrNull() },
+    onValueChange: (CardEdgeThickness) -> Unit,
+    disabledText: String = SchedStr.wallpaperRequired(),
 ) {
-    SheetCard {
-        SliderItem(
-            label = label,
-            value = value,
-            valueRange = valueRange,
-            keyPoints = keyPoints,
-            enabled = enabled,
-            onValueChange = onValueChange,
-            suffix = suffix,
-            displayValue = displayValue,
-            parseInput = parseInput
+    val levels = CardEdgeThickness.entries
+    val lastIndex = levels.lastIndex
+    val textColor = if (enabled) MiuixTheme.colorScheme.onSurface
+    else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+    var rawValue by remember { mutableFloatStateOf(value.ordinal.toFloat()) }
+    var isDragging by remember { mutableStateOf(false) }
+    LaunchedEffect(value) {
+        if (!isDragging) rawValue = value.ordinal.toFloat()
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 15.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 2.dp, end = 2.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = SchedStr.cardEdgeThickness(),
+                fontWeight = FontWeight.Medium,
+                fontSize = 17.sp,
+                color = textColor,
+                modifier = Modifier.weight(1f)
+            )
+            if (enabled) {
+                Text(
+                    text = value.label,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = textColor,
+                    textAlign = TextAlign.End,
+                )
+            } else {
+                Text(
+                    text = disabledText,
+                    fontSize = 14.sp,
+                    color = textColor
+                )
+            }
+        }
+        Slider(
+            value = rawValue,
+            onValueChange = { v ->
+                isDragging = true
+                rawValue = v
+                onValueChange(levels[v.roundToInt().coerceIn(0, lastIndex)])
+            },
+            onValueChangeFinished = {
+                isDragging = false
+                rawValue = rawValue.roundToInt().coerceIn(0, lastIndex).toFloat()
+            },
+            valueRange = 0f..lastIndex.toFloat(),
+            showKeyPoints = true,
+            keyPoints = levels.indices.map { it.toFloat() },
+            magnetThreshold = 0.01f,
+            modifier = Modifier.fillMaxWidth(),
+            hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+            enabled = enabled
         )
     }
 }
@@ -1978,24 +2211,13 @@ data class CombinationThumbnail(
     val wallpaper: ImageBitmap?,
 )
 
-// ──────────────────────────────────────────────────────────────────────────
-// 外观页入场时间轴：动画在封面快照盖着整屏时就开始跑，用户只看到收尾。硬约束：
-// 每个元素 (delay + duration) ≤ CUSTOMIZE_COVER_WINDOW_MILLIS（封面撤除时刻），
-// 否则封面消失后元素还在动，观感「脱节」。各元素落地（窗口 552ms）：
-// 卡片错落 380 / 翻页间距 400 / 顶栏按钮 420 / 底部工具栏 420；
-// 实测（iPhone 18 Pro Max / iOS 27.0）再晚 40~60ms（组合+帧对齐），故留 ~100ms 余量。
-// ──────────────────────────────────────────────────────────────────────────
+// ── 外观页入场时间轴：快照 / 顶栏按钮 / 底部工具栏三条同起同落（380ms）────────────────
 
-/** 卡片错落入场时长 */
-private const val ENTER_CARD_MILLIS = 380
+/** 入场快照（整屏截图）从满屏缩到卡片轮廓的时长；落地后改由真实内容接管 */
+private const val ENTER_SNAPSHOT_SCALE_MILLIS = 380
 
-/** 翻页间距（-140f → -10f）收起时长 */
-private const val ENTER_PAGER_SPACING_MILLIS = 400
+/** 顶栏「取消 / 切换 / 应用」按钮缩放（1.5f → 1f）收拢 */
+private const val ENTER_BUTTON_MILLIS = 380
 
-/** 顶栏「取消 / 应用」按钮缩放（1.5f → 1f）收拢：延迟 + 时长 = 420ms */
-private const val ENTER_BUTTON_DELAY_MILLIS = 80
-private const val ENTER_BUTTON_MILLIS = 340
-
-/** 底部工具栏（透明度 / 上移 / 模糊）归位：延迟 + 时长 = 420ms，与按钮同步落地 */
-private const val ENTER_TOOL_DELAY_MILLIS = 80
-private const val ENTER_TOOL_MILLIS = 340
+/** 底部工具栏（透明度 / 上移 / 模糊）归位 */
+private const val ENTER_TOOL_MILLIS = 380

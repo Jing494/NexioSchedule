@@ -1,5 +1,13 @@
 package com.haooz.chedule.data
 
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.haooz.chedule.data.db.NexioDatabase
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.storage.AppStorage
+import com.haooz.chedule.data.storage.CourseStorage
+import com.haooz.chedule.data.storage.InMemoryKeyValueStore
+import com.haooz.chedule.data.storage.SqliteCourseRowStore
+import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -16,14 +24,27 @@ import kotlin.test.assertTrue
  */
 class CourseRepositoryCrossWeekMoveTest {
 
-    private lateinit var repository: CourseRepository
+    private lateinit var repository: com.haooz.chedule.data.repo.CourseRepository
+    private lateinit var driver: JdbcSqliteDriver
 
     @BeforeTest
     fun setUp() {
         AppStorage.init { InMemoryKeyValueStore() }
-        repository = CourseRepository.getInstance()
-        // 每个用例都从空课表起步：prefs 是单例私有的，靠 saveCourses 覆盖内存缓存来隔离
+        // 课程只写行表（写失败就抛，没有 JSON 副本可退），所以必须有真库
+        driver = openInMemoryDriver()
+        NexioDatabase.Schema.create(driver)
+        CourseStorage.install { SqliteCourseRowStore(NexioDatabase(driver)) }
+        repository = com.haooz.chedule.data.repo.CourseRepository.getInstance()
+        repository.invalidateAllCaches()
+        // 每个用例都从空课表起步：覆盖掉行表里上一轮留下的课
         repository.saveCourses(emptyList(), notify = false)
+    }
+
+    @AfterTest
+    fun tearDown() {
+        CourseStorage.install { null }
+        repository.invalidateAllCaches()
+        driver.close()
     }
 
     private fun course(

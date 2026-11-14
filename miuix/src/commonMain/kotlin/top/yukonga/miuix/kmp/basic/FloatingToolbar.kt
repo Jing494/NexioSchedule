@@ -7,7 +7,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.NonRestartableComposable
 import androidx.compose.runtime.remember
@@ -18,7 +17,8 @@ import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import top.yukonga.miuix.kmp.squircle.squircleBackground
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
+import com.haooz.softglass.shape.continuousBackground
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -44,12 +44,12 @@ fun FloatingToolbar(
     showDivider: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+    val shape = remember(cornerRadius) { ContinuousRoundedRectangle(cornerRadius) }
     val dividerColor = MiuixTheme.colorScheme.dividerLine
 
     val dividerMod = if (showDivider) {
         Modifier
-            .squircleBackground(color = dividerColor, cornerRadius = cornerRadius)
+            .continuousBackground(color = dividerColor, cornerRadius = cornerRadius)
             .padding(0.75.dp)
     } else {
         Modifier
@@ -72,7 +72,7 @@ fun FloatingToolbar(
             .padding(outSidePadding)
             .then(dividerMod)
             .then(shadowMod)
-            .squircleBackground(color = color, cornerRadius = cornerRadius)
+            .continuousBackground(color = color, cornerRadius = cornerRadius)
             .pointerInput(Unit) {
                 detectTapGestures { /* Consume click */ }
             },

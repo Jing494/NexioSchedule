@@ -2,6 +2,13 @@
 
 package com.haooz.chedule.data
 
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.platform.NexioLog
+import com.haooz.chedule.data.holiday.HolidayManager
+import com.haooz.chedule.data.repo.DayScheduleResolver
+import com.haooz.chedule.data.util.CourseTimeSpan
+import com.haooz.chedule.data.model.CourseTimeResolver
+import com.haooz.chedule.data.repo.CourseRepository
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.datetime.Clock
 import kotlinx.datetime.DatePeriod
@@ -144,7 +151,7 @@ object IosWidgetSnapshot {
             put("name", course.name)
             put("classroom", course.classroom)
             put("teacher", course.teacher)
-            put("section", if (course.hasValidCustomTime()) "" else course.getSectionText())
+            put("section", if (course.hasValidCustomTime()) "" else course.sectionTextLocalized())
             put("start", start / 1000.0)
             put("end", end / 1000.0)
             put("color", (course.colorRes and 0xFFFFFFL).toString(16).padStart(6, '0').uppercase())

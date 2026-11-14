@@ -1,17 +1,17 @@
 package com.haooz.chedule
 
 import com.haooz.chedule.ui.navigation.AppRoute
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
-import kotlin.test.assertNotSame
-import kotlin.test.assertSame
-import kotlin.test.assertTrue
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
+import com.haooz.chedule.ui.utils.HostOverlayEntry
 import com.haooz.chedule.ui.utils.NativeDocumentAction
 import com.haooz.chedule.ui.utils.NativeDocumentEditorChrome
-import com.haooz.chedule.ui.utils.HostOverlayEntry
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNotSame
+import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class NativeDocumentHostTest {
     /** 二级/三级页全部由 UIKit 栈承载：Compose 的 AppRouter 栈在 iOS 上不接任何路由。 */
@@ -167,21 +167,23 @@ class NativeDocumentHostTest {
             AppRoute.Changelog to "更新日志",
             AppRoute.License to "开源协议",
             AppRoute.PrivacyPolicy to "隐私政策",
-            AppRoute.Communication to "交流与反馈",
+            AppRoute.Communication to "问题反馈",
+            AppRoute.Feedback to "应用内反馈",
+            AppRoute.FeedbackHistory to "我的反馈",
+            AppRoute.FeedbackRoadmap to "开发进度",
             AppRoute.AppreciateAuthor to "捐赠支持",
-            AppRoute.PreferenceSettings to "应用偏好设置",
-            AppRoute.UpdateSettings to "更新设置",
-            AppRoute.LocalBackup to "本地备份",
+            AppRoute.PreferenceSettings to "应用个性化",
+            AppRoute.UpdateSettings to "更新",
             AppRoute.AiImport to "AI 文本导入",
             AppRoute.WidgetIntro to "桌面小部件",
             AppRoute.CourseReminder to "课程提醒",
             AppRoute.HolidaySettings to "节假日与调休",
-            AppRoute.WebDavSettings to "WebDAV 云备份",
-            AppRoute.ScheduleExport to "课表导出",
-            AppRoute.ScheduleBackup to "课表备份",
-            AppRoute.ScheduleImport to "课表导入",
+            AppRoute.WebDavSettings to "WebDAV 云同步",
+            AppRoute.ScheduleBackup to "备份与同步",
+            AppRoute.ImportExport to "导入导出",
             AppRoute.About to "关于应用",
-            AppRoute.CourseTimeSettings to "课程时间管理",
+            AppRoute.CourseTimeSettings to "上课时间",
+            AppRoute.ScheduleSettings to "课表管理",
         )
         for ((route, title) in documents) {
             val host = IosAppHost()
@@ -204,7 +206,7 @@ class NativeDocumentHostTest {
         assertTrue(host.router.popBack())
         assertEquals(listOf(backup), host.nativeRouteIds)
         host.completeNativePop(1)
-        host.router.navigate(AppRoute.LocalBackup)
+        host.router.navigate(AppRoute.WebDavSettings)
         assertEquals(2, host.nativeRouteIds.size)
         assertEquals(0, host.router.depth)
     }
@@ -292,7 +294,7 @@ class NativeDocumentHostTest {
         var cancelled = 0
         var saved = 0
         var parentClicks = 0
-        chrome.title = "课程时间管理"
+        chrome.title = "上课时间"
         chrome.contentOverlayActive = true
         chrome.editor = NativeDocumentEditorChrome(
             "编辑作息",
@@ -318,7 +320,7 @@ class NativeDocumentHostTest {
         chrome.contentOverlayActive = false
         assertTrue(host.nativeContentOverlayActive)
         chrome.editor = null
-        assertEquals("课程时间管理", host.nativeRouteTitle(id))
+        assertEquals("上课时间", host.nativeRouteTitle(id))
         assertEquals("chevron.backward", host.nativePageLeadingSymbol(id))
         assertEquals("arrow.clockwise", host.nativePageActionSymbol(id))
         host.performNativePageLeadingAction(id)

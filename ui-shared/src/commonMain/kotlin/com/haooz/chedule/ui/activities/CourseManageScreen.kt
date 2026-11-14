@@ -27,8 +27,8 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -43,32 +43,38 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.ui.graphics.layer.GraphicsLayer
-import androidx.compose.ui.platform.LocalGraphicsContext
-import androidx.compose.ui.graphics.layer.drawLayer
-import com.haooz.chedule.ui.utils.TransitionLayerSnapshot
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalGraphicsContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.haooz.chedule.data.Course
-import com.haooz.chedule.data.randomUuidV4
-import com.haooz.chedule.data.showToast
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.platform.randomUuidV4
+import com.haooz.chedule.data.platform.showToast
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.i18n.SwitchStr
+import com.haooz.chedule.ui.components.pageTopExtra
+import com.haooz.chedule.ui.components.text.material.Text as Text
+import com.haooz.chedule.ui.theme.rememberCourseColors
 import com.haooz.chedule.ui.utils.CourseSorting
+import com.haooz.chedule.ui.utils.TransitionLayerSnapshot
 import com.haooz.chedule.ui.utils.isAppDarkTheme
 import com.haooz.chedule.viewmodel.CourseViewModel
 import com.haooz.chedule.viewmodel.courseViewModel
-import com.kyant.capsule.ContinuousRoundedRectangle
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -88,14 +94,11 @@ import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
 import top.yukonga.miuix.kmp.layout.collapsibleTopInset
 import top.yukonga.miuix.kmp.layout.isTabletWidth
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
-import top.yukonga.miuix.kmp.squircle.squircleBorder
-import top.yukonga.miuix.kmp.squircle.squircleClip
-import com.haooz.chedule.ui.theme.rememberCourseColors
+import com.haooz.softglass.shape.continuousBorder
+import com.haooz.softglass.shape.continuousClip
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import kotlin.time.Duration.Companion.milliseconds
-import androidx.compose.ui.graphics.Color as ComposeColor
 
 @Composable
 fun CourseManageScreen(
@@ -123,7 +126,7 @@ fun CourseManageScreen(
     deleteConfirmShow: Boolean = false,
     deleteConfirmCourses: List<Course> = emptyList(),
     onDeleteConfirmDismiss: () -> Unit = {},
-    liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = null,
+    liquidGlassBackdrop: com.haooz.softglass.backdrop.GlassBackdrop? = null,
     /** 内嵌（平板左栏）时由外部指定内容顶距，替代按整屏状态栏+折叠标题推算 */
     contentTopPadding: androidx.compose.ui.unit.Dp? = null,
     /** 内嵌时指定列数，替代平板固定 4 列 */
@@ -149,7 +152,16 @@ fun CourseManageScreen(
     val isTablet = isTabletWidth()
     val tabletHorizontalPadding = if (isTablet) 20.dp else 16.dp
 
-    val dayNames = listOf("", "周一", "周二", "周三", "周四", "周五", "周六", "周日")
+    val dayNames = listOf(
+        "",
+        CommonStr.weekdayMon(),
+        CommonStr.weekdayTue(),
+        CommonStr.weekdayWed(),
+        CommonStr.weekdayThu(),
+        CommonStr.weekdayFri(),
+        CommonStr.weekdaySat(),
+        CommonStr.weekdaySun(),
+    )
 
     // 新建课程弹窗状态
     var showNewCourseDialog by remember { mutableStateOf(false) }
@@ -229,7 +241,8 @@ fun CourseManageScreen(
 
                 val resolvedTopPadding = contentTopPadding
                     ?: (paddingValues.calculateTopPadding() +
-                        CollapsibleTopAppBarDefaults.CollapsedHeight + 12.dp)
+                        CollapsibleTopAppBarDefaults.CollapsedHeight +
+                        pageTopExtra(isTablet, hasSmallTitle = false))
 
                 if (groupedCourses.isEmpty()) {
                     // 空状态
@@ -241,14 +254,14 @@ fun CourseManageScreen(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = "暂无课程",
+                            text = SwitchStr.noCourses(),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Medium,
                             color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "还没有添加任何课程",
+                            text = SwitchStr.noCoursesHint(),
                             fontSize = 14.sp,
                             color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                         )
@@ -308,7 +321,7 @@ fun CourseManageScreen(
                                 .distinctBy { "${it.dayOfWeek}_${it.startSection}_${it.endSection}_${it.customStartTime}_${it.customEndTime}" }
                                 .map {
                                     val day = dayNames.getOrElse(it.dayOfWeek) { "?" }
-                                    "$day ${it.getTimeDisplayText()}"
+                                    "$day ${it.timeDisplayTextLocalized()}"
                                 }
 
                             val teachers = courseList
@@ -343,7 +356,7 @@ fun CourseManageScreen(
                                     isHidden = courseList.any { it.id in hiddenCourseIds },
                                     isSelected = courseName == selectedCourseName,
                                     onClick = { left, top, width, height, snapshot ->
-                                        onCourseClick(courseList, left, top, width, height, snapshot, courseColors.tint, 0.15f)
+                                        onCourseClick(courseList, left, top, width, height, snapshot, courseColors.tint, 0.12f)
                                     },
                                     onLongPress = { left, top, width, height, snapshot ->
                                         onCourseLongPressLayer?.invoke(courseList, left, top, width, height, snapshot)
@@ -375,7 +388,7 @@ fun CourseManageScreen(
 
     // 新建/编辑课程弹窗
     OverlayDialog(
-        title = if (editingCourse != null) "编辑课程" else "新建课程",
+        title = if (editingCourse != null) SwitchStr.editCourse() else SwitchStr.newCourse(),
         show = showNewCourseDialog,
         onDismissRequest = {
             showNewCourseDialog = false
@@ -394,7 +407,7 @@ fun CourseManageScreen(
             NativeMiuixTextField(
                 value = newCourseName,
                 onValueChange = { newCourseName = it },
-                label = "课程名称",
+                label = SwitchStr.courseNameLabel(),
 
                 requestFocus = true,
                 modifier = Modifier.fillMaxWidth()
@@ -409,7 +422,7 @@ fun CourseManageScreen(
                 val totalItems = remember(allColors) { allColors.size + 1 }
                 val colorRows = remember(totalItems, colorColumns) { (totalItems + colorColumns - 1) / colorColumns }
                 Text(
-                    text = "课程颜色",
+                    text = SwitchStr.courseColor(),
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Medium,
                     color = MiuixTheme.colorScheme.onSurface,
@@ -444,13 +457,13 @@ fun CourseManageScreen(
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .squircleBorder(
+                                            .continuousBorder(
                                                 width = 2.dp,
                                                 color = primaryColor.copy(alpha = borderAlpha),
                                                 cornerRadius = 12.dp
                                             )
                                             .padding(4.dp)
-                                            .squircleClip(8.dp)
+                                            .continuousClip(8.dp)
                                             .background(Color(color).copy(alpha = if (isDark) 0.22f else 0.16f))
                                     )
                                 }
@@ -480,13 +493,13 @@ fun CourseManageScreen(
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .squircleBorder(
+                                            .continuousBorder(
                                                 width = 2.dp,
                                                 color = primaryColor.copy(alpha = customBorderAlpha),
                                                 cornerRadius = 12.dp
                                             )
                                             .padding(4.dp)
-                                            .squircleClip(8.dp)
+                                            .continuousClip(8.dp)
                                             .background(
                                                 if (isCustomColor) Color(newCourseColor).copy(alpha = if (isDark) 0.22f else 0.16f)
                                                 else if (isDark) ComposeColor(0xFF424242) else ComposeColor(0xFFF0F0F0)
@@ -496,7 +509,7 @@ fun CourseManageScreen(
                                         if (!isCustomColor) {
                                             Icon(
                                                 imageVector = MiuixIcons.Add,
-                                                contentDescription = "自定义颜色",
+                                                contentDescription = SwitchStr.customColor(),
                                                 modifier = Modifier.size(18.dp),
                                                 tint = hintColor
                                             )
@@ -519,7 +532,7 @@ fun CourseManageScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 TextButton(
-                    text = "取消",
+                    text = CommonStr.cancel(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         showNewCourseDialog = false
@@ -531,7 +544,7 @@ fun CourseManageScreen(
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(
-                    text = "确定",
+                    text = CommonStr.ok(),
                     enabled = newCourseName.isNotBlank(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -551,7 +564,7 @@ fun CourseManageScreen(
                                 onEditDismiss()
                             } else {
                                 if (courses.any { it.name == newCourseName.trim() }) {
-                                    showToast("已存在同名课程")
+                                    showToast(SwitchStr.duplicateCourse())
                                 } else {
                                     val course = Course(
                                         id = randomUuidV4(),
@@ -581,7 +594,7 @@ fun CourseManageScreen(
 
     // 自定义颜色选择弹窗
     OverlayDialog(
-        title = "选择颜色",
+        title = SwitchStr.selectColor(),
         show = showCustomColorDialog,
         onDismissRequest = { showCustomColorDialog = false },
         liquidGlassBackdrop = liquidGlassBackdrop
@@ -603,7 +616,7 @@ fun CourseManageScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 TextButton(
-                    text = "取消",
+                    text = CommonStr.cancel(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         showCustomColorDialog = false
@@ -611,7 +624,7 @@ fun CourseManageScreen(
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(
-                    text = "确定",
+                    text = CommonStr.ok(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         newCourseColor = (customColor.alpha * 255).toInt().toLong() shl 24 or
@@ -631,12 +644,12 @@ fun CourseManageScreen(
     if (deleteConfirmCourses.isNotEmpty()) {
         val deleteCourseName = deleteConfirmCourses.firstOrNull()?.name ?: ""
         val deleteSummary = if (deleteConfirmCourses.size > 1) {
-            "确定要删除课程「${deleteCourseName}」的 ${deleteConfirmCourses.size} 条记录吗？\n此操作不可撤销。"
+            SwitchStr.deleteCourseRecordsConfirm(deleteCourseName, deleteConfirmCourses.size)
         } else {
-            "确定要删除课程「${deleteCourseName}」吗？\n此操作不可撤销。"
+            SwitchStr.deleteCourseConfirm(deleteCourseName)
         }
         OverlayDialog(
-            title = "删除课程",
+            title = SwitchStr.deleteCourse(),
             summary = deleteSummary,
             show = deleteConfirmShow,
             onDismissRequest = onDeleteConfirmDismiss,
@@ -649,7 +662,7 @@ fun CourseManageScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 TextButton(
-                    text = "取消",
+                    text = CommonStr.cancel(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         onDeleteConfirmDismiss()
@@ -657,7 +670,7 @@ fun CourseManageScreen(
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(
-                    text = "删除",
+                    text = CommonStr.delete(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         onDeleteConfirmDismiss()
@@ -730,7 +743,7 @@ private fun SectionChip(
 ) {
     Box(
         modifier = Modifier
-            .squircleClip(6.dp)
+            .continuousClip(6.dp)
             .background(courseTintBase(color))
             .padding(horizontal = 7.dp, vertical = 3.dp),
             contentAlignment = Alignment.Center
@@ -754,7 +767,7 @@ private fun CourseManageCard(
     teacher: String,
     classroom: String,
     color: Color,
-    cardAlpha: Float = 0.15f,
+    cardAlpha: Float = 0.12f,
     daySections: List<String>,
     /** 同名课程聚合出的记录条数，>1 时在标题行末尾给一枚「N 节」标记 */
     sectionCount: Int = 1,
@@ -791,14 +804,12 @@ private fun CourseManageCard(
                     onLongPress(cardLeft, cardTop, cardWidth, cardHeight, TransitionLayerSnapshot(cardLayer))
                 }
             )
-            // Keep hiding outside the recorded content so the editor can still replay it.
+            // 隐藏只乘透明度、且留在录制之外：编辑页要重放这张卡的图层，内容不能被抹掉
             .graphicsLayer { alpha = if (isHidden) 0f else 1f }
             .drawWithContent {
-                if (!isHidden) {
-                    cardLayer.record {
-                        drawRect(cardBackground)
-                        this@drawWithContent.drawContent()
-                    }
+                cardLayer.record {
+                    drawRect(cardBackground)
+                    this@drawWithContent.drawContent()
                 }
                 drawLayer(cardLayer)
             }
@@ -837,13 +848,13 @@ private fun CourseManageCard(
                     Spacer(modifier = Modifier.width(6.dp))
                     Box(
                         modifier = Modifier
-                            .squircleClip(5.dp)
+                            .continuousClip(5.dp)
                             .background(courseTintBase(color))
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "$sectionCount 节",
+                            text = SwitchStr.sectionCountN(sectionCount),
                             fontSize = 11.sp,
                             lineHeight = 14.sp,
                             maxLines = 1,
@@ -888,7 +899,7 @@ private fun CourseManageCard(
                 }
             } else {
                 Text(
-                    text = "点击设置时间",
+                    text = SwitchStr.tapToSetTime(),
                     fontSize = MANAGE_CARD_BODY_SIZE,
                     lineHeight = MANAGE_CARD_BODY_LINE,
                     color = MiuixTheme.colorScheme.primary
@@ -901,7 +912,7 @@ private fun CourseManageCard(
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .squircleBorder(width = 2.dp, color = color, cornerRadius = 16.dp)
+                .continuousBorder(width = 2.dp, color = color, cornerRadius = 16.dp)
         )
     }
 }
@@ -931,13 +942,13 @@ private fun NewCourseCard(
         ) {
             Icon(
                 MiuixIcons.Add,
-                contentDescription = "新建课程",
+                contentDescription = SwitchStr.newCourse(),
                 modifier = Modifier.size(28.dp),
                 tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "新建课程",
+                text = SwitchStr.newCourse(),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)

@@ -21,11 +21,11 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
@@ -57,9 +57,9 @@ import androidx.compose.ui.layout.MeasureResult
 import androidx.compose.ui.layout.MeasureScope
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -74,28 +74,29 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import top.yukonga.miuix.kmp.interactive.DropdownPanelDragSelectState
-import top.yukonga.miuix.kmp.interactive.LocalDropdownPanelDragSelect
-import top.yukonga.miuix.kmp.interactive.dropdownPanelDragSelect
-import top.yukonga.miuix.kmp.interactive.dropdownPanelDragTransform
-import com.kyant.backdrop.edgelight.edgeLight
-import com.kyant.backdrop.edgelight.rememberDefaultEdgeLight
-import top.yukonga.miuix.kmp.interactive.InteractiveHighlight
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
-import com.kyant.backdrop.isRenderEffectSupported
-import top.yukonga.miuix.kmp.material.LocalChromeLensEnabled
-import top.yukonga.miuix.kmp.material.LocalGlassPanelBlurDp
-import top.yukonga.miuix.kmp.material.LocalGlassSurfaceAlphaDrop
-import top.yukonga.miuix.kmp.internal.drawBlurredRingShadow
-import com.kyant.capsule.ContinuousRoundedRectangle
-import top.yukonga.miuix.kmp.anim.SinOutEasing
-import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.haooz.softglass.backdrop.drawBackdrop
+import com.haooz.softglass.backdrop.effects.blur
+import com.haooz.softglass.backdrop.effects.runtimeShaderEffect
+import com.haooz.softglass.platform.isRenderEffectSupported
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
+import top.yukonga.miuix.kmp.anim.SinOutEasing
+import top.yukonga.miuix.kmp.interactive.DropdownMaskMode
+import top.yukonga.miuix.kmp.interactive.DropdownPanelDragSelectState
+import top.yukonga.miuix.kmp.interactive.InteractiveHighlight
+import top.yukonga.miuix.kmp.interactive.LocalDropdownPanelDragSelect
+import top.yukonga.miuix.kmp.interactive.dropdownPanelDragSelect
+import top.yukonga.miuix.kmp.interactive.dropdownPanelDragTransform
+import top.yukonga.miuix.kmp.interactive.dropdownPanelSlidingMask
+import top.yukonga.miuix.kmp.internal.drawBlurredRingShadow
+import top.yukonga.miuix.kmp.material.LocalGlassPanelBlurDp
+import top.yukonga.miuix.kmp.material.LocalGlassSurfaceAlphaDrop
+import top.yukonga.miuix.kmp.material.LocalMaterialNoneEnabled
+import top.yukonga.miuix.kmp.material.currentSoftGlassLayer
+import top.yukonga.miuix.kmp.material.SoftGlassLayer
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 // =====================================================================
 // 工具函数
@@ -860,15 +861,13 @@ fun ListPopupContent(
     // localTransformOrigin 早一帧生效。见 [PopupAnchors]。
     anchors: PopupAnchors? = null,
     modifier: Modifier = Modifier,
-    liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = null,
+    liquidGlassBackdrop: com.haooz.softglass.backdrop.GlassBackdrop? = null,
     collapseSize: IntSize? = null,
     collapseExtra: DpSize = DpSize.Zero,
     isEntering: Boolean = true,
     collapseContent: (@Composable () -> Unit)? = null,
     /** 跟手滑选状态。为 null 时本弹窗不启用跟手选择（内容层直接透传，不挂手势/形变）。 */
     dragSelectState: DropdownPanelDragSelectState? = null,
-    /** 是否启用 chrome 透镜（高分辨率下让玻璃面板内部更通透），跟随 App 的材质档位偏好 [LocalChromeLensEnabled]。 */
-    chromeLensEnabled: Boolean = LocalChromeLensEnabled.current,
     content: @Composable () -> Unit,
 ) {
     val cornerRadius = 25.dp
@@ -887,18 +886,31 @@ fun ListPopupContent(
     val shadowPadding = 24.dp
     val overshootRoom = 14.dp
     val overshootRoomPx = with(localDensity) { overshootRoom.toPx() }
-    val chromeLens = chromeLensEnabled
-    // 面板玻璃模糊随材质档位（通透玻璃档与其余档取值不同；弹窗跑在 root host，值来自主题快照）
+    // 无材质档：玻璃材质整体关闭，面板只剩半透明底色 + 描边
+    val materialNone = LocalMaterialNoneEnabled.current
+    // 面板玻璃模糊随材质档位（柔光玻璃档与其余档取值不同；弹窗跑在 root host，值来自主题快照）
     val panelBlur = LocalGlassPanelBlurDp.current
 
-    val glassEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit =
-        remember(chromeLens, panelBlur) {
+    val softGlass = currentSoftGlassLayer()
+    val cornerRadiusPx = with(localDensity) { cornerRadius.toPx() }
+    val glassEffects: com.haooz.softglass.backdrop.GlassEffectScope.() -> Unit =
+        remember(panelBlur, materialNone, softGlass) {
             {
-                vibrancy()
-                blur(panelBlur.dp.toPx())
-                // 与 LiquidGlassDropdownMenu 面板同一套折射：作用在边缘 SDF 上，
-                // 必须保持常量 —— 随面板变大反而会把边缘拉变形。
-                if (chromeLens) lens(6f.dp.toPx(), 36f.dp.toPx())
+                if (!materialNone && softGlass != null) {
+                    // 柔光玻璃：尺寸每帧在变，uniform 在 draw 期按当前 size 重灌
+                    blur(panelBlur.dp.toPx())
+                    val w = size.width
+                    val h = size.height
+                    runtimeShaderEffect(
+                        key = SOFT_GLASS_POPUP_KEY,
+                        shaderString = softGlass.shaderString,
+                        uniformShaderName = "content",
+                    ) {
+                        // 展开的弹出面板按悬浮大控件材质灌 uniform（倒角带更厚）；
+                        // 搜索框仍走 applyUniforms 的小控件材质，对话框走 applyDialogUniforms。
+                        softGlass.applyLargeUniforms(this, w, h, cornerRadiusPx)
+                    }
+                }
             }
         }
 
@@ -915,6 +927,7 @@ fun ListPopupContent(
         collapseH = collapseH,
         liquidGlassBackdrop = liquidGlassBackdrop,
         glassEffects = glassEffects,
+        softGlass = softGlass,
         frame = frame,
         fractionProgress = fractionProgress,
         originProgress = originProgress,
@@ -1035,6 +1048,9 @@ private const val PopupShadowBlur = 12f
 
 /** 按压高光的半径上限，固定不随面板高度变化 */
 private val HighlightRadiusBase = 150.dp
+
+/** 柔光玻璃在弹窗面板上的 shader 缓存键（与顶栏 / 下拉菜单分开，避免 uniform 互相覆盖） */
+private const val SOFT_GLASS_POPUP_KEY = "NexioSoftGlassLiveListPopup"
 private const val PopupShadowExtend = 2f
 /** ARGB 的 alpha 会被放大这么多倍 —— 环形路径重复描边会累积浓度 */
 private const val PopupShadowAlphaGain = 3.2f
@@ -1069,8 +1085,9 @@ private class PopupPanelStyle(
     val overshootRoomPx: Float,
     val collapseW: Float,
     val collapseH: Float,
-    val liquidGlassBackdrop: com.kyant.backdrop.Backdrop?,
-    val glassEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit,
+    val liquidGlassBackdrop: com.haooz.softglass.backdrop.GlassBackdrop?,
+    val glassEffects: com.haooz.softglass.backdrop.GlassEffectScope.() -> Unit,
+    val softGlass: SoftGlassLayer?,
     val frame: Int,
     val fractionProgress: () -> Float,
     val originProgress: () -> Float,
@@ -1136,6 +1153,7 @@ private fun PopupMenuLayer(
     onSizeChange: (IntSize) -> Unit,
     content: @Composable () -> Unit,
 ) {
+    val dragSelect = LocalDropdownPanelDragSelect.current
     // 内容按**宽度**等比缩放（contentScale = rect宽 / 内容宽），但面板早期近乎方形、
     // 内容是长条，两者宽高比不一致 → 缩放后的高度会顶穿面板上下边。
     val clipShape: Shape = AnimatedPanelRectShape(
@@ -1179,7 +1197,15 @@ private fun PopupMenuLayer(
                 translationX = rect[0] + rect[2] / 2f - (style.overshootRoomPx + size.width / 2f)
                 translationY = rect[1] + rect[3] / 2f - (style.overshootRoomPx + size.height / 2f)
             }
-            .blur(style.contentBlur(style.fractionProgress())),
+            .blur(style.contentBlur(style.fractionProgress()))
+            // 遮罩与菜单项同在这个 Box 里：本层 graphicsLayer 与外层拖动形变天然一起带。
+            .then(
+                if (dragSelect?.maskMode == DropdownMaskMode.Sliding) {
+                    Modifier.dropdownPanelSlidingMask(dragSelect)
+                } else {
+                    Modifier
+                }
+            ),
     ) {
         content()
     }
@@ -1195,8 +1221,8 @@ private fun PopupGlassCanvas(
     collapseContent: (@Composable () -> Unit)?,
     highlight: InteractiveHighlight,
 ) {
-    // 每次重组换新实例：edgeLight 的 outline 缓存按**引用**比较 shape，
-    // 若被记住在第一帧的小圆上，outline 会冻结 —— 描边消失、背景框像被钉死。
+    // 每次重组换新实例：shape 实例按**引用**比较，
+    // 若被记住在第一帧的小圆上，轮廓会冻结 —— 玻璃壳像被钉死。
     val panelShape: Shape = AnimatedPanelRectShape(
         rectKey = listOf(style.frame, canvasW.roundToInt(), canvasH.roundToInt()),
         cornerRadius = style.cornerRadius,
@@ -1253,7 +1279,7 @@ private fun PopupGlassCanvas(
 /**
  * 材质层：**节点就是面板矩形**（不是整块画布），自带淡入淡出。
  *
- * `lens()` 的折射 SDF 只由「节点尺寸 + 圆角」决定，且只认铺满节点的
+ * 折射 SDF 只由「节点尺寸 + 圆角」决定，且只认铺满节点的
  * `RoundedRectangularShape` / `CornerBasedShape`。原先 `matchParentSize` 撑满画布
  * （每边比面板大 overshootRoom + 阴影留白）会让折射环落到面板外，自定义的
  * `AnimatedPanelRectShape` 更是直接被 lens 抛异常 —— 所以在布局期把这一层量成面板矩形，
@@ -1268,11 +1294,16 @@ private fun BoxScope.PopupMaterialLayer(
     canvasH: Float,
     rect: (Float, Float) -> FloatArray,
 ) {
-    // 底色 alpha 随材质档位：通透玻璃档压低一档，折射才透得出来（与顶栏按钮 / 顶栏下拉同源）
+    // 底色 alpha 随材质档位：柔光玻璃档压低一档，折射才透得出来（与顶栏按钮 / 顶栏下拉同源）；
+    // 无材质档玻璃面改实色
+    val materialNone = LocalMaterialNoneEnabled.current
     val alphaDrop = LocalGlassSurfaceAlphaDrop.current
-    val surfaceAlpha = (if (style.isDark) 0.8f - alphaDrop.dark else 0.72f - alphaDrop.light)
-        .coerceAtLeast(0f)
-    // 每帧换新实例：edgeLight 的 outline 缓存按引用比较，记住实例会让描边冻结在第一帧尺寸上
+    val surfaceAlpha = if (materialNone) {
+        1f
+    } else {
+        (if (style.isDark) 0.8f - alphaDrop.dark else 0.72f - alphaDrop.light).coerceAtLeast(0f)
+    }
+    // 每帧换新实例：shape 实例按引用比较，记住实例会让玻璃轮廓冻结在第一帧尺寸上
     val panelShape: Shape = ContinuousRoundedRectangle(style.cornerRadius)
     Box(
         modifier = Modifier
@@ -1291,20 +1322,16 @@ private fun BoxScope.PopupMaterialLayer(
                 if (style.liquidGlassBackdrop != null && isRenderEffectSupported()) {
                     Modifier.drawBackdrop(
                         backdrop = style.liquidGlassBackdrop,
+                        shadow = null,
                         shape = { panelShape },
                         effects = style.glassEffects,
-                        highlight = null,
-                        shadow = null,
-                        onDrawSurface = {
-                            drawRect(color = style.backgroundColor.copy(alpha = surfaceAlpha))
+                        // 柔光自己画玻璃色与方向光；其余档留容器色
+                        onDrawSurface = if (style.softGlass != null) null else {
+                            { drawRect(color = style.backgroundColor.copy(alpha = surfaceAlpha)) }
                         }
                     )
                 } else Modifier
             )
-            .edgeLight(
-                shape = panelShape,
-                edgeLight = rememberDefaultEdgeLight(baseColor = style.backgroundColor),
-            ),
     )
 }
 
@@ -1404,7 +1431,7 @@ fun Modifier.popupClipReveal(
         }
 
         path.rewind()
-        // 使用kyant库的RoundedRectangle创建圆角矩形路径
+        // 用自研连续圆角创建圆角矩形路径
         // 圆角在动画过程中保持不变：当弹窗缩小时，圆角需要放大以抵消缩放
         val fraction = fractionProgress().coerceIn(0f, 1f)
         val scaleXL = 0.24f + 0.76f * fraction

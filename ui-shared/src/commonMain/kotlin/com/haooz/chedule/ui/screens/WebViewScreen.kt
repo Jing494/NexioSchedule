@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,33 +58,39 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.haooz.chedule.data.Course
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.platform.showToast
 import com.haooz.chedule.data.school.SchoolData
 import com.haooz.chedule.data.school.ScriptRepository
-import com.haooz.chedule.data.showToast
+import com.haooz.chedule.i18n.AppLanguage
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.i18n.SchedStr
+import com.haooz.chedule.ui.components.text.material.Text as Text
+import com.haooz.softglass.glass.BarFill
+import com.haooz.softglass.glass.BrightLargeTone
+import com.haooz.softglass.glass.SOFT_GLASS_LIVE_SHADER
+import com.haooz.chedule.ui.glass.ScheduleSoftGlassStyle
+import com.haooz.softglass.glass.applySoftGlass
+import com.haooz.chedule.ui.utils.AppMaterialSettings
 import com.haooz.chedule.ui.utils.LocalNativeDocumentChrome
 import com.haooz.chedule.ui.utils.NativeDocumentBottomBar
 import com.haooz.chedule.ui.utils.NativeDocumentBottomBarEffect
 import com.haooz.chedule.ui.utils.bottomFloatingPadding
 import com.haooz.chedule.ui.utils.isAppDarkTheme
-import com.haooz.chedule.ui.utils.rememberDefaultEdgeLight
-import com.haooz.chedule.ui.utils.screenWidthDp
 import com.haooz.chedule.ui.web.NoopWebHost
 import com.haooz.chedule.ui.web.WebHost
 import com.haooz.chedule.ui.web.WebHostConfig
 import com.haooz.chedule.ui.web.WebHostEvents
 import com.haooz.chedule.uishared.resources.Res
 import com.haooz.chedule.uishared.resources.ic_phone_pc
-import com.kyant.backdrop.BackdropEffectScope
-import com.kyant.backdrop.backdrops.LayerBackdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.edgelight.edgeLight
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
-import com.kyant.capsule.ContinuousCapsule
-import com.kyant.capsule.ContinuousRoundedRectangle
+import com.haooz.softglass.backdrop.GlassEffectScope
+import com.haooz.softglass.backdrop.backdrops.LayerBackdrop
+import com.haooz.softglass.backdrop.backdrops.layerBackdrop
+import com.haooz.softglass.backdrop.drawBackdrop
+import com.haooz.softglass.backdrop.effects.blur
+import com.haooz.softglass.backdrop.effects.runtimeShaderEffect
+import com.haooz.softglass.shape.ContinuousCapsule
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import org.jetbrains.compose.resources.painterResource
@@ -101,6 +106,9 @@ import top.yukonga.miuix.kmp.layout.isTabletWidth
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.NavigationBackHandlerFor
 
+
+/** 网页页底部 dock 的柔光 shader 缓存键：尺寸与其他玻璃件不同，不能共用 uniform。 */
+private const val LIVE_WEB_DOCK_GLASS_KEY = "NexioSoftGlassLiveWebDock"
 
 private data class AlertData(
     val title: String,
@@ -148,14 +156,11 @@ fun WebViewScreen(
     val nativeChrome = LocalNativeDocumentChrome.current
     // 76dp = Swift 侧底栏高度（44 按钮 + 上下 10 内边距 + 12 让位），给网页留出底部让位
     val bottomBarHeight = 76.dp
-    val tabletHorizontalPadding = if (isTablet) {
-        val widthDp = screenWidthDp()
-        ((widthDp - 600).coerceIn(0, 600) / 600f * 112 + 16).dp
-    } else 0.dp
+    val tabletHorizontalPadding = if (isTablet) 20.dp else 16.dp
     var loadingProgress by remember { mutableFloatStateOf(0f) }
     // 顶栏采样色：宿主逐帧上报（Android = PixelCopy）；null = 该平台没有这个能力，不画色带
     var topColor by remember { mutableStateOf<Color?>(null) }
-    var pageTitle by remember { mutableStateOf("加载中...") }
+    var pageTitle by remember(AppLanguage.resolved) { mutableStateOf(CommonStr.loading()) }
     // 平板默认桌面版，手机默认手机版（UA 与视口策略都跟着走，见 WebCompatDelegate）
     var isDesktopMode by remember { mutableStateOf(isTablet) }
     val hapticFeedback = LocalHapticFeedback.current
@@ -175,32 +180,52 @@ fun WebViewScreen(
     var selectionData by remember { mutableStateOf<SelectionData?>(null) }
     var showCourseTablePicker by remember { mutableStateOf(false) }
     val webDockShapeBlock: () -> Shape = remember { { ContinuousCapsule() } }
-    // 与 LiquidBottomTabs 可见层同一套玻璃参数
-    // 玻璃模糊随材质档位：通透玻璃档更低（折射接管通透感），其余档 8
-    val webDockGlassBlur = com.haooz.chedule.ui.utils.AppMaterialSettings.glassBlurDp()
-    val webDockEffects: BackdropEffectScope.() -> Unit = remember(webDockGlassBlur) {
-        {
-            vibrancy()
-            blur(webDockGlassBlur.dp.toPx())
-            lens(6f.dp.toPx(), 36f.dp.toPx())
+    // 柔光玻璃：材质、档位、调色全由材质层给出；模糊走档位值，无材质档整体关。
+    // effects 必须记住引用，否则 drawBackdrop 每帧重新录制采样层。
+    val webDockGlassBlur = AppMaterialSettings.glassBlurDp()
+    val webDockGlassOn = AppMaterialSettings.glassEffectsEnabled()
+    val webDockGlassStyle = AppMaterialSettings.chromeGlassStyle(
+        base = ScheduleSoftGlassStyle,
+        isDark = isAppDarkTheme(),
+        // 底部 dock 是「贴底 bar」类玻璃：走 BarFill + 大控件材质。
+        fill = BarFill,
+        tone = BrightLargeTone,
+    )
+    val webDockEffects: GlassEffectScope.() -> Unit =
+        remember(webDockGlassBlur, webDockGlassOn, webDockGlassStyle) {
+            {
+                if (webDockGlassOn) {
+                    blur(webDockGlassBlur.dp.toPx())
+                    runtimeShaderEffect(
+                        key = LIVE_WEB_DOCK_GLASS_KEY,
+                        shaderString = SOFT_GLASS_LIVE_SHADER,
+                        uniformShaderName = "content",
+                    ) {
+                        applySoftGlass(
+                            style = webDockGlassStyle,
+                            width = size.width,
+                            height = size.height,
+                        )
+                    }
+                }
+            }
         }
-    }
     val isLightTheme = !isAppDarkTheme()
     // 底部胶囊底色：莫奈取色下跟随 surfaceContainer（与首页底栏、切换课表底栏同一套）；
-    // 非莫奈保持原硬编码（亮 #FFFFFF/0.6、暗 #121212/0.54）
+    // 非莫奈保持原硬编码（亮 #FFFFFF/0.6、暗 #121212/0.54）；无材质档实色
     val webDockSurfaceColor = if (MiuixTheme.isDynamicColor) {
-        MiuixTheme.colorScheme.surfaceContainer.copy(alpha = if (isLightTheme) 0.6f else 0.54f)
+        MiuixTheme.colorScheme.surfaceContainer
+            .copy(alpha = AppMaterialSettings.solidSurfaceAlpha(if (isLightTheme) 0.6f else 0.54f))
     } else if (isLightTheme) {
-        Color(0xFFFFFFFF).copy(alpha = 0.6f)
+        Color(0xFFFFFFFF).copy(AppMaterialSettings.solidSurfaceAlpha(0.6f))
     } else {
-        Color(0xFF121212).copy(alpha = 0.54f)
+        Color(0xFF121212).copy(AppMaterialSettings.solidSurfaceAlpha(0.54f))
     }
     val webDockOnDrawSurface: DrawScope.() -> Unit = remember(webDockSurfaceColor) {
         {
             drawRect(webDockSurfaceColor)
         }
     }
-    val webDockEdgeLight = rememberDefaultEdgeLight(baseColor = webDockSurfaceColor)
     var importCompleted by remember { mutableStateOf(false) }
 
     val currentOnImportComplete by rememberUpdatedState(onImportComplete)
@@ -245,7 +270,7 @@ fun WebViewScreen(
             onTaskCompleted = {
                 currentOnTaskCompleted()
                 if (!importCompleted) {
-                    showToast("导入完成", longDuration = true)
+                    showToast(SchedStr.importDone(), longDuration = true)
                 }
                 currentOnBack()
             },
@@ -261,6 +286,10 @@ fun WebViewScreen(
             contentTopPadding = if (nativeChrome != null) 0.dp else contentTopPadding,
             // 原生底栏时给网页留出高度；Android 走自己的布局
             contentBottomPadding = if (nativeChrome != null) bottomBarHeight else 0.dp,
+            // 鸿蒙：网页是 ArkUI 节点、底部条也由原生画，这两个值要带过去
+            schoolName = school.name,
+            scheduleNames = scheduleNames,
+            currentScheduleName = currentScheduleName,
         ),
         webHostEvents,
     )
@@ -304,7 +333,7 @@ fun WebViewScreen(
         if (assetJsPath != null) {
             showCourseTablePicker = true
         } else {
-            showToast("无导入脚本", longDuration = true)
+            showToast(SchedStr.noImportScript(), longDuration = true)
         }
     }
 
@@ -313,12 +342,12 @@ fun WebViewScreen(
         if (nativeChrome != null) {
             NativeDocumentBottomBar(
                 title = school.name,
-                subtitle = "登入教务系统 → 按照提示进行导入",
-                badge = if (isDesktopMode) "桌面版" else "手机版",
+                subtitle = SchedStr.webImportSubtitle(),
+                badge = if (isDesktopMode) SchedStr.desktopMode() else SchedStr.mobileMode(),
                 toggleSymbol = "rectangle.on.rectangle",
-                toggleLabel = "切换手机版/桌面版",
+                toggleLabel = SchedStr.toggleDesktopMode(),
                 primarySymbol = "square.and.arrow.down",
-                primaryLabel = "执行导入",
+                primaryLabel = SchedStr.runImport(),
                 primaryEnabled = assetJsPath != null,
                 onToggle = { isDesktopMode = !isDesktopMode },
                 onPrimary = onExecuteImport,
@@ -340,12 +369,12 @@ fun WebViewScreen(
                     val tableIdLiteral = Json.encodeToString(tableId)
                     val fullJsCode = "window.currentTableId = $tableIdLiteral;\n$jsCode"
                     webHost.evaluateJavascript(fullJsCode)
-                    showToast("正在执行导入脚本...")
+                    showToast(SchedStr.runningImportScript())
                 } else {
-                    showToast("脚本下载失败: $path", longDuration = true)
+                    showToast(SchedStr.scriptDownloadFailed(path), longDuration = true)
                 }
             }
-        } ?: showToast("无导入脚本", longDuration = true)
+        } ?: showToast(SchedStr.noImportScript(), longDuration = true)
     }
 
     // 单选列表对话框
@@ -398,7 +427,11 @@ fun WebViewScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MiuixTheme.colorScheme.surface)
-                .layerBackdrop(webContentBackdrop)
+                // 无材质档：底部胶囊玻璃全关，页面采样录屏层不挂
+                .then(
+                    if (com.haooz.chedule.ui.utils.AppMaterialSettings.isNoneTier()) Modifier
+                    else Modifier.layerBackdrop(webContentBackdrop)
+                )
         ) {
             // 顶栏区域：宿主采到的上屏色铺满 contentTopPadding。
             // ⚠ 必须 animateColorAsState 连续过渡：宿主采样已节流到 8Hz 且只报目标色
@@ -455,7 +488,7 @@ fun WebViewScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                    .padding(horizontal = 16.dp + tabletHorizontalPadding)
+                    .padding(horizontal = tabletHorizontalPadding)
                     // 与首页底栏同一套底部间距算法
                     .padding(bottom = bottomFloatingPadding())
                     .fillMaxWidth()
@@ -463,10 +496,9 @@ fun WebViewScreen(
                         backdrop = webContentBackdrop,
                         shape = webDockShapeBlock,
                         effects = webDockEffects,
-                        highlight = null,
-                        onDrawSurface = webDockOnDrawSurface
+                        // 柔光自己画玻璃色与方向光；无材质档不跑 shader，必须留容器色
+                        onDrawSurface = if (webDockGlassOn) null else webDockOnDrawSurface
                     )
-                    .edgeLight(shape = ContinuousCapsule(), edgeLight = webDockEdgeLight)
             ) {
                 WebImportDockContent(
                     schoolName = school.name,
@@ -523,7 +555,7 @@ private fun WebImportDockContent(
                         Color(0xFF66BB6A).copy(alpha = 0.15f)
                 ) {
                     Text(
-                        text = if (isDesktopMode) "桌面版" else "手机版",
+                        text = if (isDesktopMode) SchedStr.desktopMode() else SchedStr.mobileMode(),
                         fontSize = 12.sp,
                         color = if (isDesktopMode)
                             MiuixTheme.colorScheme.primary
@@ -537,7 +569,7 @@ private fun WebImportDockContent(
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "登入教务系统 → 按照提示进行导入",
+                text = SchedStr.webImportSubtitle(),
                 fontSize = 12.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantActions
             )
@@ -557,7 +589,7 @@ private fun WebImportDockContent(
                 IconButton(onClick = onToggleDesktopMode) {
                     Icon(
                         painter = painterResource(Res.drawable.ic_phone_pc),
-                        contentDescription = "切换手机版/桌面版",
+                        contentDescription = SchedStr.toggleDesktopMode(),
                         modifier = Modifier.size(22.dp),
                         tint = if (isLightTheme) Color.Black else Color.White
                     )
@@ -578,7 +610,7 @@ private fun WebImportDockContent(
                 ) {
                     Icon(
                         MiuixIcons.Normal.Download,
-                        contentDescription = "执行导入",
+                        contentDescription = SchedStr.runImport(),
                         modifier = Modifier.size(26.dp),
                         tint = if (importEnabled)
                             MiuixTheme.colorScheme.onPrimary
@@ -614,7 +646,7 @@ private fun WebAlertDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 20.dp + tabletHorizontalPadding)
+                .padding(horizontal = tabletHorizontalPadding)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(
@@ -670,7 +702,7 @@ private fun WebPromptDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 20.dp + tabletHorizontalPadding)
+                .padding(horizontal = tabletHorizontalPadding)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(
@@ -704,12 +736,12 @@ private fun WebPromptDialog(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     TextButton(
-                        text = "取消",
+                        text = CommonStr.cancel(),
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f)
                     )
                     TextButton(
-                        text = "确定",
+                        text = CommonStr.ok(),
                         onClick = { onConfirm(textFieldValue.text) },
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                         modifier = Modifier.weight(1f)
@@ -745,7 +777,7 @@ private fun WebSelectionDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 20.dp + tabletHorizontalPadding)
+                .padding(horizontal = tabletHorizontalPadding)
                 .heightIn(max = 400.dp)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
@@ -790,12 +822,12 @@ private fun WebSelectionDialog(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     TextButton(
-                        text = "取消",
+                        text = CommonStr.cancel(),
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f)
                     )
                     TextButton(
-                        text = "确定",
+                        text = CommonStr.ok(),
                         onClick = { onSelect(selectedIndex) },
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                         modifier = Modifier.weight(1f)
@@ -830,19 +862,19 @@ private fun CourseTablePickerDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 20.dp + tabletHorizontalPadding)
+                .padding(horizontal = tabletHorizontalPadding)
                 .heightIn(max = 400.dp)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(
-                    text = "选择要导入的课表",
+                    text = SchedStr.selectScheduleToImport(),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = MiuixTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "导入的课程将写入所选课表，当前课表不会受影响",
+                    text = SchedStr.importTargetHint(),
                     fontSize = 13.sp,
                     color = MiuixTheme.colorScheme.onSurfaceVariantActions
                 )
@@ -880,7 +912,7 @@ private fun CourseTablePickerDialog(
                                 )
                                 if (isCurrent) {
                                     Text(
-                                        text = "当前",
+                                        text = SchedStr.currentTag(),
                                         fontSize = 12.sp,
                                         color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                                         modifier = Modifier.padding(start = 8.dp)
@@ -896,12 +928,12 @@ private fun CourseTablePickerDialog(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     TextButton(
-                        text = "取消",
+                        text = CommonStr.cancel(),
                         onClick = onDismissRequest,
                         modifier = Modifier.weight(1f)
                     )
                     TextButton(
-                        text = "确定",
+                        text = CommonStr.ok(),
                         onClick = { onTableSelected(selectedSchedule) },
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                         modifier = Modifier.weight(1f)

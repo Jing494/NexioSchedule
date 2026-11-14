@@ -21,12 +21,51 @@ class AndroidWallpaperBackend : WallpaperBackend {
         return ScheduleAppearance.loadWallpaper()?.asImageBitmap()
     }
 
+    /**
+     * 同步取壁纸，供首帧使用（注入到 `WallpaperStore.synchronousLoader`）。
+     *
+     * 与 [decode] 同一条链路（降采样 + LruCache），只是不走协程：首帧前必须拿到，
+     * 否则首帧只有底色，等异步加载完再跳成用户设定。
+     */
+    fun loadNow(): ImageBitmap? = ScheduleAppearance.loadWallpaper()?.asImageBitmap()
+
     override suspend fun encode(image: ImageBitmap, quality: Int): ByteArray? {
         // quality 由 WallpaperStore 固定传 80（与内部一致），保留参数让质量决策留在共享层（iOS 用 JPEG 80）。
         // ⚠ 落盘由 ScheduleAppearance.saveWallpaper 自己完成；这里再读一次盘取回字节供 WallpaperStore 判定成功，
         //    多一次读盘换取「Android 行为逐字节不变」。
         if (!ScheduleAppearance.saveWallpaper(image.asAndroidBitmap())) return null
         return readWallpaperBytes()
+    }
+
+    /**
+     * 纯解码给定字节。
+     * ⚠ 不能落到 [decode]：那是「读 App 壁纸文件」，会把小部件壁纸读成课表壁纸。
+     */
+    override suspend fun decodeBytes(bytes: ByteArray): ImageBitmap? = try {
+        android.graphics.BitmapFactory
+            .decodeByteArray(bytes, 0, bytes.size)
+            ?.asImageBitmap()
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * 纯编码，不落盘、不碰 LruCache。
+     * ⚠ 不能落到 [encode]：那会调 `ScheduleAppearance.saveWallpaper`，把用户的课表壁纸
+     * （以及外观页「跟随壁纸」的深浅色）覆盖成小部件壁纸。
+     */
+    override suspend fun encodeBytes(image: ImageBitmap, quality: Int): ByteArray? = try {
+        val out = java.io.ByteArrayOutputStream()
+        @Suppress("DEPRECATION")
+        val format = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            Bitmap.CompressFormat.WEBP_LOSSY
+        } else {
+            Bitmap.CompressFormat.WEBP
+        }
+        val ok = image.asAndroidBitmap().compress(format, quality.coerceIn(1, 100), out)
+        if (ok) out.toByteArray() else null
+    } catch (_: Exception) {
+        null
     }
 
     override suspend fun scale(

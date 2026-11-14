@@ -1,10 +1,13 @@
 package com.haooz.chedule.ui.utils
 
-import com.haooz.chedule.data.Course
-import com.haooz.chedule.data.CourseRepository
-import com.haooz.chedule.data.TeachingWeekReorganization
-import com.haooz.chedule.data.TeachingWeekReorganizationRule
-import com.haooz.chedule.data.TimeRoutine
+import com.haooz.chedule.data.holiday.HolidayManager
+import com.haooz.chedule.data.holiday.TeachingWeekReorganizationRule
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.model.TeachingWeekReorganization
+import com.haooz.chedule.data.model.TimeRoutine
+import com.haooz.chedule.data.model.truncateNote
+import com.haooz.chedule.data.repo.CourseRepository
+import com.haooz.chedule.i18n.MiscStr
 
 // 分享/导出课表的**数据契约**：组装（写出）与解析（读入）两半。
 // ⚠ 「导入 / 导出」两条路必须**成对改**：字段名动一处，两边都要动。
@@ -60,22 +63,29 @@ fun buildShareScheduleMap(
         times = times,
         courses = courses,
         routines = timeConfig.safeRoutines,
+        holiday = HolidayManager.exportBackupDataFor(scheduleName),
     )
 }
 
 /** 单课表/分享共用的课程字段序列化；导出与单课表备份必须走同一份字段清单 */
-fun courseToShareMap(course: Course): Map<String, Any?> = mapOf(
-    "name" to course.name,
-    "classroom" to course.classroom,
-    "teacher" to course.teacher,
-    "dayOfWeek" to course.dayOfWeek,
-    "startSection" to course.startSection,
-    "endSection" to course.endSection,
-    "isCustomTime" to course.isCustomTime,
-    "customStartTime" to course.customStartTime,
-    "customEndTime" to course.customEndTime,
-    "colorRes" to course.colorRes,
-) + shareCourseWeekFields(course)
+fun courseToShareMap(course: Course): Map<String, Any?> = buildMap {
+    put("name", course.name)
+    put("classroom", course.classroom)
+    put("teacher", course.teacher)
+    put("dayOfWeek", course.dayOfWeek)
+    put("startSection", course.startSection)
+    put("endSection", course.endSection)
+    put("isCustomTime", course.isCustomTime)
+    put("customStartTime", course.customStartTime)
+    put("customEndTime", course.customEndTime)
+    put("colorRes", course.colorRes)
+    putAll(shareCourseWeekFields(course))
+    // 备注是后加的字段：没有备注就不写，旧版本导入方看到的载荷与以前逐字一致
+    if (course.note.isNotEmpty()) put("note", course.note)
+    if (course.weekNotes.isNotEmpty()) {
+        put("weekNotes", course.weekNotes.mapKeys { it.key.toString() })
+    }
+}
 
 fun buildShareSchedulePayload(
     scheduleName: String,
@@ -83,14 +93,16 @@ fun buildShareSchedulePayload(
     times: Map<String, Any>,
     courses: List<Course>,
     routines: List<TimeRoutine> = emptyList(),
-): Map<String, Any> = mapOf(
-    "schedule_name" to scheduleName,
-    "settings" to settings,
-    "times" to times,
-    "courses" to courses.map(::courseToShareMap),
-    // 全套作息（夏令时/冬令时）。旧版本忽略这个字段，仍按 times 建单作息，向后兼容
-    "routines" to routines,
-)
+    holiday: Map<String, Any>? = null,
+): Map<String, Any> = buildMap {
+    put("schedule_name", scheduleName)
+    put("settings", settings)
+    put("times", times)
+    put("courses", courses.map(::courseToShareMap))
+    // 全套作息（夏令时/冬令时）。旧版本忽略这个字段，仍按 times 建单作息
+    put("routines", routines)
+    if (holiday != null) put("holiday", holiday)
+}
 
 fun shareScheduleSettings(
     baseSettings: Map<String, Any>,
@@ -113,6 +125,35 @@ fun shareCourseWeekFields(course: Course): Map<String, Any> = mapOf(
     "selectedWeeks" to course.selectedWeeks.sorted(),
 )
 
+// ── 课程备注（导出 / 导入成对）──
+//
+// 长度上限只有一个来源：`Course.NOTE_MAX_LENGTH`（截断走 `String.truncateNote()`）。
+// 服务端 `SHARE_MAX_NOTE_LEN` 必须与它相同，改一边就要改另一边。
+
+/** 分享包里的 `note`：缺字段 → 空串；类型不对也按空串处理，坏数据不该拦住导入。 */
+fun parseShareCourseNote(data: Map<String, Any?>): String =
+    (data["note"] as? String)?.trim()?.truncateNote() ?: ""
+
+/** 分享包里的 `weekNotes`：键是周次，越界与非正数条目跳过。 */
+fun parseShareCourseWeekNotes(
+    data: Map<String, Any?>,
+    maxWeeks: Int? = null,
+): Map<Int, String> {
+    val raw = data["weekNotes"] as? Map<*, *> ?: return emptyMap()
+    return buildMap {
+        for ((rawKey, rawValue) in raw) {
+            val week = when (rawKey) {
+                is String -> rawKey.trim().toIntOrNull()
+                is Number -> rawKey.toInt()
+                else -> null
+            } ?: continue
+            if (week <= 0 || (maxWeeks != null && week > maxWeeks)) continue
+            val text = (rawValue as? String)?.trim()?.truncateNote() ?: continue
+            if (text.isNotEmpty()) put(week, text)
+        }
+    }
+}
+
 // ── 2. 解析侧：分享 JSON Map → 校验过的课表结构 ──────────────────
 
 /** Returns null for legacy share payloads that had no explicit week model. */
@@ -132,21 +173,21 @@ fun parseShareCourseWeekModel(
     }
 
     val model = ShareCourseWeekModel(
-        startWeek = exactInteger("startWeek") ?: throw IllegalArgumentException("分享课表的startWeek无效"),
-        endWeek = exactInteger("endWeek") ?: throw IllegalArgumentException("分享课表的endWeek无效"),
-        weekType = exactInteger("weekType") ?: throw IllegalArgumentException("分享课表的weekType无效"),
+        startWeek = exactInteger("startWeek") ?: throw IllegalArgumentException(MiscStr.shareStartWeekInvalid()),
+        endWeek = exactInteger("endWeek") ?: throw IllegalArgumentException(MiscStr.shareEndWeekInvalid()),
+        weekType = exactInteger("weekType") ?: throw IllegalArgumentException(MiscStr.shareWeekTypeInvalid()),
     )
     require(model.startWeek > 0 && model.endWeek >= model.startWeek) {
-        "分享课表的课程周次范围无效"
+        MiscStr.shareWeekRangeInvalid()
     }
     require(model.weekType in setOf(Course.WEEK_TYPE_ALL, Course.WEEK_TYPE_ODD, Course.WEEK_TYPE_EVEN)) {
-        "分享课表的课程单双周类型无效"
+        MiscStr.shareOddEvenTypeInvalid()
     }
     require(maxWeeks == null || maxWeeks in 1..CourseRepository.MAX_TOTAL_WEEKS) {
-        "分享课表的学期总周数无效"
+        MiscStr.shareSemesterWeeksInvalid()
     }
     require(maxWeeks == null || model.endWeek <= maxWeeks) {
-        "分享课表的课程周次超出支持范围"
+        MiscStr.shareWeeksOutOfRange()
     }
     return model
 }
@@ -158,21 +199,21 @@ fun parseShareSelectedWeeks(
 ): List<Int> {
     if (!data.containsKey("selectedWeeks")) return emptyList()
     val rawWeeks = data["selectedWeeks"] as? List<*>
-        ?: throw IllegalArgumentException("分享课表的selectedWeeks无效")
+        ?: throw IllegalArgumentException(MiscStr.shareSelectedWeeksInvalid())
     val weeks = rawWeeks.map { value ->
         val number = (value as? Number)?.toDouble()
-            ?: throw IllegalArgumentException("分享课表的selectedWeeks无效")
+            ?: throw IllegalArgumentException(MiscStr.shareSelectedWeeksInvalid())
         require(number.isFinite() && number % 1.0 == 0.0 &&
             number in 1.0..Int.MAX_VALUE.toDouble()
-        ) { "分享课表的selectedWeeks无效" }
+        ) { MiscStr.shareSelectedWeeksInvalid() }
         number.toInt()
     }
-    require(weeks.distinct().size == weeks.size) { "分享课表的selectedWeeks重复" }
+    require(weeks.distinct().size == weeks.size) { MiscStr.shareSelectedWeeksDuplicate() }
     require(maxWeeks == null || maxWeeks in 1..CourseRepository.MAX_TOTAL_WEEKS) {
-        "分享课表的学期总周数无效"
+        MiscStr.shareSemesterWeeksInvalid()
     }
     require(maxWeeks == null || weeks.all { it <= maxWeeks }) {
-        "分享课表的selectedWeeks超出支持范围"
+        MiscStr.shareSelectedWeeksOutOfRange()
     }
     return weeks
 }
@@ -181,57 +222,57 @@ fun parseShareSelectedWeeks(
 fun parseShareSettings(data: Map<String, Any>): Map<String, Any?>? {
     if (!data.containsKey("settings")) return null
     val rawSettings = data["settings"] as? Map<*, *>
-        ?: throw IllegalArgumentException("分享课表的设置数据无效")
-    require(rawSettings.keys.all { it is String }) { "分享课表的设置字段无效" }
+        ?: throw IllegalArgumentException(MiscStr.shareSettingsInvalid())
+    require(rawSettings.keys.all { it is String }) { MiscStr.shareSettingsFieldsInvalid() }
     return rawSettings.entries.associate { (key, value) -> (key as String) to value }
 }
 
 fun parseShareTotalWeeks(settings: Map<String, Any?>?): Int {
     if (settings == null || !settings.containsKey("total_weeks")) return 20
     val number = (settings["total_weeks"] as? Number)?.toDouble()
-        ?: throw IllegalArgumentException("分享课表的总周数无效")
+        ?: throw IllegalArgumentException(MiscStr.shareTotalWeeksInvalid())
     require(
         number.isFinite() && number % 1.0 == 0.0 &&
             number in 1.0..CourseRepository.MAX_TOTAL_WEEKS.toDouble(),
-    ) { "分享课表的总周数无效" }
+    ) { MiscStr.shareTotalWeeksInvalid() }
     return number.toInt()
 }
 
 /** Fully parse course records before the caller creates or persists an imported timetable. */
 fun parseShareCourses(data: Map<String, Any>): List<Map<String, Any?>> {
     val rawCourses = data["courses"] as? List<*>
-        ?: throw IllegalArgumentException("分享课表缺少课程数据")
-    require(rawCourses.isNotEmpty()) { "分享课表没有课程" }
+        ?: throw IllegalArgumentException(MiscStr.shareMissingCourses())
+    require(rawCourses.isNotEmpty()) { MiscStr.shareNoCourses() }
     return rawCourses.map { rawCourse ->
         val fields = rawCourse as? Map<*, *>
-            ?: throw IllegalArgumentException("分享课表中的课程数据无效")
-        require(fields.keys.all { it is String }) { "分享课表中的课程字段无效" }
+            ?: throw IllegalArgumentException(MiscStr.shareCourseInvalid())
+        require(fields.keys.all { it is String }) { MiscStr.shareCourseFieldsInvalid() }
         val course = fields.entries.associate { (key, value) -> (key as String) to value }
         require((course["name"] as? String)?.isNotBlank() == true) {
-            "分享课表中的课程缺少有效名称"
+            MiscStr.shareCourseNameMissing()
         }
         val day = (course["dayOfWeek"] as? Number)?.toDouble()
-            ?: throw IllegalArgumentException("分享课表中的星期无效")
+            ?: throw IllegalArgumentException(MiscStr.shareDayInvalid())
         require(day.isFinite() && day % 1.0 == 0.0 && day in 1.0..7.0) {
-            "分享课表中的星期无效"
+            MiscStr.shareDayInvalid()
         }
         val hasDirectSections = course.containsKey("startSection") || course.containsKey("endSection")
         if (hasDirectSections) {
             val startSection = (course["startSection"] as? Number)?.toDouble()
-                ?: throw IllegalArgumentException("分享课表中的开始节次无效")
+                ?: throw IllegalArgumentException(MiscStr.shareStartSectionInvalid())
             val endSection = (course["endSection"] as? Number)?.toDouble()
-                ?: throw IllegalArgumentException("分享课表中的结束节次无效")
+                ?: throw IllegalArgumentException(MiscStr.shareEndSectionInvalid())
             require(startSection.isFinite() && startSection % 1.0 == 0.0 && startSection >= 1.0 &&
                 endSection.isFinite() && endSection % 1.0 == 0.0 && endSection >= startSection
-            ) { "分享课表中的节次范围无效" }
+            ) { MiscStr.shareSectionRangeInvalid() }
         } else {
             val startMinutes = (course["startTotalMinutes"] as? Number)?.toDouble()
-                ?: throw IllegalArgumentException("分享课表中的开始时间无效")
+                ?: throw IllegalArgumentException(MiscStr.shareStartTimeInvalid())
             val endMinutes = (course["endTotalMinutes"] as? Number)?.toDouble()
-                ?: throw IllegalArgumentException("分享课表中的结束时间无效")
+                ?: throw IllegalArgumentException(MiscStr.shareEndTimeInvalid())
             require(startMinutes.isFinite() && startMinutes % 1.0 == 0.0 && startMinutes >= 0.0 &&
                 endMinutes.isFinite() && endMinutes % 1.0 == 0.0 && endMinutes > startMinutes
-            ) { "分享课表中的时间范围无效" }
+            ) { MiscStr.shareTimeRangeInvalid() }
         }
         course
     }

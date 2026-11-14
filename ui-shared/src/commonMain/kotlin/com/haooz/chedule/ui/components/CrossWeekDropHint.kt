@@ -1,6 +1,5 @@
 package com.haooz.chedule.ui.components
 
-import com.haooz.chedule.ui.components.cardContentSize
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -28,43 +26,78 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.ui.components.text.material.Text as Text
+import com.haooz.softglass.glass.BrightTone
+import com.haooz.softglass.glass.CustomizeFill
+import com.haooz.softglass.glass.SOFT_GLASS_LIVE_SHADER
+import com.haooz.chedule.ui.glass.ScheduleSoftGlassStyle
+import com.haooz.softglass.glass.applySoftGlass
 import com.haooz.chedule.ui.utils.AppMaterialSettings
 import com.haooz.chedule.ui.utils.isAppDarkTheme
-import com.haooz.chedule.ui.utils.rememberDefaultEdgeLight
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
-import com.kyant.backdrop.edgelight.edgeLight
-import com.kyant.capsule.ContinuousCapsule
+import com.haooz.softglass.backdrop.GlassBackdrop
+import com.haooz.softglass.backdrop.drawBackdrop
+import com.haooz.softglass.backdrop.effects.blur
+import com.haooz.softglass.backdrop.effects.runtimeShaderEffect
+import com.haooz.softglass.shape.ContinuousCapsule
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.ArrowRight
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+/** 跨周提示胶囊的柔光 shader 缓存键：尺寸与其他玻璃件不同，不能共用 uniform。 */
+private const val LIVE_CROSS_WEEK_GLASS_KEY = "NexioSoftGlassLiveCrossWeekHint"
+
 /**
  * 跨周调课提示胶囊：拖着课翻周时告诉用户松手会落到第几周。
  * [fromWeek] 为原周次（拖拽起点），[toWeek] 为当前浏览周（落点周）；两者不同即跨周调课，胶囊用主题色强调。
- * 玻璃效果与「回到今天/本周」悬浮按钮同一套：vibrancy + blur + 材质档位折射，底色始终主题色玻璃。
+ * 玻璃效果与「回到今天/本周」悬浮按钮同一套柔光：blur + 柔光 shader，白字靠主题色填充保证对比度。
  */
 @Composable
 fun CrossWeekDropHint(
     fromWeek: Int,
     toWeek: Int,
-    backdrop: Backdrop,
+    backdrop: GlassBackdrop,
     modifier: Modifier = Modifier,
 ) {
     val crossWeek = fromWeek > 0 && toWeek > 0 && fromWeek != toWeek
     val isLightTheme = !isAppDarkTheme()
-    val baseAlpha = if (isLightTheme) 0.72f else 0.62f
+    // 无材质档实色
+    val baseAlpha = AppMaterialSettings.solidSurfaceAlpha(if (isLightTheme) 0.72f else 0.62f)
     val containerColor = MiuixTheme.colorScheme.primary.copy(alpha = baseAlpha)
     val textColor = Color.White
     val hintShape: Shape = ContinuousCapsule()
-    val chromeLens = AppMaterialSettings.chromeLensEnabled()
+    val hintShapeBlock: () -> Shape = remember { { hintShape } }
     val glassBlur = AppMaterialSettings.glassBlurDp()
-    val edgeLight = rememberDefaultEdgeLight(baseColor = MiuixTheme.colorScheme.primary)
-    val onDrawSurface: DrawScope.() -> Unit = remember {
+    val glassEffectsOn = AppMaterialSettings.glassEffectsEnabled()
+    val hintGlassStyle = AppMaterialSettings.chromeGlassStyle(
+        base = ScheduleSoftGlassStyle,
+        isDark = !isLightTheme,
+        fill = CustomizeFill(MiuixTheme.colorScheme.primary),
+        tone = BrightTone,
+    )
+    // drawBackdrop 按引用比较 shape / effects / onDrawSurface，lambda 每帧新建会重录采样层。
+    val glassEffects: com.haooz.softglass.backdrop.GlassEffectScope.() -> Unit =
+        remember(glassBlur, glassEffectsOn, hintGlassStyle) {
+            {
+                if (glassEffectsOn) {
+                    blur(glassBlur.dp.toPx())
+                    runtimeShaderEffect(
+                        key = LIVE_CROSS_WEEK_GLASS_KEY,
+                        shaderString = SOFT_GLASS_LIVE_SHADER,
+                        uniformShaderName = "content",
+                    ) {
+                        applySoftGlass(
+                            style = hintGlassStyle,
+                            width = size.width,
+                            height = size.height,
+                        )
+                    }
+                }
+            }
+        }
+    // 底色随材质档（无材质档 alpha → 1），必须进 key，否则切档后仍画旧半透明面
+    val onDrawSurface: DrawScope.() -> Unit = remember(containerColor) {
         { drawRect(containerColor) }
     }
 
@@ -73,17 +106,12 @@ fun CrossWeekDropHint(
             modifier = Modifier
                 .drawBackdrop(
                     backdrop = backdrop,
-                    shape = { hintShape },
-                    effects = {
-                        vibrancy()
-                        blur(glassBlur.dp.toPx())
-                        if (chromeLens) lens(6f.dp.toPx(), 36f.dp.toPx())
-                    },
-                    highlight = null,
                     shadow = null,
-                    onDrawSurface = onDrawSurface,
+                    shape = hintShapeBlock,
+                    effects = glassEffects,
+                    // 柔光自己画玻璃色与方向光；无材质档不跑 shader，必须留容器色。
+                    onDrawSurface = if (glassEffectsOn) null else onDrawSurface,
                 )
-                .edgeLight(shape = hintShape, edgeLight = edgeLight)
                 // 尺寸补间与 CardExpand 同一条 spring
                 .cardContentSize()
                 .padding(horizontal = 18.dp, vertical = 7.dp),
@@ -101,7 +129,7 @@ fun CrossWeekDropHint(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        text = "第${fromWeek}周",
+                        text = CommonStr.weekN(fromWeek),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
                         color = textColor.copy(alpha = 0.72f),
@@ -115,7 +143,7 @@ fun CrossWeekDropHint(
                 }
             }
             Text(
-                text = "第${toWeek}周",
+                text = CommonStr.weekN(toWeek),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = textColor,

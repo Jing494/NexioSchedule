@@ -5,54 +5,28 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.haooz.chedule.data.Course
-import com.haooz.chedule.data.CourseRepository
-import com.haooz.chedule.data.TimeConfig
+import com.haooz.chedule.data.platform.showToast
+import com.haooz.chedule.i18n.AboutStr
+import com.haooz.chedule.i18n.AndroidMiscStr
+import com.haooz.chedule.i18n.AppLanguage
+import com.haooz.chedule.i18n.SettingsStr
 import com.haooz.chedule.reminder.CourseReminderHelper
 import com.haooz.chedule.reminder.IslandNotificationHelper
 import com.haooz.chedule.reminder.ReminderTestScenario
@@ -61,22 +35,13 @@ import com.haooz.chedule.ui.activities.BackupAndMigrationScreen
 import com.haooz.chedule.ui.activities.CourseManageScreen
 import com.haooz.chedule.ui.activities.CourseTimeSettingsScreen
 import com.haooz.chedule.ui.activities.MainActivity
-import com.haooz.chedule.ui.activities.TimeConfigCardBounds
 import com.haooz.chedule.ui.activities.ScheduleDataManageMode
-import com.haooz.chedule.ui.basic.ShortcutMenu
-import com.haooz.chedule.ui.basic.ShortcutMenuItem
-import com.haooz.chedule.ui.components.DocumentPageScaffold
-import com.haooz.chedule.ui.effects.motion.OobeCubicOutEasing
-import com.haooz.chedule.ui.effects.motion.OobeQuartOutEasing
-import com.haooz.chedule.ui.screens.CourseEditScreen
-import com.haooz.chedule.ui.activities.EduImportUpdater
-import com.haooz.chedule.ui.web.rememberAndroidWebHost
-import com.haooz.chedule.ui.screens.TimeConfigEditScreen
+import com.haooz.chedule.ui.activities.decodeWallpaperSampled
+import com.haooz.chedule.ui.screens.AndroidSettingsPane
 import com.haooz.chedule.ui.screens.invalidateWeatherCache
-import com.haooz.chedule.ui.utils.ApiCompat
+import com.haooz.chedule.ui.utils.AndroidBackupFileController
 import com.haooz.chedule.ui.utils.AndroidDiagnosticRecorder
 import com.haooz.chedule.ui.utils.AndroidReminderController
-import com.haooz.chedule.ui.utils.AndroidBackupFileController
 import com.haooz.chedule.ui.utils.AndroidScheduleFileController
 import com.haooz.chedule.ui.utils.AndroidUpdateController
 import com.haooz.chedule.ui.utils.FeatureLog
@@ -85,18 +50,13 @@ import com.haooz.chedule.ui.utils.ShareCodeFetchResult
 import com.haooz.chedule.ui.utils.ThirdPartyShareImporter
 import com.haooz.chedule.ui.utils.applyThemeAwareSystemBars
 import com.haooz.chedule.ui.utils.performScheduleShare
+import com.haooz.chedule.ui.web.rememberAndroidWebHost
 import com.haooz.chedule.viewmodel.CourseViewModel
 import com.haooz.chedule.viewmodel.ScheduleViewModel
 import com.haooz.chedule.viewmodel.SettingsViewModel
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Delete
-import top.yukonga.miuix.kmp.icon.extended.Edit
-import top.yukonga.miuix.kmp.squircle.addSquircleRect
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import kotlin.time.Duration.Companion.milliseconds
-import com.haooz.chedule.data.showToast
+import kotlinx.coroutines.withContext
 
 /**
  * 子页路由 → 页面的映射表。
@@ -113,13 +73,25 @@ fun AppRouteContent(
     route: AppRoute,
 ) {
     when (route) {
+        // 设置二级页（原主 pager 第三页）
+        AppRoute.Settings -> SettingsRoute(
+            router = router,
+            settingsPane = { args -> AndroidSettingsPane(args) },
+        )
+
+        AppRoute.ScheduleSettings -> ScheduleSettingsRoute(router)
+
         AppRoute.About -> AndroidAboutRoute(router)
 
         // 纯文档壳路由，直接调跨平台版
         AppRoute.Changelog -> ChangelogRoute(router)
+        AppRoute.Weather -> WeatherRoute(router)
         AppRoute.License -> LicenseRoute(router)
         AppRoute.PrivacyPolicy -> PrivacyPolicyRoute(router)
         AppRoute.Communication -> CommunicationRoute(router)
+        AppRoute.Feedback -> FeedbackRoute(router)
+        AppRoute.FeedbackHistory -> FeedbackHistoryRoute(router)
+        AppRoute.FeedbackRoadmap -> FeedbackRoadmapRoute(router)
         AppRoute.AppreciateAuthor -> AppreciateAuthorRoute(router)
 
         // 文档壳路由，Android 注入平台能力。
@@ -155,14 +127,14 @@ fun AppRouteContent(
             )
         }
 
-        AppRoute.LocalBackup -> {
+        AppRoute.UpdatePreferences -> UpdatePreferencesRoute(router = router)
+
+        AppRoute.ScheduleBackup -> {
             val context = LocalContext.current
-            LocalBackupRoute(
+            BackupCenterRoute(
                 router = router,
                 backupFileController = remember { AndroidBackupFileController(context) },
-                onHolidayDataChanged = {
-                    CourseReminderHelper.onHolidayDataChanged(context)
-                },
+                onHolidayDataChanged = { CourseReminderHelper.onHolidayDataChanged(context) },
             )
         }
 
@@ -173,26 +145,73 @@ fun AppRouteContent(
                 onCopyToClipboard = { text ->
                     val clipboard =
                         context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = ClipData.newPlainText("课表导入提示词", text)
+                    val clip = ClipData.newPlainText(AndroidMiscStr.aiImportClipLabel(), text)
                     clipboard.setPrimaryClip(clip)
                 },
             )
         }
 
-        // ── 数据管理（导入 / 导出 / 备份，共用 BackupAndMigrationScreen，按 mode 区分）──
-        AppRoute.ScheduleImport -> AndroidBackupAndMigrationRoute(router, ScheduleDataManageMode.Import)
-        AppRoute.ScheduleExport -> AndroidBackupAndMigrationRoute(router, ScheduleDataManageMode.Export)
-        AppRoute.ScheduleBackup -> AndroidBackupAndMigrationRoute(router, ScheduleDataManageMode.Backup)
+        // ── 导入导出 / 备份与同步 ──
+        // 导入 / 导出同页，顶部胶囊切换
+        AppRoute.ImportExport -> AndroidBackupAndMigrationRoute(
+            router,
+            ScheduleDataManageMode.Import,
+            switchable = true,
+        )
 
         // ── 带额外元素的页面（顶栏按钮 / 底部悬浮按钮 / 弹窗）──
         // Android 只注入平台能力。
         AppRoute.WidgetIntro -> {
             val context = LocalContext.current
+            val scope = rememberCoroutineScope()
+            // 组件壁纸：相册选图 → 按「小部件实际像素尺寸」降采样解码 → 回填浮层
+            var pendingPick by remember { mutableStateOf<((ImageBitmap?) -> Unit)?>(null) }
+            var pickTargetW by remember { mutableIntStateOf(0) }
+            var pickTargetH by remember { mutableIntStateOf(0) }
+            var pickDecoding by remember { mutableStateOf(false) }
+            val widgetWallpaperPicker = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.PickVisualMedia()
+            ) { uri ->
+                if (uri == null) {
+                    showToast(AndroidMiscStr.noImageSelected())
+                    return@rememberLauncherForActivityResult
+                }
+                if (pickDecoding) {
+                    showToast(AndroidMiscStr.processingWallpaperWait())
+                    return@rememberLauncherForActivityResult
+                }
+                pickDecoding = true
+                scope.launch {
+                    val bitmap = withContext(Dispatchers.IO) {
+                        decodeWallpaperSampled(
+                            context = context,
+                            uri = uri,
+                            screenWPx = pickTargetW.toFloat(),
+                            screenHPx = pickTargetH.toFloat(),
+                        )
+                    }
+                    pickDecoding = false
+                    if (bitmap == null) {
+                        showToast(AndroidMiscStr.wallpaperDecodeFailed(), longDuration = true)
+                        pendingPick?.invoke(null)
+                    } else {
+                        pendingPick?.invoke(bitmap.asImageBitmap())
+                    }
+                }
+            }
             WidgetIntroRoute(
                 router = router,
                 onRequestWidgetRefresh = {
                     com.haooz.chedule.widget.WidgetUpdateCache.clear()
                     com.haooz.chedule.widget.WidgetUpdateCache.updateInstalledWidgets(context)
+                },
+                onPickWidgetWallpaper = { widthPx, heightPx, onPicked ->
+                    pickTargetW = widthPx
+                    pickTargetH = heightPx
+                    pendingPick = onPicked
+                    widgetWallpaperPicker.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
                 },
             )
         }
@@ -207,7 +226,7 @@ fun AppRouteContent(
             CourseReminderRoute(
                 router = router,
                 reminderController = remember { AndroidReminderController(context) },
-                testActionLabel = if (islandEnabled) "测试小米超级岛" else "测试实时活动",
+                testActionLabel = if (islandEnabled) SettingsStr.testXiaomiSuperIsland() else SettingsStr.testLiveActivity(),
                 onSendTestNotification = {
                     FeatureLog.reminderFlow(
                         "test_notification",
@@ -216,11 +235,11 @@ fun AppRouteContent(
                     if (islandEnabled) {
                         IslandNotificationHelper.sendTestIslandNotification(context)
                         FeatureLog.reminderFlow("test_island_sent")
-                        showToast("已发送超级岛测试通知")
+                        showToast(AndroidMiscStr.islandTestSent())
                     } else {
                         CourseReminderHelper.sendTestLiveNotification(context)
                         FeatureLog.reminderFlow("test_live_sent")
-                        showToast("已发送实时活动测试通知")
+                        showToast(AndroidMiscStr.liveActivityTestSent())
                     }
                 },
             )
@@ -240,6 +259,7 @@ fun AppRouteContent(
             val context = LocalContext.current
             WebDavSettingsRoute(
                 router = router,
+                backupFileController = remember { AndroidBackupFileController(context) },
                 onHolidayDataChanged = { CourseReminderHelper.onHolidayDataChanged(context) },
             )
         }
@@ -281,14 +301,24 @@ fun AppRouteContent(
  *
  * 这里只剩四条 Android 专有能力的装配：文件选择器 / 提醒重排 / 口令取回与抓取 /
  * 口令分享出图。四者共用同一份装配，只是 `mode` 不同。
+ *
+ * ⚠ 本 fork 已移除手表互联（2026-10-24）：上游在这里注入的「手环推送 / 手表蓝牙 /
+ * 同步到日历」三个能力不再接回，对应源码与依赖也已删除。
  */
 @Composable
-private fun AndroidBackupAndMigrationRoute(router: AppRouter, mode: ScheduleDataManageMode) {
+private fun AndroidBackupAndMigrationRoute(
+    router: AppRouter,
+    mode: ScheduleDataManageMode,
+    switchable: Boolean = false,
+) {
     val context = LocalContext.current
     val shareScope = rememberCoroutineScope()
     BackupAndMigrationRoute(
         router = router,
         mode = mode,
+        switchableModes = if (switchable) {
+            listOf(ScheduleDataManageMode.Import, ScheduleDataManageMode.Export)
+        } else emptyList(),
         // 导入选文件 / 导出另存为（SAF）
         scheduleFileController = remember { AndroidScheduleFileController(context) },
         // WebDAV 恢复后的提醒重排
@@ -384,11 +414,11 @@ private fun AndroidAboutRoute(router: AppRouter) {
     }
     com.haooz.chedule.ui.navigation.AboutRoute(
         router = router,
-        appVersion = remember { packageInfo?.versionName ?: "未知版本" },
-        appName = remember {
+        appVersion = remember(AppLanguage.resolved) { packageInfo?.versionName ?: AboutStr.unknownVersion() },
+        appName = remember(AppLanguage.resolved) {
             packageInfo?.applicationInfo?.labelRes?.let { context.getString(it) }
                 ?: context.applicationInfo?.nonLocalizedLabel?.toString()
-                ?: "Nexio课程表"
+                ?: AboutStr.appName()
         },
         appIcon = aboutIcon,
         onExitApp = { activity?.finishAffinity() },

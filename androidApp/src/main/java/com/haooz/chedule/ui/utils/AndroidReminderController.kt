@@ -16,8 +16,8 @@ import android.provider.Settings
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.ActivityResultRegistryOwner
 import androidx.activity.result.contract.ActivityResultContracts
-import com.haooz.chedule.data.ReminderChannelState
-import com.haooz.chedule.data.ReminderController
+import com.haooz.chedule.data.platform.ReminderChannelState
+import com.haooz.chedule.data.platform.ReminderController
 import com.haooz.chedule.reminder.ClassDndHelper
 import com.haooz.chedule.reminder.CourseReminderHelper
 import com.haooz.chedule.reminder.IslandNotificationHelper
@@ -97,6 +97,8 @@ class AndroidReminderController(private val context: Context) : ReminderControll
             PackageManager.PERMISSION_GRANTED
 
     override fun isDndPermissionGranted(): Boolean = ClassDndHelper.isDndPermissionGranted(context)
+
+    override fun supportsDnd(): Boolean = true
 
     // ————————————————————————— 超级岛 / Shizuku —————————————————————————
 

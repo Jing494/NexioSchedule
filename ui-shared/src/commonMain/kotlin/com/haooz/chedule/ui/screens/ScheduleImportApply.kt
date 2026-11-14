@@ -1,17 +1,22 @@
 package com.haooz.chedule.ui.screens
 
-import com.haooz.chedule.data.Course
-import com.haooz.chedule.data.CourseRepository
-import com.haooz.chedule.data.TeachingWeekReorganization
-import com.haooz.chedule.data.TimeConfig
-import com.haooz.chedule.data.minusDays
-import com.haooz.chedule.data.minusWeeks
-import com.haooz.chedule.data.randomUuidV4
-import com.haooz.chedule.data.todayLocalDate
-import com.haooz.chedule.data.weeksBetween
+import com.haooz.chedule.data.holiday.HolidayManager
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.model.TeachingWeekReorganization
+import com.haooz.chedule.data.model.TimeConfig
+import com.haooz.chedule.data.model.TimeRoutine
+import com.haooz.chedule.data.platform.randomUuidV4
+import com.haooz.chedule.data.repo.CourseRepository
+import com.haooz.chedule.data.util.formatSlashDate
+import com.haooz.chedule.data.util.minusDays
+import com.haooz.chedule.data.util.minusWeeks
+import com.haooz.chedule.data.util.todayLocalDate
+import com.haooz.chedule.data.util.weeksBetween
+import com.haooz.chedule.i18n.ImportStr
 import com.haooz.chedule.ui.utils.ThirdPartySharePayload
-import com.haooz.chedule.ui.utils.ThirdPartyShareSource
+import com.haooz.chedule.ui.utils.parseShareCourseNote
 import com.haooz.chedule.ui.utils.parseShareCourseWeekModel
+import com.haooz.chedule.ui.utils.parseShareCourseWeekNotes
 import com.haooz.chedule.ui.utils.parseShareCourses
 import com.haooz.chedule.ui.utils.parseShareSelectedWeeks
 import com.haooz.chedule.ui.utils.parseShareSettings
@@ -31,11 +36,18 @@ fun applyScheduleData(
     scheduleViewModel: ScheduleViewModel,
     settingsViewModel: SettingsViewModel,
     scheduleName: String,
-    data: Map<String, Any>
+    data: Map<String, Any>,
+    /**
+     * 撞名时是否允许覆盖。false（默认）保留了「只新建、绝不改旧表」的老语义；
+     * 用户在确认弹窗里明确点了「覆盖导入」才传 true —— 口令同步同一张表必然会撞名，
+     * 以前这里直接失败，课程一条都进不来。
+     */
+    overwriteExisting: Boolean = false,
 ): Pair<Boolean, String> {
     try {
-        if (scheduleName in scheduleViewModel.scheduleNames.value) {
-            return Pair(false, "课表「$scheduleName」已存在")
+        val nameTaken = scheduleName in scheduleViewModel.scheduleNames.value
+        if (nameTaken && !overwriteExisting) {
+            return Pair(false, ImportStr.scheduleExists(scheduleName))
         }
 
         val settings = parseShareSettings(data)
@@ -43,7 +55,7 @@ fun applyScheduleData(
         if (reorganizationFieldPresent) {
             val importedStartDate = settings["class_start_time"] as? String
             require(CourseRepository.normalizeClassStartDate(importedStartDate) != null) {
-                "包含教学周重组的分享课表必须有有效开学日期"
+                ImportStr.reorgNeedsStartDate()
             }
         }
         val importTotalWeeks = parseShareTotalWeeks(settings)
@@ -140,6 +152,12 @@ fun applyScheduleData(
             // JSON 导出有 startSection；ICS 需按时间映射节次
             val directStartSection = (courseMap["startSection"] as? Number)?.toInt()
             val directEndSection = (courseMap["endSection"] as? Number)?.toInt()
+            // 自定义时间的课（ICS 里靠 X-NEXIO-CUSTOM-* 带回来）：节次只是占位，
+            // 真正的时间来自 customStartTime/customEndTime。跨午夜课如果硬走钟点映射，
+            // findSectionByTime 必然失败、整门课被丢掉，所以这里给个兜底节次。
+            val isCustomTimeCourse = (courseMap["isCustomTime"] as? Boolean) == true &&
+                !(courseMap["customStartTime"] as? String).isNullOrBlank() &&
+                !(courseMap["customEndTime"] as? String).isNullOrBlank()
             val sectionPair = if (directStartSection != null && directEndSection != null) {
                 Pair(directStartSection, directEndSection)
             } else {
@@ -147,6 +165,7 @@ fun applyScheduleData(
                 val endTotalMinutes = (courseMap["endTotalMinutes"] as? Number)?.toInt()
                 if (startTotalMinutes != null && endTotalMinutes != null) {
                     findSectionByTime(startTotalMinutes, endTotalMinutes)
+                        ?: if (isCustomTimeCourse) Pair(1, 1) else null
                 } else null
             }
 
@@ -249,16 +268,21 @@ fun applyScheduleData(
                         endWeek = explicitWeekModel?.endWeek ?: selectedWeeks.max(),
                         weekType = explicitWeekModel?.weekType ?: Course.WEEK_TYPE_ALL,
                         selectedWeeks = selectedWeeks,
-                        colorRes = colorRes
+                        colorRes = colorRes,
+                        // 备注是后加字段：旧分享包没有这两个键，解析成「无备注」
+                        note = parseShareCourseNote(courseMap),
+                        weekNotes = parseShareCourseWeekNotes(courseMap),
                     )
                 )
             }
         }
 
         require(courses.size == coursesData.size) {
-            "分享课表中的课程数据无法完整导入"
+            ImportStr.coursesIncomplete()
         }
-        scheduleViewModel.addSchedule(scheduleName)
+        // addSchedule 撞名是 no-op（不会新建），覆盖时直接整表替换课程即可；
+        // saveCourses 是「写完整个课表的课程列表」，不会把旧课程留下来
+        if (!nameTaken) scheduleViewModel.addSchedule(scheduleName)
         scheduleViewModel.saveCoursesToSchedule(scheduleName, courses)
 
         // 先刷摘要再继续，否则切换页课程数会短暂错
@@ -270,7 +294,7 @@ fun applyScheduleData(
         // 由 addTimeConfig 播种单作息，并走下面那段「按 times 写时间」的兼容路径
         val importedRoutines = (data["routines"] as? List<*>)
             ?.mapIndexedNotNull { index, raw ->
-                com.haooz.chedule.data.TimeRoutine.fromRaw(raw, fallbackId = index + 1L)
+                TimeRoutine.fromRaw(raw, fallbackId = index + 1L)
             }
             // 一律按顺序重排 id：payload 自带的 id 可能和 fallback 撞上（A 的 id=2、B 缺 id 落在
             // index=1 就都是 2），重复 id 会让按 id 查找/删除的逻辑行为不确定。这里是全新配置、
@@ -309,18 +333,51 @@ fun applyScheduleData(
             )
             val newConfigId = scheduleViewModel.addTimeConfig(newConfig)
             scheduleViewModel.setScheduleTimeConfigId(scheduleName, newConfigId)
-        } else {
+        } else if (!nameTaken) {
+            // 分享包里没有作息数据：照抄当前课表那套，但**必须复制成独立配置**。
+            // 直接 setScheduleTimeConfigId 绑同一个 id = 两张课表共用一个 TimeConfig，
+            // 之后在任一张表里改作息，另一张跟着变（「只同步了作息」的投诉就是这么来的）。
+            // 覆盖场景（nameTaken）保留目标课表原有作息，不拿「当前课表那套」换掉它。
             val currentScheduleTimeConfigId = scheduleViewModel.getCurrentScheduleTimeConfigId()
             if (currentScheduleTimeConfigId != 0L) {
-                scheduleViewModel.setScheduleTimeConfigId(scheduleName, currentScheduleTimeConfigId)
+                val sourceConfig = scheduleViewModel.getTimeConfig(currentScheduleTimeConfigId)
+                val copiedConfigId = scheduleViewModel.addTimeConfig(
+                    sourceConfig.copy(id = 0L, name = scheduleName)
+                )
+                scheduleViewModel.setScheduleTimeConfigId(scheduleName, copiedConfigId)
             }
         }
 
         if (settings != null) {
             scheduleViewModel.switchToSchedule(scheduleName)
+            (data["holiday"] as? Map<*, *>)?.let { raw ->
+                runCatching {
+                    HolidayManager.decodeBackupData(
+                        raw.entries.associate { (k, v) -> k.toString() to v }
+                    )
+                }.getOrNull()?.let { HolidayManager.restoreBackupDataFor(scheduleName, it) }
+            }
 
-            (settings["class_start_time"] as? String)?.let { viewModel.setClassStartTime(it) }
-            (settings["current_week"] as? Number)?.toInt()?.let { viewModel.setCurrentWeek(it) }
+            // ⚠ 顺序与条件都是有意的：setCurrentWeek 在「周数与当前不同」时会重算并写回
+            // 开学日（那是给「手动选周」设计的 rebase）。导入时两者几乎必然不等 —— 源设备
+            // 导出时的周次 ≠ 接收方按今天算出的周次 —— 所以它会把刚写进去的开学日改掉，
+            // 表现为整张课表日期整体偏移。current_week 本来就能由日期推出，故只在备份
+            // 没有带开学日时才拿它兜底。
+            val importedClassStartTime = settings["class_start_time"] as? String
+            // ICS 没有开学日字段（IcsCodec 给的 settings 是空 map），上面反推出的周一原本
+            // 只用于算周次。不落库的话新表会落到「今天」，第 N 周的课全挤到今天附近 ——
+            // 周次编号对、绝对日期全错。这里补写一次（repo 侧对非法日期会直接忽略）。
+            val icsStart = icsClassStartDate
+            if (importedClassStartTime != null) {
+                viewModel.setClassStartTime(importedClassStartTime)
+            } else if (icsStart != null && !nameTaken) {
+                // 只在新建课表时写：覆盖导入到已有课表时，那张表的开学日是用户自己设的，
+                // 不该被 ICS 反推值改掉。
+                CourseRepository.getInstance()
+                    .setClassStartTime(scheduleName, icsStart.formatSlashDate())
+            } else {
+                (settings["current_week"] as? Number)?.toInt()?.let { viewModel.setCurrentWeek(it) }
+            }
             (settings["total_weeks"] as? Number)?.toInt()?.let { viewModel.setTotalWeeks(it) }
             if (reorganizationFieldPresent && !CourseRepository.getInstance()
                     .setTeachingWeekReorganizations(
@@ -329,7 +386,7 @@ fun applyScheduleData(
                         preserveOutOfRangeRules = true,
                     )
             ) {
-                throw IllegalArgumentException("教学周重组规则与课表总周数冲突")
+                throw IllegalArgumentException(ImportStr.reorgWeeksConflict())
             }
             (settings["smart_weekend"] as? Boolean)?.let {
                 settingsViewModel.setSmartWeekend(it)
@@ -398,25 +455,34 @@ fun applyScheduleData(
         settingsViewModel.refreshSettings()
         scheduleViewModel.refreshScheduleList()
 
-        return Pair(true, "成功导入课表「$scheduleName」\n共${courses.size}门课程")
+        return Pair(
+            true,
+            if (nameTaken) {
+                ImportStr.importOverwrittenCompact(scheduleName, courses.size)
+            } else {
+                ImportStr.importSuccessCompact(scheduleName, courses.size)
+            },
+        )
     } catch (e: Exception) {
-        return Pair(false, "导入失败: ${e.message}")
+        return Pair(false, ImportStr.importFailedReason(e.message))
     }
 }
 
-/** 将 WakeUp / 星链解析结果写入新建课表（课程 + 可选时间段/学期配置） */
+/** 将 WakeUp / 星链解析结果写入课表（课程 + 可选时间段/学期配置）；撞名语义同 [applyScheduleData] */
 fun applyThirdPartySharePayload(
     courseViewModel: CourseViewModel,
     scheduleViewModel: ScheduleViewModel,
     settingsViewModel: SettingsViewModel,
     scheduleName: String,
     payload: ThirdPartySharePayload,
+    /** 撞名时是否允许覆盖（用户在确认弹窗点了「覆盖导入」）；默认仍是「只新建」 */
+    overwriteExisting: Boolean = false,
 ): Pair<Boolean, String> {
     return try {
-        if (scheduleName in scheduleViewModel.scheduleNames.value) {
-            return false to "课表「$scheduleName」已存在"
+        val nameTaken = scheduleName in scheduleViewModel.scheduleNames.value
+        if (nameTaken && !overwriteExisting) {
+            return false to ImportStr.scheduleExists(scheduleName)
         }
-        scheduleViewModel.addSchedule(scheduleName)
 
         val colorMap = mutableMapOf<String, Long>()
         var colorIndex = 0
@@ -426,9 +492,11 @@ fun applyThirdPartySharePayload(
             }
             item.toCourse(scheduleName, color)
         }
+        // 先判空再建表：原来先 addSchedule 再判空，解析不到课程时会留下一张空课表
         if (courses.isEmpty()) {
-            return false to "未解析到课程数据"
+            return false to ImportStr.noCoursesParsed()
         }
+        if (!nameTaken) scheduleViewModel.addSchedule(scheduleName)
         scheduleViewModel.saveCoursesToSchedule(scheduleName, courses)
 
         if (payload.timeSlots.isNotEmpty()) {
@@ -462,11 +530,17 @@ fun applyThirdPartySharePayload(
                 afternoonTimes,
                 eveningTimes,
             )
-        } else {
-            // 无时间段时复用当前课表的时间配置
+        } else if (!nameTaken) {
+            // 无时间段时照抄当前课表的作息，但**复制成独立配置**：直接绑同一个 id 会让
+            // 两张课表共用一个 TimeConfig，改一张的作息另一张跟着变。
+            // 覆盖场景（nameTaken）反而要保留目标课表原有作息，别拿「当前课表那套」换掉它。
             val currentConfigId = scheduleViewModel.getCurrentScheduleTimeConfigId()
             if (currentConfigId != 0L) {
-                scheduleViewModel.setScheduleTimeConfigId(scheduleName, currentConfigId)
+                val sourceConfig = scheduleViewModel.getTimeConfig(currentConfigId)
+                val copiedConfigId = scheduleViewModel.addTimeConfig(
+                    sourceConfig.copy(id = 0L, name = scheduleName)
+                )
+                scheduleViewModel.setScheduleTimeConfigId(scheduleName, copiedConfigId)
             }
         }
 
@@ -481,8 +555,12 @@ fun applyThirdPartySharePayload(
         courseViewModel.reloadCourses()
         settingsViewModel.refreshSettings()
         scheduleViewModel.refreshScheduleList()
-        true to "成功导入课表「$scheduleName」\n共 ${courses.size} 门课程"
+        true to if (nameTaken) {
+            ImportStr.importOverwritten(scheduleName, courses.size)
+        } else {
+            ImportStr.importSuccess(scheduleName, courses.size)
+        }
     } catch (e: Exception) {
-        false to "导入失败: ${e.message}"
+        false to ImportStr.importFailedReason(e.message)
     }
 }

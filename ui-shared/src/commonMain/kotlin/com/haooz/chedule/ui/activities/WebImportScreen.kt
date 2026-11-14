@@ -7,15 +7,15 @@ package com.haooz.chedule.ui.activities
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -32,9 +32,12 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
-import com.haooz.chedule.data.AppStorage
-import com.haooz.chedule.data.getStringOrNull
-import com.haooz.chedule.data.showToast
+import com.haooz.chedule.data.platform.showToast
+import com.haooz.chedule.data.storage.AppStorage
+import com.haooz.chedule.data.storage.getStringOrNull
+import com.haooz.chedule.i18n.AppLanguage
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.i18n.ImportStr
 import com.haooz.chedule.ui.basic.LiquidTopBarButton
 import com.haooz.chedule.ui.utils.LocalNativeDocumentChrome
 import com.haooz.chedule.ui.utils.NativeDocumentAction
@@ -48,7 +51,7 @@ import com.haooz.chedule.ui.web.WebHostEvents
 import com.haooz.chedule.viewmodel.courseViewModel
 import com.haooz.chedule.viewmodel.scheduleViewModel
 import com.haooz.chedule.viewmodel.settingsViewModel
-import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.haooz.softglass.backdrop.backdrops.LayerBackdrop
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Close
@@ -87,11 +90,11 @@ fun WebImportScreen(
     // iOS 原生文档页：顶栏整个交给系统（原生导航栏标题 + 材质 + 关闭/刷新按钮）
     NativeDocumentSystemHeaderEffect(nativeChrome != null)
 
-    val liquidGlassBackdrop: LayerBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
+    val liquidGlassBackdrop: LayerBackdrop = com.haooz.softglass.backdrop.backdrops.rememberLayerBackdrop()
     val hapticFeedback = LocalHapticFeedback.current
     val webViewScrollBehavior = rememberSharedScrollBehavior()
 
-    var webPageTitle by remember { mutableStateOf("加载中...") }
+    var webPageTitle by remember(AppLanguage.resolved) { mutableStateOf(CommonStr.loading()) }
     // 页面顶部取色：按亮度定顶栏标题/图标的黑白，不跟应用深浅色主题（仅非原生文档时用得上）
     var webTopColor by remember { mutableStateOf(Color.White) }
     val webTopIsLight = remember(webTopColor) {
@@ -109,13 +112,13 @@ fun WebImportScreen(
     }
     NativeDocumentLeadingActionEffect(
         if (nativeChrome != null) {
-            NativeDocumentAction(symbol = "xmark", label = "关闭", onClick = onFinish)
+            NativeDocumentAction(symbol = "xmark", label = CommonStr.close(), onClick = onFinish)
         } else null
     )
     NativeDocumentActionEffect(
         NativeDocumentAction(
             symbol = "arrow.clockwise",
-            label = "刷新",
+            label = ImportStr.refresh(),
             onClick = { reloadWebViewAction?.invoke() },
         )
     )
@@ -131,11 +134,11 @@ fun WebImportScreen(
         }
         val statusBarHeight = WindowInsets.statusBars
             .asPaddingValues().calculateTopPadding()
-        val blurHeight = statusBarHeight +
-            top.yukonga.miuix.kmp.layout.CollapsibleTopAppBarDefaults.CollapsedHeight + 40.dp
+        val blurHeight = com.haooz.chedule.ui.components.PageBlurBaseHeight +
+            (statusBarHeight - nativeBarInset).coerceAtLeast(0.dp)
         val contentTopInset = paddingValues.calculateTopPadding() + nativeBarInset
         // 顶栏与底部胶囊共用：录的是 WebView Offscreen 层
-        val webContentBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
+        val webContentBackdrop = com.haooz.softglass.backdrop.backdrops.rememberLayerBackdrop()
 
         Box(modifier = Modifier.fillMaxSize()) {
             com.haooz.chedule.ui.screens.WebViewScreen(
@@ -160,7 +163,7 @@ fun WebImportScreen(
                         courseViewModel.replaceCourses(courses)
                     }
                     scheduleViewModel.refreshScheduleList()
-                    showToast("课程已保存，共 ${courses.size} 门课程")
+                    showToast(ImportStr.coursesSavedN(courses.size))
                 },
                 onTaskCompleted = {
                     val prefs = AppStorage.store("edu_import_prefs")
@@ -194,7 +197,11 @@ fun WebImportScreen(
                 webHostFactory = webHostFactory,
             )
 
-            // iOS 顶栏归系统，Compose 渐变模糊顶栏整条不画
+            // iOS 顶栏归系统，Compose 渐变模糊顶栏整条不画。
+            //
+            // ⚠ 刻意例外（全站唯一）：本页的「顶栏」是教务网页自己的色条，App 只在其上叠两颗按钮，
+            // 所以 `blurAlpha = 0` + `showShadow = false` —— 既没有模糊带也没有按钮玻璃，
+            // 不参与「滚动出材质」那条链。新增页面别照抄这里，统一走 DocumentPageScaffold。
             if (nativeChrome == null) ProgressiveBlurTopBar(
                 backdrop = webContentBackdrop,
                 height = blurHeight,
@@ -218,7 +225,7 @@ fun WebImportScreen(
                             backdrop = liquidGlassBackdrop,
                             icon = MiuixIcons.Close,
                             iconTint = webBarContentColor.copy(alpha = 0.85f),
-                            contentDescription = "关闭",
+                            contentDescription = CommonStr.close(),
                             performHapticFeedback = false,
                             iconSize = 22.dp,
                             backdropAlpha = backdropAlpha,
@@ -234,7 +241,7 @@ fun WebImportScreen(
                             backdrop = liquidGlassBackdrop,
                             icon = MiuixIcons.Refresh,
                             iconTint = webBarContentColor.copy(alpha = 0.85f),
-                            contentDescription = "刷新",
+                            contentDescription = ImportStr.refresh(),
                             performHapticFeedback = false,
                             iconSize = 24.dp,
                             backdropAlpha = backdropAlpha,

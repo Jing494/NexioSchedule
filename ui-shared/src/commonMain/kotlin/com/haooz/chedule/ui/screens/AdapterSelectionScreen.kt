@@ -9,13 +9,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import com.haooz.chedule.ui.components.CardReveal
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,15 +34,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.haooz.chedule.ui.utils.ExtractedShareTools
 import com.haooz.chedule.data.school.AdapterData
 import com.haooz.chedule.data.school.SchoolData
 import com.haooz.chedule.data.school.SchoolRepository
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.i18n.ImportStr
 import com.haooz.chedule.ui.basic.LiquidTopBarButton
+import com.haooz.chedule.ui.components.CardReveal
+import com.haooz.chedule.ui.components.text.material.Text as Text
+import com.haooz.chedule.ui.utils.ExtractedShareTools
 import com.haooz.chedule.ui.utils.isAppDarkTheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
-import com.kyant.backdrop.Backdrop
-import com.kyant.capsule.ContinuousRoundedRectangle
+import com.haooz.chedule.ui.utils.screenWidthDp
+import com.haooz.softglass.backdrop.GlassBackdrop
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
+import com.haooz.chedule.ui.components.sheetContentBottomInset
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.NativeMiuixTextField
@@ -53,13 +58,13 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.overlay.BlurBottomSheet
 import top.yukonga.miuix.kmp.overlay.BlurBottomSheetTablet
+import top.yukonga.miuix.kmp.overlay.LocalBlurBottomSheetContentExpanded
 import top.yukonga.miuix.kmp.overlay.LocalSheetContentBackdrop
 import top.yukonga.miuix.kmp.overlay.LocalSheetTopBarMaterial
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import com.haooz.chedule.ui.utils.screenWidthDp
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 适配器选择底部弹窗
@@ -74,7 +79,7 @@ import kotlin.time.Duration.Companion.milliseconds
 fun AdapterSelectionBottomSheet(
     show: Boolean,
     school: SchoolData?,
-    liquidGlassBackdrop: Backdrop? = null,
+    liquidGlassBackdrop: GlassBackdrop? = null,
     onDismissRequest: () -> Unit,
     onAdapterSelected: (SchoolData, AdapterData) -> Unit
 ) {
@@ -107,7 +112,7 @@ fun AdapterSelectionBottomSheet(
             onClick = onDismissRequest,
             backdrop = LocalSheetContentBackdrop.current ?: liquidGlassBackdrop!!,
             icon = MiuixIcons.Normal.Close,
-            contentDescription = "关闭",
+            contentDescription = CommonStr.close(),
             modifier = Modifier.padding(start = if (isTablet) 16.dp else 18.dp),
             iconSize = 24.dp,
             backdropAlpha = material.backdropAlpha,
@@ -128,7 +133,7 @@ fun AdapterSelectionBottomSheet(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "该学校暂无适配器",
+                        text = ImportStr.noAdapters(),
                         style = MiuixTheme.textStyles.body1,
                         color = MiuixTheme.colorScheme.onSurfaceVariantActions
                     )
@@ -137,12 +142,17 @@ fun AdapterSelectionBottomSheet(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .then(
+                            if (LocalBlurBottomSheetContentExpanded.current) Modifier.fillMaxHeight()
+                            else Modifier,
+                        )
                         .overScrollVertical()
                         .scrollEndHaptic(
                             hapticFeedbackType = HapticFeedbackType.TextHandleMove
                         )
                         .verticalScroll(rememberScrollState())
-                        .padding(start = 16.dp, end = 16.dp),
+                        .padding(start = 16.dp, end = 16.dp)
+                        .sheetContentBottomInset(isTablet),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Spacer(modifier = Modifier.height(if (isTablet) 56.dp else 58.dp))
@@ -152,10 +162,10 @@ fun AdapterSelectionBottomSheet(
                             AdapterRow(
                                 adapter = adapter,
                                 categoryName = when (adapter.category) {
-                                    AdapterData.CATEGORY_BACHELOR -> "本科"
-                                    AdapterData.CATEGORY_POSTGRADUATE -> "研究生"
-                                    AdapterData.CATEGORY_GENERAL_TOOL -> "通用工具"
-                                    else -> "其他"
+                                    AdapterData.CATEGORY_BACHELOR -> ImportStr.categoryUndergraduate()
+                                    AdapterData.CATEGORY_POSTGRADUATE -> ImportStr.categoryPostgraduate()
+                                    AdapterData.CATEGORY_GENERAL_TOOL -> ImportStr.generalTools()
+                                    else -> CommonStr.other()
                                 },
                                 onClick = {
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
@@ -170,7 +180,6 @@ fun AdapterSelectionBottomSheet(
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.height(if (isTablet) 4.dp else 160.dp))
                 }
             }
         }
@@ -192,7 +201,6 @@ fun AdapterSelectionBottomSheet(
             title = currentSchool?.name ?: "",
             dimBackground = true,
             onDismissRequest = onDismissRequest,
-            sheetOffsetDp = 100.dp,
             startAction = startAction,
         ) {
             sheetContent()
@@ -200,8 +208,8 @@ fun AdapterSelectionBottomSheet(
     }
 
     OverlayDialog(
-        title = "输入网址",
-        summary = "请输入要访问的教务系统网址",
+        title = ImportStr.enterUrl(),
+        summary = ImportStr.enterUrlHint(),
         show = showUrlDialog,
         onDismissRequest = { showUrlDialog = false },
     ) {
@@ -212,7 +220,7 @@ fun AdapterSelectionBottomSheet(
             NativeMiuixTextField(
                 value = customUrl,
                 onValueChange = { customUrl = it },
-                label = "网址",
+                label = ImportStr.urlLabel(),
                 modifier = Modifier.fillMaxWidth()
             )
             Row(
@@ -222,12 +230,12 @@ fun AdapterSelectionBottomSheet(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 TextButton(
-                    text = "取消",
+                    text = CommonStr.cancel(),
                     onClick = { showUrlDialog = false },
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(
-                    text = "确定",
+                    text = CommonStr.ok(),
                     onClick = {
                         if (customUrl.isNotBlank()) {
                             pendingAdapter?.let { adapter ->
@@ -283,14 +291,14 @@ private fun AdapterRow(
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                text = adapter.description.ifBlank { "暂无详细描述" },
+                text = adapter.description.ifBlank { ImportStr.noDescription() },
                 fontSize = 14.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantActions,
             )
             if (adapter.maintainer.isNotBlank()) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "贡献者：${adapter.maintainer}",
+                    text = ImportStr.maintainerN(adapter.maintainer),
                     fontSize = 14.sp,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                 )

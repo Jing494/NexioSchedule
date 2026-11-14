@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
@@ -60,6 +59,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
+import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -67,11 +69,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Close
-import top.yukonga.miuix.kmp.squircle.squircleBackground
+import com.haooz.softglass.shape.continuousBackground
 import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import kotlin.math.roundToInt
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Possible durations of the [Snackbar].
@@ -387,14 +387,14 @@ fun Snackbar(
                 }
                 .padding(SnackbarDefaults.OuterPadding)
                 .dropShadow(
-                    shape = RoundedCornerShape(cornerRadius),
+                    shape = ContinuousRoundedRectangle(cornerRadius),
                     shadow = Shadow(
                         radius = 10.dp,
                         color = Color.Black,
                         alpha = 0.1f,
                     ),
                 )
-                .squircleBackground(color = colors.containerColor, cornerRadius = cornerRadius)
+                .continuousBackground(color = colors.containerColor, cornerRadius = cornerRadius)
                 .pointerInput(Unit) {
                     detectTapGestures { /* Consume click */ }
                 },

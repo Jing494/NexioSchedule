@@ -5,12 +5,36 @@ import androidx.compose.animation.core.animate
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
 import kotlin.math.roundToInt
+
+/**
+ * 主界面转场的「静止脉冲」。
+ *
+ * [MainLayerTransition] 用 `Modifier.layout` 平移整棵主界面树：**转场进行中整层向左平移是设计**，
+ * 卡片玻璃要相对卡片不动（纹理跟着整层一起走），逐帧重绘没有意义
+ * 真正让「玻璃跳变归位」消失的是 [MainLayerTranslation]
+ */
+val LocalMainLayerRedrawSignal = staticCompositionLocalOf<() -> Unit> { {} }
+
+/**
+ * 主界面整层的转场位移（px，负 = 左移），供「按窗口坐标采壁纸」的玻璃补回
+ */
+@Stable
+class MainLayerTranslation {
+    var dxPx: Float = 0f
+}
+
+val LocalMainLayerTranslation = staticCompositionLocalOf { MainLayerTranslation() }
 
 /**
  * 转场进度持有者（0 = 起始，1 = 完成）。两份：[AppNavHost] 的栈顶进度，和主界面（main）的首层进度 —— 主界面是常驻底座、不进转场容器（见 [AppRouter]），视差只能由宿主施加，故进度提到两边都够得着的高度：[AppNavHost] 写、MainActivity 容器读。
@@ -86,16 +110,38 @@ fun MainLayerTransition(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .layout { measurable, constraints ->
-                // 原样 measure：不把位移写进 constraints，子节点才不会被迫重测
-                val placeable = measurable.measure(constraints)
-                val dx = (-NAV_PARALLAX * state.value * placeable.width).roundToInt()
-                layout(placeable.width, placeable.height) {
-                    placeable.place(dx, 0)
-                }
-            },
-    ) { content() }
+    // 只在「转场结束、主界面回到 0」时递增一次。draw 期订阅的是这个离散值：
+    // 转场中间帧它不变 ⇒ 卡片一次都不重绘；动画落到 0 才补一帧重采样。
+    val settledEpoch = remember { mutableIntStateOf(0) }
+    LaunchedEffect(state) {
+        var wasSettled = true
+        snapshotFlow { state.value }.collect { v ->
+            val settled = v <= 0.001f
+            if (settled && !wasSettled) settledEpoch.intValue++
+            wasSettled = settled
+        }
+    }
+    // 稳定引用：组合期绝不读快照值（否则整棵主界面随转场每帧重组）
+    val redraw: () -> Unit = remember(state) { { settledEpoch.intValue } }
+    // 当前整层位移，写在 layout 期、由玻璃在 draw 期读
+    val translation = remember { MainLayerTranslation() }
+    CompositionLocalProvider(
+        LocalMainLayerRedrawSignal provides redraw,
+        LocalMainLayerTranslation provides translation,
+    ) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .layout { measurable, constraints ->
+                    // 原样 measure：不把位移写进 constraints，子节点才不会被迫重测
+                    val placeable = measurable.measure(constraints)
+                    val dx = (-NAV_PARALLAX * state.value * placeable.width).roundToInt()
+                    // 供玻璃采样补偿；非快照写，不触发任何失效
+                    translation.dxPx = dx.toFloat()
+                    layout(placeable.width, placeable.height) {
+                        placeable.place(dx, 0)
+                    }
+                },
+        ) { content() }
+    }
 }

@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,7 +26,9 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.boundsInRoot
@@ -42,24 +43,38 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.kyant.backdrop.edgelight.edgeLight
-import com.haooz.chedule.ui.utils.rememberDefaultEdgeLight
+import com.haooz.chedule.ui.components.GlassDragStretchRatio
+import com.haooz.chedule.ui.components.GlassDragTranslationDamping
 import com.haooz.chedule.ui.effects.liquidglass.InteractiveHighlight
+import com.haooz.softglass.glass.SOFT_GLASS_LIVE_SHADER
+import com.haooz.chedule.ui.glass.ScheduleSoftGlassStyle
+import com.haooz.softglass.glass.applySoftGlass
 import com.haooz.chedule.ui.utils.isAppDarkTheme
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
-import com.kyant.capsule.ContinuousRoundedRectangle
+import com.haooz.softglass.backdrop.GlassBackdrop
+import com.haooz.softglass.backdrop.drawBackdrop
+import com.haooz.softglass.backdrop.effects.blur
+import com.haooz.softglass.backdrop.effects.runtimeShaderEffect
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
 import kotlinx.coroutines.launch
+import top.yukonga.miuix.kmp.interactive.DragSelectAxis
+import top.yukonga.miuix.kmp.interactive.DropdownMaskMode
+import top.yukonga.miuix.kmp.interactive.DropdownPanelDragSelectState
+import top.yukonga.miuix.kmp.interactive.computeDragTransform
+import top.yukonga.miuix.kmp.interactive.dropdownPanelDragSelect
+import top.yukonga.miuix.kmp.interactive.dropdownPanelEntry
+import top.yukonga.miuix.kmp.interactive.dropdownPanelSlidingMask
 import top.yukonga.miuix.kmp.internal.drawBlurredPathShadow
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.interactive.computeDragTransform
 
 private val MenuEnterEasing = CubicBezierEasing(0.3f, 1.25f, 0.32f, 1f)
 private val MenuExitEasing = CubicBezierEasing(0.3f, 1f, 0.3f, 1f)
-private val ShadowPadding = 12.dp
+/** 快捷条的柔光 shader 缓存键：尺寸与其他玻璃件不同，不能共用 uniform。 */
+private const val LIVE_SHORTCUT_GLASS_KEY = "NexioSoftGlassLiveShortcutMenu"
+/**
+ * 菜单布局四周的阴影留白：面板可见区比测量尺寸四边各小这么多。
+ * 调用方算「与卡片的间距 / 右缘对齐」要按它换算（见 OverlayLayers 的 offset）。
+ */
+internal val ShortcutMenuShadowPadding = 12.dp
 
 data class ShortcutMenuItem(
     val icon: ImageVector,
@@ -73,7 +88,7 @@ fun ShortcutMenu(
     show: Boolean,
     items: List<ShortcutMenuItem>,
     modifier: Modifier = Modifier,
-    backdrop: Backdrop,
+    backdrop: GlassBackdrop,
     anchorRightPx: Float = Float.MAX_VALUE,
     onDismiss: () -> Unit = {},
     onMeasuredSize: (width: Int, height: Int) -> Unit = { _, _ -> }
@@ -85,9 +100,46 @@ fun ShortcutMenu(
 
     val containerColor =
         if (MiuixTheme.isDynamicColor) MiuixTheme.colorScheme.surfaceContainer
-            .copy(alpha = if (isLightTheme) 0.6f else 0.54f)
-        else if (isLightTheme) Color(0xFFFFFFFF).copy(0.6f)
-        else Color(0xFF121212).copy(0.54f)
+            .copy(alpha = com.haooz.chedule.ui.utils.AppMaterialSettings.solidSurfaceAlpha(if (isLightTheme) 0.6f else 0.54f))
+        else if (isLightTheme) Color(0xFFFFFFFF)
+            .copy(com.haooz.chedule.ui.utils.AppMaterialSettings.solidSurfaceAlpha(0.6f))
+        else Color(0xFF121212).copy(com.haooz.chedule.ui.utils.AppMaterialSettings.solidSurfaceAlpha(0.54f))
+
+    // 柔光玻璃：材质、档位、调色全由材质层给出，这里只声明用 chrome（悬浮面板）那一套。
+    // 无材质档不跑 shader，必须留容器色，否则面板变成透空圆孔。
+    val glassBlur = com.haooz.chedule.ui.utils.AppMaterialSettings.glassBlurDp()
+    val glassEffectsOn = com.haooz.chedule.ui.utils.AppMaterialSettings.glassEffectsEnabled()
+    val shortcutGlassStyle = com.haooz.chedule.ui.utils.AppMaterialSettings.chromeGlassStyle(
+        base = ScheduleSoftGlassStyle,
+        isDark = !isLightTheme,
+    )
+    val cornerRadiusPx = with(density) { 18.dp.toPx() }
+    // drawBackdrop 按引用比较 shape / effects / onDrawSurface；lambda 每帧新建会让节点
+    // 每帧 invalidateDraw、重新录制采样层并重跑采样。
+    val shortcutShapeBlock: () -> Shape = remember { { ContinuousRoundedRectangle(20.dp) } }
+    val glassEffects: com.haooz.softglass.backdrop.GlassEffectScope.() -> Unit =
+        remember(glassBlur, glassEffectsOn, shortcutGlassStyle, cornerRadiusPx) {
+            {
+                if (glassEffectsOn) {
+                    blur(glassBlur.dp.toPx())
+                    runtimeShaderEffect(
+                        key = LIVE_SHORTCUT_GLASS_KEY,
+                        shaderString = SOFT_GLASS_LIVE_SHADER,
+                        uniformShaderName = "content",
+                    ) {
+                        applySoftGlass(
+                            style = shortcutGlassStyle,
+                            width = size.width,
+                            height = size.height,
+                            radiusPx = cornerRadiusPx,
+                        )
+                    }
+                }
+            }
+        }
+    val surfaceOnDraw: DrawScope.() -> Unit = remember(containerColor) {
+        { drawRect(containerColor) }
+    }
 
     val scale = remember { Animatable(0f) }
     val alpha = remember { Animatable(0f) }
@@ -95,7 +147,12 @@ fun ShortcutMenu(
     val hapticFeedback = LocalHapticFeedback.current
     // 跟手滑选：横排按 X 轴命中，与下拉菜单共用同一套状态 / 遮罩 / 手势
     // （DropdownPanelDragSelect：按下命中 → 逐帧改命中 → 松手执行）
-    val dragSelectState = remember { DropdownPanelDragSelectState(DragSelectAxis.Horizontal) }
+    val dragSelectState = remember {
+        DropdownPanelDragSelectState(
+            axis = DragSelectAxis.Horizontal,
+            maskMode = DropdownMaskMode.Sliding,
+        )
+    }
     // 点按高光与形变共用一个实例：gestureModifier 驱动，modifier 画光，
     // pressProgress / offset 喂给 computeDragTransform 做按压缩放与跟手位移
     val dragScope = rememberCoroutineScope()
@@ -109,11 +166,11 @@ fun ShortcutMenu(
     }
 
     // 默认向右展开；可见右边缘超出屏幕安全边距时向左平移，右边缘对齐卡片右边缘
-    // 菜单 layout 宽含左右 ShadowPadding，可见右边缘 = menuPositionX + menuWidth - ShadowPadding
+    // 菜单 layout 宽含左右 ShortcutMenuShadowPadding，可见右边缘 = menuPositionX + menuWidth - ShortcutMenuShadowPadding
     var menuPositionX by remember { mutableStateOf(0f) }
     var menuWidth by remember { mutableStateOf(0) }
     val safetyPaddingPx = with(density) { 4.dp.toPx() }
-    val shadowPadPx = with(density) { ShadowPadding.toPx() }
+    val shadowPadPx = with(density) { ShortcutMenuShadowPadding.toPx() }
     val screenRightEdge = containerWidthPx - safetyPaddingPx
     val shouldShiftLeft = remember(menuPositionX, menuWidth, screenRightEdge) {
         val visibleRightEdge = menuPositionX + menuWidth - shadowPadPx
@@ -145,10 +202,10 @@ fun ShortcutMenu(
 
     if (alpha.value <= 0f && !show) return
 
-    val itemSize = 36.dp
-    val horizontalPadding = 16.dp
-    val verticalPadding = 8.dp
-    val spacing = 16.dp
+    val itemWidth = 58.dp
+    val itemHeight = 45.dp
+    val contentPadding = 6.dp
+    val itemShape = remember { ContinuousRoundedRectangle(14.dp) }
 
     Box(
         modifier = modifier
@@ -167,9 +224,13 @@ fun ShortcutMenu(
                     offset = interactiveHighlight.offset,
                     density = this,
                     shapeAspectRatio = 1f,
+                    stretchRatio = GlassDragStretchRatio,
+                    translationDamping = GlassDragTranslationDamping,
+                    pressScaleDp = 2f,
                 )
-                scaleX = scale.value * drag.scaleX
-                scaleY = scale.value * drag.scaleY
+                // 拉伸交给 drawBackdrop 的 layerBlock（源库采样时自动逆缩放），这里只留进场缩放
+                scaleX = scale.value
+                scaleY = scale.value
                 this.alpha = alpha.value
                 // 需要左移时 pivot 改为右下角(向左展开)，整体向左平移对齐目标右边缘
                 transformOrigin = TransformOrigin(
@@ -188,10 +249,10 @@ fun ShortcutMenu(
                     addRoundRect(
                         RoundRect(
                             rect = Rect(
-                                ShadowPadding.toPx(),
-                                ShadowPadding.toPx(),
-                                size.width - ShadowPadding.toPx(),
-                                size.height - ShadowPadding.toPx(),
+                                ShortcutMenuShadowPadding.toPx(),
+                                ShortcutMenuShadowPadding.toPx(),
+                                size.width - ShortcutMenuShadowPadding.toPx(),
+                                size.height - ShortcutMenuShadowPadding.toPx(),
                             ),
                             cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx),
                         ),
@@ -204,28 +265,12 @@ fun ShortcutMenu(
                 )
             }
     ) {
-        // drawBackdrop 的 effects / onDrawSurface 按**引用**比较，每次重组新建 lambda
-        // 会让毛玻璃与透镜重跑一遍（Menu 弹出期间正好在被拖动的动画帧上）。
-        val menuShape: () -> ContinuousRoundedRectangle = remember {
-            { ContinuousRoundedRectangle(18.dp) }
-        }
-        val menuEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit = remember {
-            {
-                vibrancy()
-                blur(4f.dp.toPx())
-                lens(6f.dp.toPx(), 36f.dp.toPx())
-            }
-        }
-        val onMenuSurface: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit =
-            remember(containerColor) {
-                { drawRect(containerColor) }
-            }
         Box(
             modifier = Modifier
                 .wrapContentSize()
-                .padding(ShadowPadding)
+                .padding(ShortcutMenuShadowPadding)
                 // 面板内容区在 root 里的位置：项把 boundsInRoot 换算成面板局部坐标。
-                // 与手势同一段链条，两个坐标系同源，ShadowPadding 不掺进差值
+                // 与手势同一段链条，两个坐标系同源，ShortcutMenuShadowPadding 不掺进差值
                 .onGloballyPositioned {
                     dragSelectState.panelTopInRoot = it.boundsInRoot().top
                     dragSelectState.panelLeftInRoot = it.boundsInRoot().left
@@ -240,20 +285,35 @@ fun ShortcutMenu(
                 .then(interactiveHighlight.gestureModifier)
                 .drawBackdrop(
                     backdrop = backdrop,
-                    shape = menuShape,
-                    effects = menuEffects,
-                    highlight = null,
                     shadow = null,
-                    onDrawSurface = onMenuSurface
+                    shape = shortcutShapeBlock,
+                    effects = glassEffects,
+                    layerBlock = {
+                        val drag = computeDragTransform(
+                            width = size.width,
+                            height = size.height,
+                            fraction = 1f,
+                            pressProgress = interactiveHighlight.pressProgress,
+                            offset = interactiveHighlight.offset,
+                            density = this,
+                            shapeAspectRatio = 1f,
+                            stretchRatio = GlassDragStretchRatio,
+                            translationDamping = GlassDragTranslationDamping,
+                            pressScaleDp = 2f,
+                        )
+                        scaleX = drag.scaleX
+                        scaleY = drag.scaleY
+                    },
+                    // 柔光自己画玻璃色与方向光，再叠容器色会把折射盖住
+                    onDrawSurface = if (glassEffectsOn) null else surfaceOnDraw,
                 )
-                .edgeLight(shape = ContinuousRoundedRectangle(18.dp), edgeLight = rememberDefaultEdgeLight(baseColor = containerColor))
                 .clip(ContinuousRoundedRectangle(18.dp))
                 .then(interactiveHighlight.modifier)
         ) {
             Row(
                 modifier = Modifier
-                    .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-                horizontalArrangement = Arrangement.spacedBy(spacing),
+                    .padding(contentPadding)
+                    .dropdownPanelSlidingMask(dragSelectState, shape = itemShape),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 items.forEach { item ->
@@ -264,13 +324,13 @@ fun ShortcutMenu(
                     }
                     Box(
                         modifier = Modifier
-                            .size(itemSize)
-                            .clip(CircleShape)
+                            .size(width = itemWidth, height = itemHeight)
+                            .clip(itemShape)
                             // 登记横向区间 + 命中高亮（遮罩色与 150ms 淡变都取菜单同一套）
                             .dropdownPanelEntry(
                                 enabled = true,
                                 state = dragSelectState,
-                                highlightShape = CircleShape,
+                                highlightShape = itemShape,
                                 action = activate,
                             )
                             // 面板手势层没有语义动作，读屏/键盘仍要能触发

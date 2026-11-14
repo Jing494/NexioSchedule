@@ -35,7 +35,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -81,6 +80,7 @@ import androidx.compose.ui.util.lerp
 // 预测性返回走本模块的 expect 封装（utils/NavigationBack.kt）——上游这里直接 import
 // androidx.navigationevent（AndroidX 库，CMP 的 iOS/Desktop artifact 里没有）。
 // 2026-10-11 补全 fork 时按 fork 既有写法（ListPopupLayout / DialogContentLayout）改写。
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
 import top.yukonga.miuix.kmp.utils.LocalPredictiveBackEnabled
 import top.yukonga.miuix.kmp.utils.rememberNavigationBack
 import kotlinx.coroutines.CoroutineScope
@@ -91,7 +91,7 @@ import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.anim.folmeSpring
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
-import top.yukonga.miuix.kmp.squircle.squircleSurface
+import com.haooz.softglass.shape.continuousSurface
 import top.yukonga.miuix.kmp.theme.LocalDismissState
 import top.yukonga.miuix.kmp.theme.LocalScreenTopCornerRadii
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -214,7 +214,7 @@ internal fun BottomSheetContentLayout(
             onBackCompleted = {
                 if (allowDismiss) {
                     coroutineScope.launch {
-                        val windowHeightPx = with(density) { windowInfo.containerDpSize.height.toPx() }
+                        val windowHeightPx = with(density) { windowInfo.containerSize.height.toFloat() }
                         animateDismissOffScreen(
                             dragOffsetY = dragOffsetY,
                             sheetHeightPx = sheetHeightPx.intValue,
@@ -286,7 +286,7 @@ internal fun BottomSheetContentLayout(
                 .graphicsLayer {
                     val progress = animationProgress.value
                     val currentHeight = sheetHeightPx.intValue.toFloat()
-                    val windowHeightPx = with(density) { windowInfo.containerDpSize.height.toPx() }
+                    val windowHeightPx = with(density) { windowInfo.containerSize.height.toFloat() }
                     val baseOffset = if (currentHeight > 0) currentHeight else windowHeightPx
                     translationY = baseOffset * (1f - progress) + dragOffsetY.value
                 }
@@ -356,7 +356,7 @@ internal fun BottomSheetContent(
 ) {
     val density = LocalDensity.current
     val windowInfo = LocalWindowInfo.current
-    val windowHeight = windowInfo.containerDpSize.height
+    val windowHeight = with(density) { windowInfo.containerSize.height.toDp() }
     // Do NOT use windowHeight as a remember key — IME resize would recreate handlers and trigger dismiss.
     val currentWindowHeight by rememberUpdatedState(windowHeight)
     val coroutineScope = rememberCoroutineScope()
@@ -611,7 +611,7 @@ private fun BottomSheetColumn(
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val topLeft = screenCorners?.topLeft ?: cornerRadius
     val topRight = screenCorners?.topRight ?: cornerRadius
-    val windowWidth = LocalWindowInfo.current.containerDpSize.width
+    val windowWidth = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
     val horizontalGaps = remember { mutableStateOf(PaddingValues(0.dp)) }
 
     Box(
@@ -650,7 +650,7 @@ private fun BottomSheetColumn(
                 }
                 .then(if (defaultWindowInsetsPadding) Modifier.imePadding() else Modifier)
                 .padding(horizontal = outsideMargin.width)
-                .squircleSurface(
+                .continuousSurface(
                     color = backgroundColor,
                     topStart = if (isRtl) topRight else topLeft,
                     topEnd = if (isRtl) topLeft else topRight,
@@ -752,7 +752,7 @@ private fun DragHandleArea(
     val isPressing = remember { mutableFloatStateOf(0f) }
     val pressScale = remember { Animatable(1f) }
     val pressWidth = remember { Animatable(45f) }
-    val handleShape = remember { RoundedCornerShape(2.dp) }
+    val handleShape = remember { ContinuousRoundedRectangle(2.dp) }
 
     Box(
         modifier = Modifier

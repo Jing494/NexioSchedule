@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.ui.text.style.TextAlign
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -31,41 +29,44 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
-import com.haooz.chedule.data.Course
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.i18n.SwitchStr
 import com.haooz.chedule.ui.activities.CourseManageScreen
-import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBarDefaults
-import top.yukonga.miuix.kmp.layout.ProgressiveBlurTopBar
 import com.haooz.chedule.ui.basic.ShortcutMenu
 import com.haooz.chedule.ui.basic.ShortcutMenuItem
-import com.haooz.chedule.ui.utils.ScreenCornerRadiiPx
+import com.haooz.chedule.ui.components.LocalPageStartPadding
+import com.haooz.chedule.ui.components.text.material.Text
 import com.haooz.chedule.ui.utils.CourseSorting
+import com.haooz.chedule.ui.utils.ScreenCornerRadiiPx
 import com.haooz.chedule.ui.utils.isAppDarkTheme
+import com.haooz.chedule.ui.utils.screenWidthDp
 import com.haooz.chedule.viewmodel.CourseViewModel
 import com.haooz.chedule.viewmodel.SettingsViewModel
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.haooz.softglass.backdrop.GlassBackdrop
+import com.haooz.softglass.backdrop.backdrops.layerBackdrop
+import com.haooz.softglass.backdrop.backdrops.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Edit
+import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBarDefaults
+import top.yukonga.miuix.kmp.layout.ProgressiveBlurTopBar
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import com.haooz.chedule.ui.utils.screenWidthDp
 
 /** 平板课程管理：左右分栏，两侧内容均复用原有页面 */
 @Composable
 fun TabletCourseManagePane(
     viewModel: CourseViewModel,
     settingsViewModel: SettingsViewModel,
-    liquidGlassBackdrop: Backdrop?,
+    liquidGlassBackdrop: GlassBackdrop?,
 ) {
     val courses by viewModel.courses.collectAsState()
     val sectionTimes by settingsViewModel.sectionTimes.collectAsState()
@@ -95,7 +96,14 @@ fun TabletCourseManagePane(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var pendingDeleteCourses by remember { mutableStateOf<List<Course>>(emptyList()) }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    // 页面底色铺到屏幕边缘（含侧栏下），内容整体避让 —— background 在 padding 之前。
+    val paneSurface = MiuixTheme.colorScheme.surface
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(paneSurface)
+            .then(LocalPageStartPadding.current)
+    ) {
         val density = LocalDensity.current
         // 左栏固定为屏宽 0.39，不随侧栏展开/收起变化；剩余宽度全给右栏
         val listWidth = screenWidthDp().dp * 0.39f
@@ -125,11 +133,16 @@ fun TabletCourseManagePane(
                     .width(listWidth)
                     .fillMaxHeight()
                     .onGloballyPositioned { paneOrigin = it.localToRoot(Offset.Zero) }
+                    .background(surfaceColor)
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .layerBackdrop(leftBackdrop)
+                        // 无材质档：玻璃全关，采样录屏层不挂
+                        .then(
+                            if (com.haooz.chedule.ui.utils.AppMaterialSettings.isNoneTier()) Modifier
+                            else Modifier.layerBackdrop(leftBackdrop)
+                        )
                 ) {
                     CourseManageScreen(
                         scrollBehavior = null,
@@ -176,21 +189,13 @@ fun TabletCourseManagePane(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = "课程管理",
+                        text = SwitchStr.courseManage(),
                         fontSize = 19.sp,
                         fontWeight = FontWeight.Medium,
                         color = MiuixTheme.colorScheme.onSurface,
                     )
                 }
             }
-
-            // 分栏线：与设置页一致（1dp，白 0.1 / 黑 0.06）
-            Box(
-                modifier = Modifier
-                    .width(1.dp)
-                    .fillMaxHeight()
-                    .background(dividerColor)
-            )
 
             // —— 右栏：原课程编辑页（自带课程标题、添加按钮与顶栏模糊） ——
             Box(
@@ -205,7 +210,7 @@ fun TabletCourseManagePane(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = if (names.isEmpty()) "暂无课程" else "请选择左侧课程",
+                            text = if (names.isEmpty()) SwitchStr.noCourses() else SwitchStr.selectCourseHint(),
                             fontSize = 15.sp,
                             color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                             textAlign = TextAlign.Center,
@@ -252,6 +257,15 @@ fun TabletCourseManagePane(
                 }
             }
         }
+        // 分界线画在 Row 之上：左栏内部有顶栏/底栏模糊层，画在栏内会被糊掉
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .offset(x = listWidth)
+                .width(1.dp)
+                .fillMaxHeight()
+                .background(dividerColor)
+        )
 
         // 长按菜单：编辑 / 删除。菜单与左栏同为分栏根节点的子节点，
         // 位置由卡片 root 坐标减去分栏根坐标得到，与手机端一致；
@@ -273,7 +287,7 @@ fun TabletCourseManagePane(
             items = listOf(
                 ShortcutMenuItem(
                     icon = MiuixIcons.Edit,
-                    label = "编辑",
+                    label = CommonStr.edit(),
                     onClick = {
                         menuVisible = false
                         pendingEditCourse = menuCourses.firstOrNull()
@@ -281,7 +295,7 @@ fun TabletCourseManagePane(
                 ),
                 ShortcutMenuItem(
                     icon = MiuixIcons.Delete,
-                    label = "删除",
+                    label = CommonStr.delete(),
                     onClick = {
                         menuVisible = false
                         pendingDeleteCourses = menuCourses
@@ -304,7 +318,7 @@ fun TabletCourseManagePane(
 /** 顶栏常驻表面色渐变遮罩 + 常驻渐变模糊：与设置页 TabletPaneTopChrome 一致 */
 @Composable
 private fun TabletPaneTopChrome(
-    backdrop: Backdrop?,
+    backdrop: GlassBackdrop?,
     maskHeight: Dp,
     modifier: Modifier = Modifier,
 ) {

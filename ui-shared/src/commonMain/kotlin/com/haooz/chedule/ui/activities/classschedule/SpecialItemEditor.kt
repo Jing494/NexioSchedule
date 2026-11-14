@@ -11,11 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.ui.text.style.TextAlign
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -29,10 +25,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.haooz.chedule.data.SpecialItem
-import com.kyant.backdrop.Backdrop
-import com.kyant.capsule.ContinuousRoundedRectangle
+import com.haooz.chedule.data.model.SpecialItem
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.i18n.CourseEditStr
+import com.haooz.chedule.ui.components.text.material.Text as Text
+import com.haooz.softglass.backdrop.GlassBackdrop
+import com.haooz.softglass.shape.ContinuousCapsule
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.NativeMiuixTextField
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -41,8 +42,9 @@ import top.yukonga.miuix.kmp.icon.extended.Edit
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-/** 弹窗里周一–周日的格子标签 */
-val SPECIAL_WEEK_LABELS = arrayOf("一", "二", "三", "四", "五", "六", "日")
+/** 弹窗里周一–周日的格子标签（按当前语言取值，勿缓存） */
+val SPECIAL_WEEK_LABELS: Array<String>
+    get() = Array(7) { CourseEditStr.dayLabels[it]() }
 
 /** 危险操作红，与项目内其它删除入口一致 */
 private val SpecialDestructiveColor = Color(0xFFF44336)
@@ -91,17 +93,20 @@ fun nextSpecialItemIds(existing: List<SpecialItem>, count: Int): List<Long> {
  * 或 em dash `—`。
  */
 fun describeSpecialDays(selectedDays: Set<Int>): String {
-    if (selectedDays.isEmpty()) return "点选下方星期（不连续可分段保存）"
+    if (selectedDays.isEmpty()) return CourseEditStr.pickDaysHint()
     return mergeConsecutiveDays(selectedDays.sorted()).joinToString(" / ") { (s, e) ->
-        if (s == e) "周${SPECIAL_WEEK_LABELS[s - 1]}"
-        else "周${SPECIAL_WEEK_LABELS[s - 1]}–周${SPECIAL_WEEK_LABELS[e - 1]}"
+        if (s == e) CourseEditStr.weekDayN(SPECIAL_WEEK_LABELS[s - 1])
+        else CourseEditStr.weekDayRange(SPECIAL_WEEK_LABELS[s - 1], SPECIAL_WEEK_LABELS[e - 1])
     }
 }
 
 /** 单个子块的星期文案，如 "周一–周五" */
 fun describeSpecialItemDays(item: SpecialItem): String =
-    if (item.startDay == item.endDay) "周${SPECIAL_WEEK_LABELS[item.startDay - 1]}"
-    else "周${SPECIAL_WEEK_LABELS[item.startDay - 1]}–周${SPECIAL_WEEK_LABELS[item.endDay - 1]}"
+    if (item.startDay == item.endDay) CourseEditStr.weekDayN(SPECIAL_WEEK_LABELS[item.startDay - 1])
+    else CourseEditStr.weekDayRange(
+        SPECIAL_WEEK_LABELS[item.startDay - 1],
+        SPECIAL_WEEK_LABELS[item.endDay - 1]
+    )
 
 // 已被同横带其他子块占用的星期置灰不可点，避免重叠
 @Composable
@@ -158,7 +163,7 @@ fun SpecialItemEditDialog(
     name: String,
     selectedDays: Set<Int>,
     occupiedDays: Set<Int>,
-    liquidGlassBackdrop: Backdrop?,
+    liquidGlassBackdrop: GlassBackdrop?,
     onNameChange: (String) -> Unit,
     onDayToggle: (Int) -> Unit,
     onDismiss: () -> Unit,
@@ -167,7 +172,7 @@ fun SpecialItemEditDialog(
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     OverlayDialog(
-        title = if (isEditing) "编辑安排" else "添加安排",
+        title = if (isEditing) CourseEditStr.editSpecialItem() else CourseEditStr.addSpecialItem(),
         summary = null,
         show = show,
         onDismissRequest = onDismiss,
@@ -180,7 +185,7 @@ fun SpecialItemEditDialog(
             NativeMiuixTextField(
                 value = name,
                 onValueChange = onNameChange,
-                label = "名称",
+                label = CourseEditStr.name(),
                 useLabelAsPlaceholder = true,
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -202,12 +207,12 @@ fun SpecialItemEditDialog(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 TextButton(
-                    text = "取消",
+                    text = CommonStr.cancel(),
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(
-                    text = "保存",
+                    text = CommonStr.save(),
                     onClick = onSave,
                     colors = ButtonDefaults.textButtonColorsPrimary(),
                     modifier = Modifier.weight(1f)
@@ -215,7 +220,7 @@ fun SpecialItemEditDialog(
             }
             if (isEditing) {
                 TextButton(
-                    text = "删除该安排",
+                    text = CourseEditStr.deleteSpecialItem(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         onDelete()
@@ -239,7 +244,7 @@ private fun SpecialItemIconButton(
     Box(
         modifier = Modifier
             .size(38.dp)
-            .clip(CircleShape)
+            .clip(ContinuousCapsule())
             .background(MiuixTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -268,7 +273,7 @@ private fun SpecialItemIconButton(
 fun SpecialItemsEditorSection(
     items: List<SpecialItem>,
     onItemsChange: (List<SpecialItem>) -> Unit,
-    liquidGlassBackdrop: Backdrop?,
+    liquidGlassBackdrop: GlassBackdrop?,
     modifier: Modifier = Modifier
 ) {
     val hapticFeedback = LocalHapticFeedback.current
@@ -279,7 +284,7 @@ fun SpecialItemsEditorSection(
 
     Column(modifier = modifier.fillMaxWidth()) {
         TextButton(
-            text = if (items.isEmpty()) "还没有安排，点这里添加" else "添加安排",
+            text = if (items.isEmpty()) CourseEditStr.noSpecialItems() else CourseEditStr.addSpecialItem(),
             onClick = {
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                 editingId = -1L
@@ -294,14 +299,14 @@ fun SpecialItemsEditorSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 6.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(ContinuousRoundedRectangle(16.dp))
                     .background(MiuixTheme.colorScheme.onSurface.copy(alpha = 0.04f))
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = item.name.ifBlank { "未命名" },
+                        text = item.name.ifBlank { CourseEditStr.unnamed() },
                         style = MiuixTheme.textStyles.body1,
                         color = MiuixTheme.colorScheme.onSurface
                     )
@@ -317,7 +322,7 @@ fun SpecialItemsEditorSection(
                 // 会把名称那行挤到换行，改成两个等大的圆形按钮后名称有整行宽度
                 SpecialItemIconButton(
                     icon = MiuixIcons.Edit,
-                    contentDescription = "编辑",
+                    contentDescription = CommonStr.edit(),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         editingId = item.id

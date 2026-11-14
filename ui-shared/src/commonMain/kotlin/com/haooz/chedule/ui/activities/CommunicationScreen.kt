@@ -1,4 +1,4 @@
-/** 交流与反馈页面 - Screen */
+/** 问题反馈页面 - Screen */
 package com.haooz.chedule.ui.activities
 
 import androidx.compose.foundation.layout.Arrangement
@@ -16,20 +16,27 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
+import com.haooz.chedule.i18n.AboutStr
+import com.haooz.chedule.ui.components.pageTopExtra
 import com.haooz.chedule.ui.utils.screenWidthDp
-import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBarDefaults
-import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
-import top.yukonga.miuix.kmp.layout.collapsibleTopInset
-import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBarDefaults
+import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
+import top.yukonga.miuix.kmp.layout.collapsibleTopInset
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 @Composable
 fun CommunicationScreen(
     scrollBehavior: SharedScrollBehavior? = null,
+    /** 应用内反馈：手机端进路由栈，平板端在右栏切 dest（所以用回调而不是直接拿 router） */
+    onOpenFeedback: () -> Unit = {},
+    /** 开发进度 */
+    onOpenRoadmap: () -> Unit = {},
 ) {
     val isTablet = screenWidthDp() >= 600
     val tabletHorizontalPadding = if (isTablet) 20.dp else 16.dp
@@ -50,13 +57,12 @@ fun CommunicationScreen(
                 "https://github.com/HaoZai000/NexioSchedule/issues"
             val qqGroupUrl =
                 "https://pd.qq.com/s/g4n2qm2sx?b=9"
-            val tableUrl =
-                "https://docs.qq.com/sheet/DSUV2dWxLa09XQXRZ?tab=BB08J2&scode="
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .overScrollVertical()
+                    .scrollEndHaptic(hapticFeedbackType = HapticFeedbackType.TextHandleMove)
                     .collapsibleTopInset(scrollBehavior)
                     .then(
                         scrollBehavior?.let { Modifier.nestedScroll(it.nestedScrollConnection) }
@@ -65,14 +71,15 @@ fun CommunicationScreen(
                 contentPadding = PaddingValues(
                     start = tabletHorizontalPadding,
                     end = tabletHorizontalPadding,
-                    top = paddingValues.calculateTopPadding() + CollapsibleTopAppBarDefaults.CollapsedHeight,
+                    top = paddingValues.calculateTopPadding() + CollapsibleTopAppBarDefaults.CollapsedHeight +
+                        pageTopExtra(isTablet, hasSmallTitle = true),
                     bottom = 60.dp
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
                     SmallTitle(
-                        text = "联系我们",
+                        text = AboutStr.contactUs(),
                     )
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -82,16 +89,16 @@ fun CommunicationScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             ArrowPreference(
-                                title = "加入交流群",
-                                summary = "加入QQ群与其他用户交流",
+                                title = AboutStr.joinGroup(),
+                                summary = AboutStr.joinGroupSummary(),
                                 onClick = {
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
                                     uriHandler.openUri(communicationGroupUrl)
                                 }
                             )
                             ArrowPreference(
-                                title = "加入频道",
-                                summary = "加入QQ频道与其他用户交流",
+                                title = AboutStr.joinChannel(),
+                                summary = AboutStr.joinChannelSummary(),
                                 onClick = {
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
                                     uriHandler.openUri(qqGroupUrl)
@@ -102,7 +109,7 @@ fun CommunicationScreen(
                 }
                 item {
                     SmallTitle(
-                        text = "反馈与建议",
+                        text = AboutStr.feedbackSuggestions(),
                     )
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -112,19 +119,39 @@ fun CommunicationScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             ArrowPreference(
-                                title = "前往GitHub反馈",
-                                summary = "在GitHub Issues提交反馈和建议",
+                                title = AboutStr.feedbackOnGitHub(),
+                                summary = AboutStr.githubIssuesSummary(),
                                 onClick = {
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
                                     uriHandler.openUri(feedbackUrl)
                                 }
                             )
                             ArrowPreference(
-                                title = "填写表单反馈",
-                                summary = "在表单中提交反馈和建议",
+                                title = AboutStr.feedbackForm(),
+                                summary = AboutStr.feedbackFormSummary(),
                                 onClick = {
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.VirtualKey)
-                                    uriHandler.openUri(tableUrl)
+                                    onOpenFeedback()
+                                }
+                            )
+                        }
+                    }
+                }
+                item {
+                    SmallTitle(
+                        text = AboutStr.featureProgress(),
+                    )
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        insideMargin = PaddingValues(0.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            ArrowPreference(
+                                title = AboutStr.featureProgressTitle(),
+                                summary = AboutStr.featureProgressSummary(),
+                                onClick = {
+                                    onOpenRoadmap()
                                 }
                             )
                         }

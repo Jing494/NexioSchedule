@@ -95,26 +95,40 @@ final class NativeHeaderSmokeTests: XCTestCase {
         return y
     }
 
+    /// 设置页入口：底栏第三格（原「我的」已改名设置），排班模式下是第二格。
+    private var settingsEntry: XCUIElement {
+        app.tabBars.buttons["设置"].firstMatch
+    }
+
     private func showSettings() {
-        if !app.tabBars.buttons["我的"].waitForExistence(timeout: 5), item("完成").exists {
+        if !settingsEntry.waitForExistence(timeout: 5), item("完成").exists {
             item("完成").tap()
             settle()
         }
-        if app.tabBars.buttons["我的"].exists {
-            app.tabBars.buttons["我的"].tap()
-        } else if app.tabBars.buttons["设置"].exists {
-            app.tabBars.buttons["设置"].tap()
+        if settingsEntry.exists {
+            settingsEntry.tap()
         } else {
-            // Expanded width uses the original Compose rail, whose merged label includes its icon.
-            let railMy = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "我的")).firstMatch
-            if railMy.exists {
-                _ = stableFrame(of: railMy)
-                XCTAssertTrue(railMy.isHittable && app.frame.contains(railMy.frame), app.debugDescription)
-                railMy.tap()
+            // Expanded width uses the original Compose rail, whose settings row label includes its icon.
+            let railSettings = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "设置")).firstMatch
+            if railSettings.exists {
+                _ = stableFrame(of: railSettings)
+                XCTAssertTrue(railSettings.isHittable && app.frame.contains(railSettings.frame), app.debugDescription)
+                railSettings.tap()
             } else {
                 open("设置")
             }
         }
+        settle()
+    }
+
+    /// 展开「课表管理」总览卡片。
+    private func expandScheduleSettings() {
+        if item("上课时间").isHittable { return }
+        let card = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "课表管理")).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(card.isHittable, app.debugDescription)
+        card.tap()
         settle()
     }
 
@@ -315,8 +329,8 @@ final class NativeHeaderSmokeTests: XCTestCase {
         try requireAppearance(systemDark, "cold launch before opening any page")
         showSettings()
         try requireAppearance(systemDark, "retained settings tab")
-        open("应用偏好设置")
-        requireNativeHeader("应用偏好设置")
+        open("应用个性化")
+        requireNativeHeader("应用个性化")
         try requireAppearance(systemDark, "native preferences in automatic mode")
         let automatic = app.switches.matching(NSPredicate(
             format: "label CONTAINS %@", "自动切换深色模式")).firstMatch
@@ -349,15 +363,16 @@ final class NativeHeaderSmokeTests: XCTestCase {
         try requireExpandedRoutes()
         try requirePhoneWidthSettings()
         showSettings()
-        open("应用偏好设置")
-        requireNativeHeader("应用偏好设置")
+        open("应用个性化")
+        requireNativeHeader("应用个性化")
         XCTAssertTrue(item("自动切换深色模式").exists, "Original theme control missing")
         XCTAssertTrue(item("深色模式").exists, "Original theme selection missing")
         XCTAssertEqual(app.keyboards.count, 0)
         capture("Preferences - native back with original Compose controls")
         nativeBack()
-        XCTAssertEqual(app.navigationBars.count, 0)
-        XCTAssertTrue(app.tabBars.buttons["我的"].exists || item("设置").exists)
+        // 设置已是压栈的二级页：退回偏好设置后落在设置页，本身就是原生文档壳
+        requireNativeHeader("设置")
+        XCTAssertTrue(item("课表管理").exists, app.debugDescription)
     }
 
     func testHolidayNativeActionAndRotation() throws {
@@ -398,21 +413,21 @@ final class NativeHeaderSmokeTests: XCTestCase {
         try requireExpandedRoutes()
         try requirePhoneWidthSettings()
         showSettings()
-        open("课表备份")
-        requireNativeHeader("课表备份")
+        open("备份与同步")
+        requireNativeHeader("备份与同步")
         let localBackupY = open("本地备份")
         requireNativeHeader("本地备份")
         XCTAssertTrue(item("备份模式").exists, "Original local backup mode control missing")
         capture("Local backup - native nested page with original controls")
         nativeBack()
-        requireNativeHeader("课表备份")
+        requireNativeHeader("备份与同步")
         XCTAssertEqual(item("本地备份").frame.minY, localBackupY, accuracy: 3,
                        "Nested LocalBackup pop changed retained native Backup state")
-        let backupWebDavY = open("WebDAV 云备份")
-        requireNativeHeader("WebDAV 云备份")
+        let backupWebDavY = open("WebDAV 云同步")
+        requireNativeHeader("WebDAV 云同步")
         XCTAssertTrue(app.navigationBars.buttons["测试连接"].exists,
                       "Connection test action missing from native header")
-        XCTAssertTrue(item("备份到云端").exists, "Original bottom backup button missing")
+        XCTAssertTrue(item("同步到云端").exists, "Original bottom backup button missing")
         XCTAssertTrue(item("从云端恢复").exists, "Original bottom restore button missing")
         XCTAssertEqual(app.keyboards.count, 0, "Navigation raised keyboard without user input")
         capture("WebDAV - original inputs and bottom actions")
@@ -434,35 +449,34 @@ final class NativeHeaderSmokeTests: XCTestCase {
                       "Explicit input tap did not open the keyboard")
         capture("WebDAV - explicitly opened native keyboard")
         nativeBack()
-        requireNativeHeader("课表备份")
+        requireNativeHeader("备份与同步")
         XCTAssertEqual(app.keyboards.count, 0, "Native page keyboard remained after pop")
-        XCTAssertEqual(item("WebDAV 云备份").frame.minY, backupWebDavY, accuracy: 3,
+        XCTAssertEqual(item("WebDAV 云同步").frame.minY, backupWebDavY, accuracy: 3,
                        "Retained native Backup scroll state changed")
         capture("WebDAV - returned to retained native Backup")
         nativeBack()
         XCTAssertEqual(app.navigationBars.count, 0, "Popping Backup did not return to Compose settings")
     }
 
+    /// 问题反馈 / 捐赠支持从设置页底部直达，不再经关于应用页。
     func testNativeAboutLeafPagesPreserveOriginalContent() throws {
         try requireExpandedRoutes()
         try requirePhoneWidthSettings()
         showSettings()
-        open("关于应用")
-        open("交流与反馈")
-        requireNativeHeader("交流与反馈")
+        open("问题反馈")
+        requireNativeHeader("问题反馈")
         XCTAssertTrue(item("联系我们").exists)
         XCTAssertTrue(item("加入交流群").exists)
         capture("Communication - native header with original entry actions")
         nativeBack()
-        requireNativeHeader("关于应用")
+        requireNativeHeader("设置")
         open("捐赠支持")
         requireNativeHeader("捐赠支持")
         XCTAssertGreaterThan(app.staticTexts.count, 2, "Original donation content missing")
         capture("Donation - native header with original Compose content")
         nativeBack()
-        requireNativeHeader("关于应用")
-        nativeBack()
-        XCTAssertEqual(app.navigationBars.count, 0, "About did not return to settings")
+        requireNativeHeader("设置")
+        XCTAssertEqual(app.navigationBars.count, 0, "Community/Donation did not return to settings")
     }
 
     func testCourseReminderNativeLeafPreservesOriginalControls() throws {
@@ -482,8 +496,13 @@ final class NativeHeaderSmokeTests: XCTestCase {
         try requireExpandedRoutes()
         try requirePhoneWidthSettings()
         showSettings()
-        open("课表导出")
-        requireNativeHeader("课表导出")
+        // 胶囊默认停在「导入」
+        open("导入导出")
+        requireNativeHeader("导入导出")
+        let exportTab = item("导出")
+        XCTAssertTrue(exportTab.waitForExistence(timeout: 5), app.debugDescription)
+        exportTab.tap()
+        settle()
         XCTAssertTrue(item("JSON 格式导出").exists, "Original JSON export entry missing")
         XCTAssertTrue(item("ICS 格式导出").exists, "Original ICS export entry missing")
         capture("Export - original JSON and ICS entries")
@@ -502,7 +521,7 @@ final class NativeHeaderSmokeTests: XCTestCase {
             capture("Export - system file picker before cancellation")
             pickerCancel.tap()
             settle()
-            requireNativeHeader("课表导出")
+            requireNativeHeader("导入导出")
             capture("Export - picker cancelled without saving user data")
         }
         nativeBack()
@@ -513,15 +532,15 @@ final class NativeHeaderSmokeTests: XCTestCase {
         try requireExpandedRoutes()
         try requirePhoneWidthSettings()
         showSettings()
-        open("课表导入")
-        requireNativeHeader("课表导入")
+        open("导入导出")
+        requireNativeHeader("导入导出")
         open("AI 文本导入")
         requireNativeHeader("AI 文本导入")
         XCTAssertTrue(item("课表数据").exists, "Original AI input section missing")
         XCTAssertEqual(app.keyboards.count, 0, "AI navigation unexpectedly opened the keyboard")
         capture("AI import - native page reached from native Import")
         nativeBack()
-        requireNativeHeader("课表导入")
+        requireNativeHeader("导入导出")
         XCTAssertTrue(item("教务系统导入").exists, "Original unsupported entry was silently changed")
         capture("Import - returned to the native Import page without importing")
         nativeBack()
@@ -533,8 +552,8 @@ final class NativeHeaderSmokeTests: XCTestCase {
         try requireExpandedRoutes()
         try requirePhoneWidthSettings()
         showSettings()
-        open("课表备份")
-        requireNativeHeader("课表备份")
+        open("备份与同步")
+        requireNativeHeader("备份与同步")
         open("本地备份")
         requireNativeHeader("本地备份")
         XCTAssertFalse(item("主界面").exists,
@@ -563,8 +582,9 @@ final class NativeHeaderSmokeTests: XCTestCase {
     func testTimeSettingsNativeHeaderDialogsAndComposeEditorReturn() throws {
         try requirePhoneWidthSettings()
         showSettings()
-        open("课程时间管理")
-        requireNativeHeader("课程时间管理")
+        expandScheduleSettings()
+        open("上课时间")
+        requireNativeHeader("上课时间")
         XCTAssertEqual(app.navigationBars.buttons.count, 1)
         XCTAssertTrue(item("作息方案").exists)
         let sectionY = open("课表节数")
@@ -573,7 +593,7 @@ final class NativeHeaderSmokeTests: XCTestCase {
         capture("Time settings - section dialog above native chrome")
         item("取消").tap()
         settle()
-        requireNativeHeader("课程时间管理")
+        requireNativeHeader("上课时间")
         XCTAssertEqual(item("课表节数").frame.minY, sectionY, accuracy: 3)
         let leadingFrame = app.navigationBars.buttons.element(boundBy: 0).frame
         let routineSummary = app.staticTexts.matching(NSPredicate(format:
@@ -602,7 +622,7 @@ final class NativeHeaderSmokeTests: XCTestCase {
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         cancel.tap()
         settle()
-        requireNativeHeader("课程时间管理")
+        requireNativeHeader("上课时间")
         XCTAssertEqual(app.keyboards.count, 0, "Morph editor keyboard remained after cancellation")
         XCTAssertEqual(item("课表节数").frame.minY, sectionY, accuracy: 3,
                        "Editor exit changed retained settings geometry")
@@ -615,20 +635,22 @@ final class NativeHeaderSmokeTests: XCTestCase {
         requireNativeHeader("编辑作息")
         app.navigationBars.buttons["保存并关闭"].tap()
         settle()
-        requireNativeHeader("课程时间管理")
+        requireNativeHeader("上课时间")
         XCTAssertEqual(item("课表节数").frame.minY, sectionY, accuracy: 3,
                        "Save exit changed the source-card layout")
         capture("Time settings - native save completed original reverse morph")
         nativeBack()
-        XCTAssertTrue(app.tabBars.buttons["我的"].isHittable, app.debugDescription)
-        XCTAssertTrue(item("课程时间管理").isHittable, app.debugDescription)
+        XCTAssertTrue(settingsEntry.isHittable, app.debugDescription)
+        if !item("上课时间").isHittable { expandScheduleSettings() }
+        XCTAssertTrue(item("上课时间").isHittable, app.debugDescription)
         XCTAssertFalse(app.navigationBars.buttons["返回"].exists)
     }
 
     func testTimeEditorRapidCancelAndParentBack() throws {
         try requirePhoneWidthSettings()
         showSettings()
-        open("课程时间管理")
+        expandScheduleSettings()
+        open("上课时间")
         let routine = app.staticTexts.matching(NSPredicate(format:
             "label == %@ OR label ENDSWITH %@", "始终生效", "生效")).firstMatch
         XCTAssertTrue(routine.exists && routine.isHittable)
@@ -645,9 +667,10 @@ final class NativeHeaderSmokeTests: XCTestCase {
         XCTAssertFalse(app.navigationBars.buttons["保存并关闭"].exists)
         back.tap()
         settle()
-        XCTAssertTrue(app.tabBars.buttons["我的"].isHittable,
-                      "Parent back tap during editor exit did not restore the settings tab")
-        XCTAssertTrue(item("课程时间管理").isHittable, app.debugDescription)
+        XCTAssertTrue(settingsEntry.isHittable,
+                      "Parent back tap during editor exit did not restore the settings page")
+        if !item("上课时间").isHittable { expandScheduleSettings() }
+        XCTAssertTrue(item("上课时间").isHittable, app.debugDescription)
         XCTAssertFalse(app.navigationBars.buttons["返回"].exists)
         capture("Time settings - rapid native cancel and parent back without disabled controls")
     }

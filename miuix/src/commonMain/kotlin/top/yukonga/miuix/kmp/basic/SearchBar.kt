@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -64,28 +63,30 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kyant.backdrop.edgelight.edgeLight
-import com.kyant.backdrop.edgelight.rememberDefaultEdgeLight
-import com.kyant.backdrop.edgelight.isSystemLightTheme
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.drawBackdrop
-import top.yukonga.miuix.kmp.material.LocalChromeLensEnabled
-import top.yukonga.miuix.kmp.material.LocalGlassBlurDp
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
-import com.kyant.capsule.ContinuousCapsule
-import com.kyant.capsule.ContinuousRoundedRectangle
+import com.haooz.softglass.backdrop.GlassBackdrop
+import com.haooz.softglass.backdrop.drawBackdrop
+import com.haooz.softglass.backdrop.effects.blur
+import com.haooz.softglass.backdrop.effects.runtimeShaderEffect
+import com.haooz.softglass.shape.ContinuousCapsule
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Search
 import top.yukonga.miuix.kmp.icon.basic.SearchCleanup
 import top.yukonga.miuix.kmp.internal.drawBlurredPathShadow
-import top.yukonga.miuix.kmp.utils.NavigationBackHandlerFor
+import top.yukonga.miuix.kmp.material.LocalGlassBlurDp
+import top.yukonga.miuix.kmp.material.LocalMaterialNoneEnabled
+import top.yukonga.miuix.kmp.material.currentGlassIsDark
+import top.yukonga.miuix.kmp.material.currentSoftGlassLayer
 import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.NavigationBackHandlerFor
 import top.yukonga.miuix.kmp.utils.hasFocusReassignBug
-import kotlin.time.Duration.Companion.milliseconds
+
+/** 柔光玻璃的 shader 缓存键：输入框与操作按钮尺寸不同，共用会互相覆盖 uniform */
+private const val SOFT_GLASS_SEARCH_KEY = "NexioSoftGlassLiveSearch"
+private const val SOFT_GLASS_SEARCH_ACTION_KEY = "NexioSoftGlassLiveSearchAction"
 
 /**
  * 搜索框组件
@@ -110,17 +111,16 @@ fun SearchBar(
     actionIcon: ImageVector? = null,
     actionIconSize: Dp = 23.dp,
     onActionClick: (() -> Unit)? = null,
-    backdrop: Backdrop? = null,
+    backdrop: GlassBackdrop? = null,
     backdropAlpha: Float = 0f,
-    /** 是否启用 chrome 透镜（折射），跟随 App 的材质档位偏好 [LocalChromeLensEnabled]。 */
-    chromeLensEnabled: Boolean = LocalChromeLensEnabled.current,
     content: @Composable ColumnScope.() -> Unit = {},
 ) {
     val currentOnExpandedChange by rememberUpdatedState(onExpandedChange)
-    // 折射随材质档位：通透玻璃档保留，清透磨砂及更省档关闭（与液态玻璃按钮一致）
-    val chromeLens = chromeLensEnabled
-    // 玻璃模糊随材质档位：通透玻璃档更低（折射接管通透感），其余档 8
+    // 玻璃模糊随材质档位：柔光玻璃档更低（折射接管通透感），其余档 8
     val glassBlur = LocalGlassBlurDp.current
+    // 无材质档：玻璃材质整体关闭（只剩半透明底色）
+    val materialNone = LocalMaterialNoneEnabled.current
+    val softGlass = currentSoftGlassLayer()
 
     Column(
         modifier = modifier,
@@ -166,42 +166,57 @@ fun SearchBar(
                                 scaleY = scale
                                 alpha = scale
                             }
-                            .clip(CircleShape)
+                            .clip(ContinuousCapsule())
                             .clickable { onActionClick() },
                         contentAlignment = Alignment.Center
                     ) {
                         if (backdrop != null) {
                             // 记得住引用：drawBackdrop 按引用比较 effects，每帧新建会导致重新录制采样层
-                            val actionEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit = remember(chromeLens, glassBlur) {
-                                {
-                                    vibrancy()
-                                    blur(glassBlur.dp.toPx())
-                                    if (chromeLens) lens(6f.dp.toPx(), 36f.dp.toPx())
+                            val actionEffects: com.haooz.softglass.backdrop.GlassEffectScope.() -> Unit =
+                                remember(glassBlur, materialNone, softGlass) {
+                                    {
+                                        if (!materialNone && softGlass != null) {
+                                            blur(glassBlur.dp.toPx())
+                                            val w = size.width
+                                            val h = size.height
+                                            runtimeShaderEffect(
+                                                key = SOFT_GLASS_SEARCH_ACTION_KEY,
+                                                shaderString = softGlass.shaderString,
+                                                uniformShaderName = "content",
+                                            ) {
+                                                softGlass.applyUniforms(this, w, h, null)
+                                            }
+                                        }
+                                    }
                                 }
-                            }
                             Box(
                                 modifier = Modifier
                                     .matchParentSize()
                                     .drawBackdrop(
                                         backdrop = backdrop,
-                                        shape = { CircleShape },
-                                        effects = actionEffects,
-                                        highlight = null,
                                         shadow = null,
+                                        shape = { ContinuousCapsule() },
+                                        effects = actionEffects,
                                         layerBlock = { alpha = backdropAlpha },
                                         onDrawSurface = {}
                                     )
-                                    .edgeLight(shape = CircleShape, edgeLight = rememberDefaultEdgeLight(baseColor = MiuixTheme.colorScheme.surfaceContainerHigh))
                             )
                         }
                         Box(
                             modifier = Modifier
                                 .matchParentSize()
                                 .background(
-                                    color = if (backdrop != null) {
-                                        MiuixTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f)
-                                    } else MiuixTheme.colorScheme.surfaceContainerHigh,
-                                    shape = CircleShape,
+                                    color = when {
+                                        // 无材质档：effects 不画 shader，底色必须留在实色上
+                                        materialNone -> MiuixTheme.colorScheme.surfaceContainerHigh
+                                        // 柔光：玻璃图层的 alpha 跟着折叠进度走
+                                        softGlass != null -> MiuixTheme.colorScheme.surfaceContainerHigh
+                                            .copy(alpha = 1f - backdropAlpha.coerceIn(0f, 1f))
+                                        backdrop != null -> MiuixTheme.colorScheme.surfaceContainerHigh
+                                            .copy(alpha = 0.6f)
+                                        else -> MiuixTheme.colorScheme.surfaceContainerHigh
+                                    },
+                                    shape = ContinuousCapsule(),
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
@@ -270,11 +285,9 @@ fun InputField(
     leadingIcon: @Composable (() -> Unit)? = null,
     trailingIcon: @Composable (() -> Unit)? = null,
     interactionSource: MutableInteractionSource? = null,
-    backdrop: Backdrop? = null,
+    backdrop: GlassBackdrop? = null,
     backdropAlpha: Float = 1f,
     shadowAlpha: Float = 0f,
-    /** 同 [SearchBar]：chrome 透镜开关，由 App 的材质档位注入（LocalChromeLensEnabled）。 */
-    chromeLensEnabled: Boolean = LocalChromeLensEnabled.current,
     /**
      * 当前是否浅色主题。
      *
@@ -285,18 +298,19 @@ fun InputField(
      */
     isLightTheme: (() -> Boolean)? = null,
 ) {
-    // 系统主题要在组合期取一次（isSystemLightTheme 是 @Composable，不能塞进 lambda）
-    val systemIsLightTheme = isSystemLightTheme()
+    // 默认口径在组合期读一次；调用方要「每帧现读」可传 isLightTheme lambda 覆盖。
+    val systemIsLightTheme = !currentGlassIsDark()
     val resolveIsLightTheme: () -> Boolean = isLightTheme ?: { systemIsLightTheme }
     val currentOnQueryChange by rememberUpdatedState(onQueryChange)
     val currentOnSearch by rememberUpdatedState(onSearch)
     val currentOnExpandedChange by rememberUpdatedState(onExpandedChange)
     val internalInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
     val capsuleShape = ContinuousCapsule()
-    // 折射随材质档位：通透玻璃档保留，清透磨砂及更省档关闭
-    val chromeLens = chromeLensEnabled
-    // 玻璃模糊随材质档位：通透玻璃档更低（折射接管通透感），其余档 8
+    // 玻璃模糊随材质档位：柔光玻璃档更低（折射接管通透感），其余档 8
     val glassBlur = LocalGlassBlurDp.current
+    // 无材质档：玻璃材质整体关闭（只剩半透明底色）
+    val materialNone = LocalMaterialNoneEnabled.current
+    val softGlass = currentSoftGlassLayer()
 
     val actualLeadingIcon = leadingIcon ?: {
         Box(
@@ -379,18 +393,30 @@ fun InputField(
         interactionSource = internalInteractionSource,
         decorationBox = { innerTextField ->
             val isLightTheme = resolveIsLightTheme()
-            val containerColor = if (isLightTheme) Color(0xFFFAFAFA).copy(0.76f)
-                else Color(0xFF242424).copy(0.84f)
+            // 无材质档玻璃面改实色
+            val containerColor = if (isLightTheme) Color(0xFFFAFAFA)
+                .copy(if (materialNone) 1f else 0.76f)
+            else Color(0xFF242424).copy(if (materialNone) 1f else 0.84f)
             // 与原 android.graphics.Color.parseColor("#12000000"/"#20000000") 等价（同 ARGB 值）
             val shadowColor = if (isLightTheme) Color(0x12000000) else Color(0x20000000)
             // 记得住引用：drawBackdrop 按引用比较 effects，每帧新建会导致重新录制采样层
-            val containerEffects: com.kyant.backdrop.BackdropEffectScope.() -> Unit = remember(chromeLens, glassBlur) {
-                {
-                    vibrancy()
-                    blur(glassBlur.dp.toPx())
-                    if (chromeLens) lens(6f.dp.toPx(), 36f.dp.toPx())
+            val containerEffects: com.haooz.softglass.backdrop.GlassEffectScope.() -> Unit =
+                remember(glassBlur, materialNone, softGlass) {
+                    {
+                        if (!materialNone && softGlass != null) {
+                            blur(glassBlur.dp.toPx())
+                            val w = size.width
+                            val h = size.height
+                            runtimeShaderEffect(
+                                key = SOFT_GLASS_SEARCH_KEY,
+                                shaderString = softGlass.shaderString,
+                                uniformShaderName = "content",
+                            ) {
+                                softGlass.applyUniforms(this, w, h, null)
+                            }
+                        }
+                    }
                 }
-            }
 
             Box(
                 modifier = Modifier
@@ -426,28 +452,31 @@ fun InputField(
                             .matchParentSize()
                             .drawBackdrop(
                                 backdrop = backdrop,
+                                shadow = null,
                                 shape = { capsuleShape },
                                 effects = containerEffects,
-                                highlight = null,
-                                shadow = null,
                                 layerBlock = {
                                     alpha = backdropAlpha
                                 },
                                 onDrawSurface = {}
                             )
-                            .edgeLight(shape = capsuleShape, edgeLight = rememberDefaultEdgeLight(baseColor = containerColor))
                     )
                 }
                 Row(
                     modifier = Modifier
                         .background(
-                            color = if (backdrop != null) {
-                                lerp(
+                            color = when {
+                                // 无材质档：玻璃不画，必须落到不透明的那份 containerColor
+                                materialNone -> containerColor
+                                softGlass != null -> MiuixTheme.colorScheme.surfaceContainerHigh
+                                    .copy(alpha = 1f - backdropAlpha.coerceIn(0f, 1f))
+                                backdrop != null -> lerp(
                                     MiuixTheme.colorScheme.surfaceContainerHigh,
                                     containerColor,
                                     backdropAlpha
                                 )
-                            } else MiuixTheme.colorScheme.surfaceContainerHigh,
+                                else -> MiuixTheme.colorScheme.surfaceContainerHigh
+                            },
                             shape = capsuleShape,
                         )
                         .fillMaxWidth(),

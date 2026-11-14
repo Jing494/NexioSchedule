@@ -13,28 +13,21 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
-import com.haooz.chedule.ui.utils.AndroidUpdateController
-import com.haooz.chedule.ui.navigation.AppNavHost
-import com.haooz.chedule.ui.navigation.AppRouteContent
-import com.haooz.chedule.ui.navigation.LocalAppRouter
-import com.haooz.chedule.ui.navigation.MainLayerTransition
-import com.haooz.chedule.ui.navigation.rememberAppRouter
-import com.haooz.chedule.ui.navigation.rememberNavTransitionState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
@@ -45,30 +38,42 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.get
 import androidx.core.graphics.scale
-import com.haooz.chedule.data.AppStorage
-import com.haooz.chedule.data.PrivacyConsent
-import com.haooz.chedule.data.ScheduleAppearance
-import com.haooz.chedule.data.StatsReporter
+import com.haooz.chedule.data.platform.PrivacyConsent
+import com.haooz.chedule.data.platform.StatsReporter
+import com.haooz.chedule.data.platform.showToast
+import com.haooz.chedule.data.storage.AppStorage
+import com.haooz.chedule.i18n.AndroidMiscStr
+import com.haooz.chedule.i18n.ImportStr
 import com.haooz.chedule.reminder.CourseReminderHelper
 import com.haooz.chedule.reminder.IslandNotificationHelper
-import com.haooz.chedule.ui.components.SharedFileIntent
-import com.haooz.chedule.data.showToast
 import com.haooz.chedule.ui.activities.main.CourseScheduleApp
 import com.haooz.chedule.ui.activities.main.bitmapRecycler
-import com.haooz.chedule.ui.screens.PrivacyConsentScreen
-import com.haooz.chedule.ui.screens.AndroidSettingsScreen
-import com.haooz.chedule.ui.screens.FireworksOverlay
 import com.haooz.chedule.ui.activities.today.TodayAssistantCard
+import com.haooz.chedule.ui.components.SharedFileIntent
+import com.haooz.chedule.ui.screens.LocalTabletSettingsPaneRouteContent
+import com.haooz.chedule.ui.navigation.AppNavHost
+import com.haooz.chedule.ui.navigation.AppRoute
+import com.haooz.chedule.ui.navigation.AppRouteContent
+import com.haooz.chedule.ui.navigation.LocalAppRouter
+import com.haooz.chedule.ui.navigation.MainLayerTransition
+import com.haooz.chedule.ui.navigation.rememberAppRouter
+import com.haooz.chedule.ui.navigation.rememberNavTransitionState
+import com.haooz.chedule.ui.screens.AndroidSettingsPane
+import com.haooz.chedule.ui.screens.FireworksOverlay
+import com.haooz.chedule.ui.screens.PrivacyConsentScreen
+import com.haooz.chedule.ui.screens.WeatherBootstrap
 import com.haooz.chedule.ui.screens.rememberWeather
 import com.haooz.chedule.ui.theme.CourseScheduleTheme
+import com.haooz.chedule.ui.utils.AndroidUpdateController
 import com.haooz.chedule.ui.utils.ApiCompat
 import com.haooz.chedule.ui.utils.applyThemeAwareSystemBars
 import com.haooz.chedule.ui.utils.performScheduleShare
+import com.haooz.chedule.ui.utils.saveScheduleImageToGallery
+import com.haooz.chedule.ui.utils.screenHeightDp
+import com.haooz.chedule.ui.utils.screenWidthDp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.haooz.chedule.ui.utils.screenWidthDp
-import com.haooz.chedule.ui.utils.screenHeightDp
 
 class MainActivity : ComponentActivity() {
 
@@ -94,10 +99,6 @@ class MainActivity : ComponentActivity() {
             set(value) = com.haooz.chedule.data.WallpaperStore.saveTransform(
                 com.haooz.chedule.data.WallpaperStore.wallpaperOffset, value
             )
-
-        @Volatile
-        var cachedAppearance: com.haooz.chedule.data.AppearanceConfig =
-            com.haooz.chedule.data.AppearanceConfig()
 
         fun setTaskExcludedFromRecents(context: Context, hidden: Boolean) {
             runCatching {
@@ -136,6 +137,23 @@ class MainActivity : ComponentActivity() {
      */
     var pendingRoute by mutableStateOf<com.haooz.chedule.ui.navigation.AppRoute?>(null)
         private set
+
+    // 主界面最近一次同步的系统栏深浅；子页退出后据此恢复
+    private var lastStatusDark = false
+    private var lastNavDark = false
+
+    fun syncSystemBars(statusDark: Boolean, navDark: Boolean) {
+        lastStatusDark = statusDark
+        lastNavDark = navDark
+        val statusFlag = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+        val navFlag = WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+        var appearance = 0
+        if (!statusDark) appearance = appearance or statusFlag
+        if (!navDark) appearance = appearance or navFlag
+        window.decorView.post {
+            ApiCompat.setSystemBarsAppearance(window, appearance, statusFlag or navFlag)
+        }
+    }
 
     fun clearShareIntent() {
         shareIntentUri = null
@@ -198,62 +216,10 @@ class MainActivity : ComponentActivity() {
             StatsReporter.reportInstallOnce()
         }
 
-        // 异步预加载搭配壁纸，Compose 侧已处理「无壁纸」的情况
-        if (cachedWallpaperBitmap == null) {
-            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    // 单搭配：无 id 维度，直接读外观文件。
-                    //
-                    // 壁纸与变换的缓存已下沉到共享层 WallpaperStore（桌面/iOS 的
-                    // CourseScheduleApp 要读同一份）。这里负责「解码 → remap → 回填」。
-                    val bitmap = ScheduleAppearance.loadWallpaper()
-                    var offset = Offset(
-                        ScheduleAppearance.getOffsetX(),
-                        ScheduleAppearance.getOffsetY()
-                    )
-                    var scale = ScheduleAppearance.getScale()
-                    val refW = ScheduleAppearance.getOffsetRefW()
-                    val refH = ScheduleAppearance.getOffsetRefH()
-                    val metrics = this@MainActivity.resources.displayMetrics
-                    val curW = metrics.widthPixels.toFloat()
-                    val curH = metrics.heightPixels.toFloat()
-                    if (refW > 0f && refH > 0f && (refW != curW || refH != curH)) {
-                        val mapped = remapWallpaperForScreen(
-                            offset, scale, bitmap, refW, refH, curW, curH
-                        )
-                        offset = mapped.first
-                        scale = mapped.second
-                    }
-                    // 回填共享层（ImageBitmap 视图，不复制像素）
-                    bitmap?.asImageBitmap()?.let {
-                        com.haooz.chedule.data.WallpaperStore.setCached(it)
-                    }
-                    com.haooz.chedule.data.WallpaperStore.saveTransform(offset, scale)
-                    cachedAppearance = com.haooz.chedule.data.AppearanceConfig(
-                        cardBlurRadius = ScheduleAppearance.getCardBlur(),
-                        cardAlpha = ScheduleAppearance.getCardAlpha(),
-                        cardSurfaceAlpha = ScheduleAppearance.getCardSurfaceAlpha(),
-                        cardHeight = ScheduleAppearance.getCardHeight(),
-                        cardCornerRadius = ScheduleAppearance.getCardCornerRadius(),
-                        wallpaperBrightness = ScheduleAppearance.getWallpaperBrightness(),
-                        showBreakDividers = ScheduleAppearance.getShowBreakDividers(),
-                        cardContentAlignment = ScheduleAppearance.getCardContentAlignment(),
-                        cardTextColor = ScheduleAppearance.getCardTextColor(),
-                        cardTextScale = ScheduleAppearance.getCardTextScale(),
-                        showClassroom = ScheduleAppearance.getShowClassroom(),
-                        showTeacher = ScheduleAppearance.getShowTeacher(),
-                        cardRefraction = ScheduleAppearance.getCardRefraction(),
-                        wallpaperBlur = ScheduleAppearance.getWallpaperBlur()
-                    )
-                } catch (_: Exception) {
-                }
-            }
-        }
 
         setContent {
             CourseScheduleTheme {
-                // 合规：未同意隐私政策前不申请权限、不收集信息（由 privacyConsented 门禁网络副作用）；
-                // 主界面仍照常组合（预加载），这样点「同意」后即时进入，不会卡顿
+                // 合规：未同意隐私政策前不申请权限、不收集信息
                 var privacyAgreed by remember {
                     mutableStateOf(PrivacyConsent.hasConsented())
                 }
@@ -275,15 +241,34 @@ class MainActivity : ComponentActivity() {
                         pendingRoute = null
                     }
                 }
-                CompositionLocalProvider(LocalAppRouter provides router) {
+                CompositionLocalProvider(
+                    LocalAppRouter provides router,
+                    // 平板设置右栏用自己的局部 router
+                    LocalTabletSettingsPaneRouteContent provides { paneRouter, route ->
+                        AppRouteContent(paneRouter, route)
+                    },
+                ) {
+                    // 子页盖住主界面时状态栏改跟应用主题，退出后恢复主界面深浅
+                    var systemBarsFirstPass by remember { mutableStateOf(true) }
+                    LaunchedEffect(router.hasOverlay) {
+                        if (systemBarsFirstPass) {
+                            systemBarsFirstPass = false
+                            return@LaunchedEffect
+                        }
+                        if (router.hasOverlay) applyThemeAwareSystemBars()
+                        else syncSystemBars(lastStatusDark, lastNavDark)
+                    }
                     Box(modifier = Modifier.fillMaxSize()) {
+                        // 壳层引导：天气在课表页顶栏也要显示，不能等切到今日页才加载
+                        WeatherBootstrap()
+
                         // ── 主界面常驻底座 ──
                         MainLayerTransition(mainTransition) {
                             AndroidCourseScheduleApp(privacyConsented = privacyAgreed)
                         }
 
                         // ── 子页叠加层 ──
-                        AppNavHost(router, mainTransition = mainTransition) { route ->
+                        AppNavHost(router, mainTransition = mainTransition) { _, route ->
                             AppRouteContent(router, route)
                         }
 
@@ -448,7 +433,7 @@ private fun computeWallpaperIsLight(bitmap: android.graphics.Bitmap?): Boolean? 
  * 屏宽，竖屏 cover 显示时放大发虚。与保存侧 [com.haooz.chedule.data.WallpaperStore]
  * 的 cover 策略同口径。
  */
-private fun decodeWallpaperSampled(
+internal fun decodeWallpaperSampled(
     context: Context,
     uri: android.net.Uri,
     screenWPx: Float,
@@ -590,22 +575,22 @@ fun AndroidCourseScheduleApp(privacyConsented: Boolean) {
         contract = androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri == null) {
-            showToast("未选择图片")
+            showToast(AndroidMiscStr.noImageSelected())
             return@rememberLauncherForActivityResult
         }
         if (wallpaperDecodeJob?.isActive == true) {
-            showToast("正在处理壁纸，请稍候")
+            showToast(AndroidMiscStr.processingWallpaperWait())
             return@rememberLauncherForActivityResult
         }
         val decodeW = screenW
         val decodeH = screenH
-        showToast("正在处理壁纸…")
+        showToast(AndroidMiscStr.processingWallpaper())
         wallpaperDecodeJob = coroutineScope.launch {
             val bitmap = withContext(Dispatchers.IO) {
                 decodeWallpaperSampled(context, uri, decodeW, decodeH)
             }
             if (bitmap == null) {
-                showToast("壁纸解码失败，请换一张图片", longDuration = true)
+                showToast(AndroidMiscStr.wallpaperDecodeFailed(), longDuration = true)
                 return@launch
             }
             pendingWallpaperPicked?.invoke(bitmap.asImageBitmap())
@@ -617,17 +602,7 @@ fun AndroidCourseScheduleApp(privacyConsented: Boolean) {
         resumeCount = activity?.resumeCount ?: 0,
         isInFreeformWindow = activity?.isInFreeformWindow ?: false,
         onSystemBarsChanged = { statusDark, navDark ->
-            val window = activity?.window
-            if (window != null) {
-                val statusFlag = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                val navFlag = WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-                var appearance = 0
-                if (!statusDark) appearance = appearance or statusFlag
-                if (!navDark) appearance = appearance or navFlag
-                window.decorView.post {
-                    ApiCompat.setSystemBarsAppearance(window, appearance, statusFlag or navFlag)
-                }
-            }
+            activity?.syncSystemBars(statusDark, navDark)
         },
         onHolidayDataChanged = { CourseReminderHelper.onHolidayDataChanged(context) },
         onPickWallpaperImage = { onPicked ->
@@ -646,13 +621,29 @@ fun AndroidCourseScheduleApp(privacyConsented: Boolean) {
                 onSharingChanged = changed,
             )
         },
+        onSaveScheduleImage = { image ->
+            val source = image.asAndroidBitmap()
+            // GraphicsLayer 出图可能是 HARDWARE 配置，PNG 压缩前转成 ARGB_8888
+            val bitmap = if (source.config == android.graphics.Bitmap.Config.HARDWARE) {
+                source.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+            } else {
+                source
+            }
+            if (saveScheduleImageToGallery(context, bitmap)) {
+                showToast(AndroidMiscStr.scheduleImageSaved())
+            } else {
+                showToast(AndroidMiscStr.saveImageFailed())
+            }
+            // 只在额外拷贝了就回收；source 归共享层
+            if (bitmap !== source && !bitmap.isRecycled) bitmap.recycle()
+        },
         onReadSharedFileText = { uriString ->
             try {
                 activity?.contentResolver
                     ?.openInputStream(Uri.parse(uriString))
                     ?.bufferedReader()?.use { it.readText() }
             } catch (e: Exception) {
-                showToast("导入失败: ${e.message}")
+                showToast(ImportStr.importFailedReason(e.message))
                 null
             }
         },
@@ -663,23 +654,13 @@ fun AndroidCourseScheduleApp(privacyConsented: Boolean) {
         },
         onShareIntentConsumed = { activity?.clearShareIntent() },
         settingsPane = { args ->
-            AndroidSettingsScreen(
-                viewModel = args.viewModel,
-                scheduleViewModel = args.scheduleViewModel,
-                settingsViewModel = args.settingsViewModel,
-                shiftViewModel = args.shiftViewModel,
-                isShiftMode = args.isShiftMode,
-                onExitShiftMode = args.onExitShiftMode,
-                onEnterShiftMode = args.onEnterShiftMode,
-                navBarStyle = args.navBarStyle,
-                settingsScrollBehavior = args.settingsScrollBehavior,
-                liquidGlassBackdrop = args.liquidGlassBackdrop,
-                showUpdateSettings = args.showUpdateSettings,
-            )
+            AndroidSettingsPane(args)
         },
         todayAssistantCard = { d ->
-            // 天气/定位是 Android 能力（LocationManager + OkHttp），在宿主算好传给共享卡片
+            // 天气/定位是 Android 能力（LocationManager），在宿主算好传给共享卡片；
+            // 抓取与多源融合在 :ui-shared 的 weather/，卡片与详情页共用同一份缓存
             val (weather, hasLocationPermission, requestLocation) = rememberWeather()
+            val router = LocalAppRouter.current
             TodayAssistantCard(
                 weather = weather,
                 hasLocationPermission = hasLocationPermission,
@@ -691,13 +672,12 @@ fun AndroidCourseScheduleApp(privacyConsented: Boolean) {
                 afternoonSections = d.afternoonSections,
                 showClassroom = d.showClassroom,
                 showTeacher = d.showTeacher,
-                wallpaperBackdrop = d.wallpaperBackdrop,
-                blurRadius = d.blurRadius,
                 surfaceOpacity = d.surfaceOpacity,
                 // 下课烟花仍留在 Android（依赖 LocalContext / System.nanoTime）
                 fireworksOverlay = { trigger, modifier ->
                     FireworksOverlay(trigger = trigger, modifier = modifier)
                 },
+                onOpenWeather = { router.navigate(AppRoute.Weather) },
             )
         },
         updateController = remember { AndroidUpdateController(context) },

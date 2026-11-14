@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
@@ -44,6 +43,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.haooz.softglass.shape.ContinuousCapsule
+import kotlin.math.ceil
+import kotlin.math.min
 import top.yukonga.miuix.kmp.color.api.toHsv
 import top.yukonga.miuix.kmp.color.api.toOkLab
 import top.yukonga.miuix.kmp.color.api.toOkLch
@@ -52,8 +54,6 @@ import top.yukonga.miuix.kmp.color.space.Hsv
 import top.yukonga.miuix.kmp.color.space.OkHsv
 import top.yukonga.miuix.kmp.color.space.OkLab
 import top.yukonga.miuix.kmp.color.space.OkLch
-import kotlin.math.ceil
-import kotlin.math.min
 
 /** A [ColorPicker] supporting multiple color spaces. */
 @Composable
@@ -119,7 +119,7 @@ fun HsvColorPicker(
     hapticEffect: SliderDefaults.SliderHapticEffect = SliderDefaults.DefaultHapticEffect,
 ) {
     val currentOnColorChanged by rememberUpdatedState(onColorChanged)
-    val capsuleShape = CircleShape
+    val capsuleShape = ContinuousCapsule()
 
     val hsv = remember { color.toHsv() }
     var currentHue by remember { mutableFloatStateOf(hsv.h) }
@@ -324,7 +324,7 @@ fun OkHsvColorPicker(
     hapticEffect: SliderDefaults.SliderHapticEffect = SliderDefaults.DefaultHapticEffect,
 ) {
     val currentOnColorChanged by rememberUpdatedState(onColorChanged)
-    val capsuleShape = CircleShape
+    val capsuleShape = ContinuousCapsule()
 
     val okhsv = remember { Transforms.colorToOkhsv(color) }
     var currentH by remember { mutableFloatStateOf(okhsv[0]) }
@@ -532,7 +532,7 @@ fun OkLabColorPicker(
     hapticEffect: SliderDefaults.SliderHapticEffect = SliderDefaults.DefaultHapticEffect,
 ) {
     val currentOnColorChanged by rememberUpdatedState(onColorChanged)
-    val capsuleShape = CircleShape
+    val capsuleShape = ContinuousCapsule()
 
     val ok = remember { color.toOkLab() }
     var currentL by remember { mutableFloatStateOf(ok.l / 100f) }
@@ -648,7 +648,7 @@ fun OkLchColorPicker(
     hapticEffect: SliderDefaults.SliderHapticEffect = SliderDefaults.DefaultHapticEffect,
 ) {
     val currentOnColorChanged by rememberUpdatedState(onColorChanged)
-    val capsuleShape = CircleShape
+    val capsuleShape = ContinuousCapsule()
 
     val oklch = remember { color.toOkLch() }
     var currentL by remember { mutableFloatStateOf(oklch.l / 100f) } // 0..1
@@ -1023,7 +1023,7 @@ private fun ColorSlider(
     hapticEffect: SliderDefaults.SliderHapticEffect = SliderDefaults.DefaultHapticEffect,
 ) {
     val onValueChangedState = rememberUpdatedState(onValueChanged)
-    val capsuleShape = CircleShape
+    val capsuleShape = ContinuousCapsule()
     val density = LocalDensity.current
     val indicatorSizeDp = 20.dp
     val sliderHeightDp = 26.dp

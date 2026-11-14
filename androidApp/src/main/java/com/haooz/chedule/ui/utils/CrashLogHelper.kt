@@ -14,8 +14,12 @@ package com.haooz.chedule.ui.utils
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import com.haooz.chedule.data.NexioLog
 import androidx.core.content.FileProvider
+import com.haooz.chedule.data.platform.NexioLog
+import com.haooz.chedule.data.storage.AppStorage
+import com.haooz.chedule.data.storage.KeyValueStore
+import com.haooz.chedule.data.storage.getStringOrNull
+import com.haooz.chedule.i18n.AndroidMiscStr
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -30,6 +34,7 @@ import java.util.concurrent.atomic.AtomicLong
 object CrashLogHelper {
 
     private const val TAG = "CrashLogHelper"
+
     private const val CRASH_DIR = "crash_logs"
     // 崩溃日志上限：单份含 logcat，取 12 份控制占用在 1~2MB 内
     private const val MAX_CRASH_FILES = 12
@@ -42,6 +47,9 @@ object CrashLogHelper {
     private const val KEY_RECORDING_FILE = "recording_file"
     private const val KEY_RECORDING_STARTED = "recording_started"
     private const val KEY_READY_FILE = "ready_file"
+
+    /** 录制状态的存储入口。崩溃路径也走同一个库 —— 没有第二套存储。 */
+    private fun prefs(): KeyValueStore = AppStorage.store(PREFS)
 
     /** 功能轨迹 / 录制时间窗 */
     const val TRACE_WINDOW_MS = 30L * 60L * 1000L
@@ -215,7 +223,7 @@ object CrashLogHelper {
         runCatching {
             file.writeText(
                 buildString {
-                    appendLine("=== Nexio课程表 功能录制 ===")
+                    appendLine(AndroidMiscStr.recordingHeader())
                     appendLine("startedAt=${formatTime(recordingStartedAt)}")
                     appendLine("maxRecordMin=${MAX_RECORD_MS / 60000}")
                     appendLine(deviceInfo(app))
@@ -229,13 +237,13 @@ object CrashLogHelper {
         // 只保留最新一份录制：新文件已写成功，此前的 recording_*.txt 全部清掉。
         // 否则这些含设备信息与操作轨迹的文件会一直累积在 filesDir 里且永不回收。
         runCatching { trimRecordingFiles(dir, file) }
-        app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_RECORDING_ACTIVE, true)
-            .putString(KEY_RECORDING_FILE, file.absolutePath)
-            .putLong(KEY_RECORDING_STARTED, recordingStartedAt)
+        prefs().edit {
+            putBoolean(KEY_RECORDING_ACTIVE, true)
+            putString(KEY_RECORDING_FILE, file.absolutePath)
+            putLong(KEY_RECORDING_STARTED, recordingStartedAt)
             // 旧录制的「可分享」标记一并失效，否则下次启动会恢复出一个已被删除的路径
-            .remove(KEY_READY_FILE)
-            .apply()
+            remove(KEY_READY_FILE)
+        }
         readyRecordingPath = file.absolutePath
         hasReadyRecording = false
         readyReason = "recording"
@@ -254,21 +262,19 @@ object CrashLogHelper {
         appContext = app
         if (!isRecording) {
             // 允许对「异常中断」路径补结束
-            val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            if (!prefs.getBoolean(KEY_RECORDING_ACTIVE, false)) return false
+            if (!prefs().getBoolean(KEY_RECORDING_ACTIVE, false)) return false
         }
-        val path = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_RECORDING_FILE, null)
-            ?: readyRecordingPath
+        val path = prefs().getStringOrNull(KEY_RECORDING_FILE) ?: readyRecordingPath
         flushTracesNow(path, final = true, endReason = reason)
         isRecording = false
         hasReadyRecording = true
         readyReason = reason
         readyRecordingPath = path
-        app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_RECORDING_ACTIVE, false)
-            .putString(KEY_READY_FILE, path)
-            .apply()
+        prefs().edit {
+            putBoolean(KEY_RECORDING_ACTIVE, false)
+            // 原来是 putString(path = null) 等于删键，别写成空串（那会变成「有个空路径」）
+            if (path != null) putString(KEY_READY_FILE, path) else remove(KEY_READY_FILE)
+        }
         return path != null && File(path).exists()
     }
 
@@ -296,8 +302,7 @@ object CrashLogHelper {
         ensureRecovered(context)
         ensureRecordingNotExpired()
         val path = readyRecordingPath
-            ?: context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getString(KEY_READY_FILE, null)
+            ?: prefs().getStringOrNull(KEY_READY_FILE)
         if (path.isNullOrBlank() || !File(path).exists()) {
             // 没有录制文件时回退为完整导出，仍可分享崩溃/轨迹
             return exportAndShare(context)
@@ -313,12 +318,12 @@ object CrashLogHelper {
                 buildString {
                     append(base)
                     appendLine()
-                    appendLine("=== 其它崩溃记录 ===")
+                    appendLine(AndroidMiscStr.otherCrashesHeader())
                     val others = File(context.filesDir, CRASH_DIR).listFiles()
                         ?.filter { it.isFile && it.name.startsWith("crash_") && !it.name.endsWith("_mem.txt") }
                         ?.sortedByDescending { it.name }
                         .orEmpty().drop(1)
-                    if (others.isEmpty()) appendLine("(无)")
+                    if (others.isEmpty()) appendLine(AndroidMiscStr.noneEntry())
                     else others.take(4).forEach { c ->
                         appendLine("--- ${c.name} ---")
                         appendLine(runCatching { c.readText().take(20_000) }.getOrDefault("?"))
@@ -359,14 +364,14 @@ object CrashLogHelper {
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", out)
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(Intent.EXTRA_SUBJECT, "Nexio课程表功能录制日志")
+                putExtra(Intent.EXTRA_SUBJECT, AndroidMiscStr.recordingLogSubject())
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                val textBody = if (body.length > 20_000) body.take(20_000) + "\n…(完整内容见附件)" else body
+                val textBody = if (body.length > 20_000) body.take(20_000) + "\n" + AndroidMiscStr.fullContentInAttachment() else body
                 putExtra(Intent.EXTRA_TEXT, textBody)
             }
             context.startActivity(
-                Intent.createChooser(send, "分享录制日志").apply {
+                Intent.createChooser(send, AndroidMiscStr.shareRecordingChooser()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             )
@@ -397,13 +402,13 @@ object CrashLogHelper {
 
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "Nexio课程表崩溃/轨迹日志")
+            putExtra(Intent.EXTRA_SUBJECT, AndroidMiscStr.crashTraceLogSubject())
             if (uri != null) {
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             val body = if (content.length > 20_000) {
-                content.substring(0, 20_000) + "\n…(完整内容见附件)"
+                content.substring(0, 20_000) + "\n" + AndroidMiscStr.fullContentInAttachment()
             } else {
                 content
             }
@@ -411,7 +416,7 @@ object CrashLogHelper {
         }
         return try {
             context.startActivity(
-                Intent.createChooser(send, "导出崩溃日志").apply {
+                Intent.createChooser(send, AndroidMiscStr.exportCrashLogChooser()).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             )
@@ -424,7 +429,7 @@ object CrashLogHelper {
 
     fun buildExportContent(context: Context): String {
         val sb = StringBuilder()
-        sb.appendLine("=== Nexio课程表 崩溃/轨迹日志导出 ===")
+        sb.appendLine(AndroidMiscStr.exportHeader())
         sb.appendLine("exportAt=${formatTime(System.currentTimeMillis())}")
         sb.appendLine("traceWindowMin=${TRACE_WINDOW_MS / 60000}")
         sb.appendLine("isRecording=$isRecording")
@@ -434,15 +439,15 @@ object CrashLogHelper {
         sb.appendLine()
         sb.append(deviceInfo(context))
         sb.appendLine()
-        sb.appendLine("=== 本机会话 ===")
+        sb.appendLine(AndroidMiscStr.localSessionHeader())
         sb.appendLine(sessionMarkerText())
         sb.appendLine()
-        sb.appendLine("=== 功能轨迹（最近 ${TRACE_WINDOW_MS / 60000} 分钟） ===")
+        sb.appendLine(AndroidMiscStr.traceWindowHeaderN(TRACE_WINDOW_MS / 60000))
         sb.appendLine(formatTrace())
         sb.appendLine()
         sb.appendLine(crashSection(context))
         sb.appendLine()
-        sb.appendLine("=== Logcat（release 可能受 ROM 限制） ===")
+        sb.appendLine(AndroidMiscStr.logcatHeader())
         sb.appendLine(tryDumpLogcat())
         return sb.toString()
     }
@@ -468,21 +473,21 @@ object CrashLogHelper {
             }
         }
         return if (lines.isEmpty()) {
-            "(最近 ${windowMs / 60000} 分钟无功能轨迹)"
+            AndroidMiscStr.noTraceInWindowN(windowMs / 60000)
         } else {
             lines.joinToString("\n")
         }
     }
 
     private fun recoverInterruptedRecording(context: Context) {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val active = prefs.getBoolean(KEY_RECORDING_ACTIVE, false)
-        val path = prefs.getString(KEY_RECORDING_FILE, null)
-        val ready = prefs.getString(KEY_READY_FILE, null)
+        val store = prefs()
+        val active = store.getBoolean(KEY_RECORDING_ACTIVE, false)
+        val path = store.getStringOrNull(KEY_RECORDING_FILE)
+        val ready = store.getStringOrNull(KEY_READY_FILE)
         if (!ready.isNullOrBlank() && File(ready).exists()) {
             hasReadyRecording = true
             readyRecordingPath = ready
-            readyReason = prefs.getString("ready_reason", "previous") ?: "previous"
+            readyReason = store.getString("ready_reason", "previous")
         }
         if (active && !path.isNullOrBlank()) {
             // 上次进程被杀：把已刷盘轨迹标成自动结束，分享按钮可点亮
@@ -495,18 +500,17 @@ object CrashLogHelper {
             hasReadyRecording = true
             readyRecordingPath = path
             readyReason = "process_killed"
-            prefs.edit()
-                .putBoolean(KEY_RECORDING_ACTIVE, false)
-                .putString(KEY_READY_FILE, path)
-                .putString("ready_reason", "process_killed")
-                .apply()
+            store.edit {
+                putBoolean(KEY_RECORDING_ACTIVE, false)
+                putString(KEY_READY_FILE, path)
+                putString("ready_reason", "process_killed")
+            }
         }
     }
 
     private fun scheduleFlush() {
-        val path = appContext
-            ?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            ?.getString(KEY_RECORDING_FILE, null) ?: return
+        val ctx = appContext ?: return
+        val path = prefs().getStringOrNull(KEY_RECORDING_FILE) ?: return
         flushExecutor.execute {
             runCatching { flushTracesNow(path, final = false, endReason = null) }
         }
@@ -563,9 +567,9 @@ object CrashLogHelper {
             ?.sortedByDescending { it.name }
             .orEmpty()
         val sb = StringBuilder()
-        sb.appendLine("=== 已捕获崩溃 (${crashFiles.size}) ===")
+        sb.appendLine(AndroidMiscStr.capturedCrashesHeaderN(crashFiles.size))
         if (crashFiles.isEmpty()) {
-            sb.appendLine("(尚无 Java/Kotlin 崩溃记录。若为原生崩溃，请附上 logcat / 功能轨迹。)")
+            sb.appendLine(AndroidMiscStr.noCrashRecords())
         } else {
             crashFiles.take(8).forEach { file ->
                 sb.appendLine()
@@ -580,7 +584,7 @@ object CrashLogHelper {
             }
             if (crashFiles.size > 8) {
                 sb.appendLine()
-                sb.appendLine("…另有 ${crashFiles.size - 8} 条未展开")
+                sb.appendLine(AndroidMiscStr.moreCrashesN(crashFiles.size - 8))
             }
         }
         return sb.toString()
@@ -614,7 +618,7 @@ object CrashLogHelper {
             stack = stack.take(MAX_STACK_CHARS) + "\n…truncated"
         }
         val body = buildString {
-            appendLine("=== Nexio课程表 崩溃报告 ===")
+            appendLine(AndroidMiscStr.crashReportHeader())
             appendLine("time=${formatTime(System.currentTimeMillis())}")
             appendLine("thread=${thread.name}")
             appendLine("throwable=${throwable::class.java.name}")
@@ -657,10 +661,10 @@ object CrashLogHelper {
         readyReason = "crash"
         readyRecordingPath = crashFile.absolutePath
         runCatching {
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putString("ready_reason", readyReason)
-                .putString(KEY_READY_FILE, crashFile.absolutePath)
-                .apply()
+            prefs().edit {
+                putString("ready_reason", readyReason)
+                putString(KEY_READY_FILE, crashFile.absolutePath)
+            }
         }
     }
 

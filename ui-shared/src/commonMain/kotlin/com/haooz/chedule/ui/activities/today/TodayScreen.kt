@@ -1,23 +1,20 @@
 package com.haooz.chedule.ui.activities.today
 
+import androidx.compose.foundation.Image
+import com.haooz.chedule.data.util.formatChineseDate
+import com.haooz.chedule.data.util.lengthOfMonth
+import com.haooz.chedule.data.util.localDateTimeAt
+import com.haooz.chedule.data.util.millisBetween
+import com.haooz.chedule.data.util.nowLocalTime
+import com.haooz.chedule.data.util.parseHourMinute
+import com.haooz.chedule.data.util.plusDays
+import com.haooz.chedule.data.util.todayLocalDate
 import com.haooz.chedule.ui.navigation.AppRoute
 import com.haooz.chedule.ui.navigation.LocalAppRouter
-import androidx.compose.foundation.Image
 import com.haooz.chedule.ui.utils.LocalHostNavigation
 import com.haooz.chedule.ui.utils.TransitionLayerSnapshot
-
-import com.haooz.chedule.data.formatChineseDate
-import com.haooz.chedule.data.millisBetween
-import com.haooz.chedule.data.parseHourMinute
-
-import com.haooz.chedule.data.lengthOfMonth
-import com.haooz.chedule.data.localDateTimeAt
-import com.haooz.chedule.data.nowLocalTime
-import com.haooz.chedule.data.plusDays
-import com.haooz.chedule.data.todayLocalDate
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.isoDayNumber
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -36,88 +33,100 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerState
-import com.haooz.chedule.ui.activities.main.PagerJumpNeighbor
-import com.haooz.chedule.ui.activities.main.jumpToPageSmoothly
-import com.haooz.chedule.ui.components.text.LocalTextMotionInstant
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.TileMode
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.haooz.chedule.data.CardRefractionLevel
-import com.haooz.chedule.data.Course
-import com.haooz.chedule.data.CourseRepository
-import com.haooz.chedule.data.CourseScheduleDateBounds
-import com.haooz.chedule.data.DayScheduleResolver
-import com.haooz.chedule.data.HolidayCountdown
-import com.haooz.chedule.data.HolidayManager
-import com.haooz.chedule.data.coursePeriodCompleted
-import com.haooz.chedule.data.coursePeriodOngoing
+import com.haooz.chedule.data.appearance.CardRefractionLevel
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.repo.CourseRepository
+import com.haooz.chedule.data.model.CourseScheduleDateBounds
+import com.haooz.chedule.data.repo.DayScheduleResolver
+import com.haooz.chedule.data.holiday.HolidayCountdown
+import com.haooz.chedule.data.holiday.HolidayManager
+import com.haooz.chedule.data.appearance.CombinationDefaults
+import com.haooz.chedule.data.util.coursePeriodCompleted
+import com.haooz.chedule.data.util.coursePeriodOngoing
+import com.haooz.chedule.i18n.CommonStr
+import com.haooz.chedule.i18n.L10n
+import com.haooz.chedule.i18n.TodayStr
+import com.haooz.chedule.ui.activities.classschedule.ScheduleViewMode
+import com.haooz.chedule.ui.activities.main.MorePopupMenus
+import com.haooz.chedule.ui.activities.main.PageLockedTopBarTheme
+import com.haooz.chedule.ui.activities.main.PageMoreMenuState
+import com.haooz.chedule.ui.activities.main.PagerJumpNeighbor
+import com.haooz.chedule.ui.activities.main.TodayTopBar
+import com.haooz.chedule.ui.activities.main.jumpToPageSmoothly
+import com.haooz.chedule.ui.components.CourseDetailSheet
+import com.haooz.chedule.ui.components.HorizontalPageSwitch
+import com.haooz.chedule.ui.components.LocalGlassRedrawSignal
+import com.haooz.chedule.ui.components.LocalPageStartPadding
+import com.haooz.chedule.ui.components.LocalSoftGlassSurface
+import com.haooz.chedule.ui.components.PageSwitchState
+import com.haooz.chedule.ui.components.SoftGlassSurface
+import com.haooz.chedule.ui.components.tabletNavSamplingSignal
+import com.haooz.chedule.ui.components.text.LocalTextMotionInstant
+import com.haooz.chedule.ui.components.text.material.Text as Text
+import com.haooz.chedule.ui.utils.isAppDarkTheme
+import com.haooz.chedule.ui.utils.millisToNextMinute
+import com.haooz.chedule.ui.utils.pagerAxisTakeoverGesture
+import com.haooz.chedule.ui.utils.rememberPagerTakeoverGestureState
 import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBarDefaults
 import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
 import top.yukonga.miuix.kmp.layout.collapsibleTopInset
-import com.kyant.backdrop.edgelight.edgeLight
-import com.haooz.chedule.ui.utils.glassPerfFactor
-import com.haooz.chedule.ui.utils.rememberCardEdgeLight
-import com.haooz.chedule.ui.utils.rememberDefaultEdgeLight
-import com.haooz.chedule.ui.utils.rememberPagerTakeoverGestureState
-import com.haooz.chedule.ui.utils.isAppDarkTheme
-import com.haooz.chedule.ui.utils.millisToNextMinute
 import top.yukonga.miuix.kmp.utils.overScrollVertical
-import com.haooz.chedule.ui.utils.pagerAxisTakeoverGesture
 import com.haooz.chedule.viewmodel.CourseViewModel
 import com.haooz.chedule.viewmodel.SettingsViewModel
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.isRenderEffectSupported
-import com.kyant.capsule.ContinuousCapsule
-import com.kyant.capsule.ContinuousRoundedRectangle
+import com.haooz.softglass.backdrop.GlassBackdrop
+import com.haooz.softglass.backdrop.backdrops.LayerBackdrop
+import com.haooz.softglass.backdrop.backdrops.layerBackdrop
+import com.haooz.softglass.backdrop.backdrops.rememberCombinedBackdrop
+import com.haooz.softglass.backdrop.backdrops.rememberLayerBackdrop
+import com.haooz.softglass.shape.ContinuousCapsule
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
+import kotlin.random.Random
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.datetime.Clock
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.NumberPicker
@@ -125,24 +134,10 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.LocalOverScrollState
+import top.yukonga.miuix.kmp.utils.OverScrollState
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import kotlinx.datetime.Clock
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.LocalTime
-import kotlin.random.Random
-import kotlin.time.Duration.Companion.milliseconds
-import com.kyant.backdrop.backdrops.layerBackdrop as kyantLayerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop as rememberKyantLayerBackdrop
-import com.haooz.chedule.ui.utils.screenWidthDp
-import com.haooz.chedule.ui.utils.screenHeightDp
-import com.kyant.backdrop.BackdropEffectScope
 
-// 有壁纸 backdrop 才走毛玻璃半透明路径，与模糊半径无关（blur=0 仍采样壁纸）
-// 原 TIME_FORMATTER("HH:mm") / DATE_FORMATTER("yyyy年M月d日") 是 JVM 侧的 DateTimeFormatter，
-// 已换成 :core 的 parseHourMinute() / formatChineseDate()；localDateTimeAt() 也改用 :core 的同名函数。
-
-// 由 BlurCard 统一应用折射档位
-val LocalCardRefraction = staticCompositionLocalOf { CardRefractionLevel.DEFAULT }
 
 /**
  * [TodayScreen.todayAssistantCard] 槽位的数据载体（页面算好传给宿主渲染）。
@@ -157,88 +152,71 @@ class TodayAssistantCardData(
     val afternoonSections: Int,
     val showClassroom: Boolean,
     val showTeacher: Boolean,
-    val wallpaperBackdrop: Backdrop?,
-    val blurRadius: Float,
     val surfaceOpacity: Float,
+)
+
+/**
+ * 今日页顶栏的宿主注入数据。
+ *
+ * 顶栏现在由页面自己组合（与设置页 DocumentPageScaffold 同一套口径），
+ * 这里只保留页面算不出来的外部动作与几何参数；日期、是否今天等由页面内部状态直接读。
+ */
+class TodayPageChrome(
+    val forcedDarkTheme: Boolean?,
+    /** 共享壁纸采样层；页面会把「壁纸 + 本页内容」组合后给顶栏/菜单采样，避免采到自己 */
+    val wallpaperBackdrop: GlassBackdrop? = null,
+    /** 「更多」按钮/菜单宿主状态；null 表示不渲染 */
+    val moreMenu: PageMoreMenuState? = null,
+    /** 外层统一持有的本页内容采样层；null 时页面自建（独立使用 / 预览） */
+    val contentBackdrop: LayerBackdrop? = null,
+    val onJumpToDate: () -> Unit = {},
+    val onEnterCustomize: () -> Unit = {},
+    val onCourseManage: () -> Unit = {},
+    val titleEndPadding: Dp = 0.dp,
+    val blurResampleKey: Int = 0,
+    val blurSampleTrack: () -> Float = { 0f },
+    /** 本页内容采样层的录制指纹/强制重录谓词（与主内容层同源，滚动/动画时同步刷新） */
+    val contentRecordKey: Any? = null,
+    val contentMustRecord: (() -> Boolean)? = null,
 )
 
 @Composable
 fun BlurCard(
     cornerRadius: Dp = 20.dp,
-    wallpaperBackdrop: Backdrop? = null,
-    blurRadius: Float = 0f,
     surfaceOpacity: Float,
-    showEdgeLight: Boolean = false,
     modifier: Modifier = Modifier,
     transitionRecording: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
-    val hasBackdrop = wallpaperBackdrop != null
+    val softGlass = LocalSoftGlassSurface.current
+    val glassRedraw = LocalGlassRedrawSignal.current
     val isDark = isAppDarkTheme()
-    val refraction = LocalCardRefraction.current
 
-    if (hasBackdrop) {
+    if (softGlass != null) {
         val shape = remember(cornerRadius) { ContinuousRoundedRectangle(cornerRadius) }
-        val defaultEdgeLight = rememberDefaultEdgeLight(baseColor = if (isDark) Color.Black else Color.White)
-        // effects/onDrawSurface 必须 remember 稳定：内联 lambda 每次重组换引用，
-        // DrawBackdropElement.equals 会判不等并重建 RenderEffect，造成壁纸玻璃无意义重绘
-        val blurPx = with(LocalDensity.current) { remember(blurRadius) { blurRadius.dp.toPx() } }
-        val glassEffects: BackdropEffectScope.() -> Unit =
-            remember(refraction, blurPx) {
-                {
-                    // 滑动/翻页进行中降级：blur + lens 是每帧 × 每张玻璃卡各一次 GPU 模糊 + AGSL 着色器。
-                    // 只在**绘制期**读全局系数，不进 remember 的键（否则 lambda 身份随系数变化、
-                    // drawBackdrop 判不等并整块重建绘制缓存）；系数归零时一个 effect 都不追加 →
-                    // RenderEffect 为空 → 走 canDirectBlit 直采共享预模糊层，连每卡离屏录制一起省掉。
-                    val glassFactor = glassPerfFactor()
-                    if (glassFactor > 0.01f) {
-                        blur(blurPx * glassFactor)
-                        if (refraction != CardRefractionLevel.OFF) {
-                            // 折射宽度不乘系数、只淡强度：宽度一起乘会让高光环向边缘收拢/扫过
-                            //（库 effects/Lens.kt 里 refractionHeight 才是高光环宽度；padding 也按它变）
-                            lens(
-                                refraction.lensRadiusDp.dp.toPx(),
-                                refraction.lensStrengthDp.dp.toPx() * glassFactor
-                            )
-                        }
-                    }
-                }
-            }
-        val glassSurface: DrawScope.() -> Unit =
-            remember(isDark, surfaceOpacity) {
-                {
-                    drawRect(
-                        if (isDark) Color.Black.copy(alpha = surfaceOpacity)
-                        else Color.White.copy(alpha = surfaceOpacity)
-                    )
-                }
-            }
+        val density = LocalDensity.current
+        val glassOrigin = remember { arrayOf(Offset.Zero) }
+        val glassRadiusPx = with(density) { cornerRadius.toPx() }
+        val softGlassModifier = remember(softGlass, glassRadiusPx, density, glassRedraw) {
+            softGlass.modifier(
+                density = density,
+                origin = { glassOrigin[0] },
+                radiusPx = glassRadiusPx,
+                redraw = glassRedraw,
+            )
+        }
+        val flatSurfaceColor = remember(isDark, surfaceOpacity) {
+            if (isDark) Color.Black.copy(alpha = surfaceOpacity)
+            else Color.White.copy(alpha = surfaceOpacity)
+        }
         Box(
             modifier = modifier
                 .clip(shape)
                 // Record inside the source clip so its live subtree cannot replace retained rows.
                 .then(transitionRecording)
-                .drawBackdrop(
-                    backdrop = wallpaperBackdrop,
-                    shape = { shape },
-                    effects = glassEffects,
-                    highlight = null,
-                    onDrawSurface = glassSurface
-                )
-                .then(
-                    if (showEdgeLight) {
-                        Modifier.edgeLight(
-                            shape = ContinuousRoundedRectangle(cornerRadius),
-                            edgeLight = defaultEdgeLight,
-                            fadeAlpha = { glassPerfFactor() },
-                        )
-                    } else
-                        Modifier.edgeLight(
-                            shape = ContinuousRoundedRectangle(cornerRadius),
-                            edgeLight = rememberCardEdgeLight(baseColor = if (isDark) Color.Black else Color.White),
-                            fadeAlpha = { glassPerfFactor() },
-                        )
-                )
+                .onGloballyPositioned { glassOrigin[0] = it.positionInWindow() }
+                .then(softGlassModifier)
+                .background(flatSurfaceColor, shape)
         ) {
             content()
         }
@@ -262,16 +240,12 @@ fun BlurCard(
 @Composable
 private fun HolidayBalanceCard(
     text: String,
-    wallpaperBackdrop: Backdrop?,
-    blurRadius: Float,
     surfaceOpacity: Float,
     modifier: Modifier = Modifier,
 ) {
     val appRouter = LocalAppRouter.current
     BlurCard(
         cornerRadius = 20.dp,
-        wallpaperBackdrop = wallpaperBackdrop,
-        blurRadius = blurRadius,
         surfaceOpacity = surfaceOpacity,
         modifier = modifier
             .fillMaxWidth()
@@ -293,14 +267,14 @@ private fun HolidayBalanceCard(
 }
 
 @Composable
-private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pageDate: LocalDate = todayLocalDate(), showClassroom: Boolean = true, showTeacher: Boolean = true) {
+private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pageDate: LocalDate = todayLocalDate(), showClassroom: Boolean = true, showTeacher: Boolean = true, week: Int = 0) {
     fun getSectionTimeRange(startSection: Int, endSection: Int): String {
         val startTime = sectionTimes[startSection]?.split("-")?.firstOrNull() ?: ""
         val endTime = sectionTimes[endSection]?.split("-")?.lastOrNull() ?: ""
         return if (startTime.isNotEmpty() && endTime.isNotEmpty()) {
             "$startTime - $endTime"
         } else {
-            "第$startSection-${endSection}节"
+            TodayStr.sectionRange(startSection, endSection)
         }
     }
 
@@ -360,6 +334,7 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
             if (courseStatus != "未知") courseStatus = "未知"
             return@LaunchedEffect
         }
+        // 睡到下一个状态边界再醒：不要退化成每秒轮询 —— 每行常驻一个 1Hz 协程，一页下来白烧电
         val startClock: LocalTime = startTime
         val endClock: LocalTime = endTime
         while (true) {
@@ -393,10 +368,10 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
     }
 
     val statusText = when (courseStatus) {
-        "未开始" -> "未开始"
-        "已结束" -> "已结束"
+        "未开始" -> TodayStr.notStarted()
+        "已结束" -> TodayStr.ended()
         // 剩余时间在今日助手展示，这里只标状态
-        "进行中" -> "正在上课"
+        "进行中" -> TodayStr.inClass()
         else -> ""
     }
 
@@ -416,13 +391,25 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = buildString {
-                    append(course.getTimeDisplayText())
+                    append(course.timeDisplayTextLocalized())
                     if (showClassroom && course.classroom.isNotEmpty()) append(" | ").append(course.classroom)
                     if (showTeacher && course.teacher.isNotEmpty()) append(" | ").append(course.teacher)
                 },
                 style = MiuixTheme.textStyles.body2.copy(fontSize = 14.sp),
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                 )
+            // 备注只在今日页显示：单周备注优先，没有就回退到「所有周」那条
+            val note = if (week > 0) course.noteForWeek(week) else course.note
+            if (note.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = note,
+                    style = MiuixTheme.textStyles.body2.copy(fontSize = 13.sp),
+                    color = MiuixTheme.colorScheme.primary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(
@@ -449,9 +436,16 @@ private fun CourseItemContent(course: Course, sectionTimes: Map<Int, String>, pa
 fun TodayScreen(
     viewModel: CourseViewModel,
     settingsViewModel: SettingsViewModel,
+    /**
+     * 只在课程详情弹窗里用：点弹窗卡片进全屏详情时，要把那张源卡片藏掉，
+     * 否则整页快照里会留下它，形变里就多出一张原卡。
+     *
+     * 今日页的课程列表**不读**这个值 —— 它不直接进详情。
+     */
     hiddenCourseIds: Set<String> = emptySet(),
     onCourseClick: (courses: List<Course>, cardLeft: Float, cardTop: Float, cardWidth: Float, cardHeight: Float, snapshot: TransitionLayerSnapshot?, courseIdToHide: String, targetWeek: Int) -> Unit = { _, _, _, _, _, _, _, _ -> },
-    pagerState: PagerState,
+    /** 翻日位置来源。 */
+    pageState: PageSwitchState,
     /** 长距跳日的借位页：让相邻页临时显示目标日期（见 PagerJumpNeighbor） */
     jumpNeighbor: PagerJumpNeighbor? = null,
     navBarStyle: String = "standard",
@@ -463,27 +457,49 @@ fun TodayScreen(
     scrollToTodayTrigger: Int = 0,
     jumpToDateTrigger: Int = 0,
     onJumpToDateProcessed: () -> Unit = {},
-    wallpaperBitmap: ImageBitmap? = null,
-    wallpaperOffset: Offset = Offset.Zero,
-    wallpaperScale: Float = 1f,
-    wallpaperBrightness: Float = 0f,
-    cardBlurRadius: Float = 0f,
-    cardRefraction: CardRefractionLevel = CardRefractionLevel.DEFAULT,
     /** 有壁纸时白/黑底不透明度（卡片不透明度） */
-    cardSurfaceAlpha: Float = 0.15f,
-    wallpaperBlur: Boolean = false,
+    cardSurfaceAlpha: Float = 0.34f,
+    /** 柔光玻璃采样源（主内容层算一次，课表 / 今日共用；null = 无玻璃，卡片退回实色） */
+    softGlassSurface: SoftGlassSurface? = null,
+    /** 主 tab pager 的位置信号：切今日/课表时内容整体平移，必须让玻璃重绘 */
+    tabRedraw: () -> Unit = {},
     // true：壁纸由主 pager 后共享层绘制，本页透明叠上，切 tab 时不随页平移
     useSharedWallpaper: Boolean = false,
-    // 共享壁纸层的 backdrop，供卡片玻璃采样（useSharedWallpaper 时必传）
-    sharedWallpaperBackdrop: Backdrop? = null,
-    liquidGlassBackdrop: Backdrop? = null,
+    liquidGlassBackdrop: GlassBackdrop? = null,
     showClassroom: Boolean = true,
     showTeacher: Boolean = true,
     /** 主界面 resume/节假日版本变化时递增，强制今日页重读 HolidayManager */
     holidayDataTick: Int = 0,
     /** 今日助手卡（天气+智能提示）槽位：Android 宿主注入 TodayAssistantCard；null 不渲染 */
     todayAssistantCard: (@Composable (TodayAssistantCardData) -> Unit)? = null,
+    /** 本页实际呈现方式：由宿主按「今日页视图」设置解析好（可独立于课表页） */
+    scheduleViewMode: ScheduleViewMode = ScheduleViewMode.WEEK,
+    /**
+     * 越界状态：主界面注入同一实例，顶栏（Scaffold topBar 槽）与内容才读得到同一份越界量。
+     * 独立使用时默认自建一份。
+     */
+    overScrollState: OverScrollState = remember { OverScrollState() },
+    /** 顶栏宿主数据；null 时本页不画顶栏（独立使用 / 预览） */
+    chrome: TodayPageChrome? = null,
 ) {
+    val todayIsDark = isAppDarkTheme()
+    // 当前页的列表状态：draw 期直接读，滚动时同步失效；不要用异步 tick（会晚一帧、看起来在跳）
+    val currentListState = remember { mutableStateOf<LazyListState?>(null) }
+    val baseGlassSignal: () -> Unit = remember(pageState, overScrollState, tabRedraw, settingsScrollBehavior) {
+        {
+            currentListState.value?.firstVisibleItemIndex
+            currentListState.value?.firstVisibleItemScrollOffset
+            // 标题折叠不走 LazyListState：heightOffset / contentOffset 才是这一段的位移来源
+            settingsScrollBehavior?.state?.heightOffset
+            settingsScrollBehavior?.state?.contentOffset
+            settingsScrollBehavior?.currentHeightPx
+            pageState.offsetFraction
+            overScrollState.offset
+            // nav 几何一变，整页内容横移，卡片玻璃要重新采样（唯一来源见该函数）
+            tabletNavSamplingSignal()
+            tabRedraw()
+        }
+    }
     val courses by viewModel.courses.collectAsState()
     val classStartTime by viewModel.classStartTime.collectAsState()
     val totalWeeks by viewModel.totalWeeks.collectAsState()
@@ -495,47 +511,39 @@ fun TodayScreen(
     val smartWeekend by settingsViewModel.smartWeekend.collectAsState()
     val holidayDataRevision by HolidayManager.dataRevision.collectAsState()
 
-    val density = LocalDensity.current
     // 当日/次日课表解析用（原提醒侧解析内部 new 的就是 CourseRepository()，
     // 而 CourseRepository() 返回单例，语义等价）
     val resolveRepository = remember { CourseRepository() }
-    val screenWidthPx = with(density) { screenWidthDp().dp.toPx() }
-    val screenHeightPx = with(density) { screenHeightDp().dp.toPx() }
-    val minWallpaperScale = remember(wallpaperBitmap, screenWidthPx, screenHeightPx) {
-        if (wallpaperBitmap != null && wallpaperBitmap.width > 0 && wallpaperBitmap.height > 0) {
-            val fitScale = minOf(screenWidthPx / wallpaperBitmap.width, screenHeightPx / wallpaperBitmap.height)
-            val coverScale = maxOf(screenWidthPx / wallpaperBitmap.width, screenHeightPx / wallpaperBitmap.height)
-            if (fitScale > 0f) coverScale / fitScale else 1f
-        } else 1f
-    }
 
     val MAX_DATE_OFFSET = 1000
     var currentLocalDateTime by remember {
         mutableStateOf(localDateTimeAt(Clock.System.now().toEpochMilliseconds()))
     }
     val currentLocalDate = currentLocalDateTime.date
-    val initialDaysOffset = pagerState.currentPage - MAX_DATE_OFFSET
+    val initialDaysOffset = pageState.currentPage - MAX_DATE_OFFSET
     val initialDate = currentLocalDate.plusDays(initialDaysOffset.toLong())
     var selectedDate by remember { mutableStateOf(initialDate) }
     var isToday by remember { mutableStateOf(initialDaysOffset == 0) }
     val scope = rememberCoroutineScope()
     var pendingDatePage by remember { mutableIntStateOf(-1) }
     var showDatePicker by remember { mutableStateOf(false) }
+    // 点课程先出详情弹窗（与课程表页一致），弹窗里点卡片才进全屏详情
+    var detailSheetCourses by remember { mutableStateOf<List<Course>>(emptyList()) }
+    var detailSheetWeek by remember { mutableIntStateOf(0) }
+    var showDetailSheet by remember { mutableStateOf(false) }
     var datePickerYear by remember { mutableIntStateOf(todayLocalDate().year) }
     var datePickerMonth by remember { mutableIntStateOf(todayLocalDate().monthNumber - 1) }
     var datePickerDay by remember { mutableIntStateOf(todayLocalDate().dayOfMonth) }
-    // 手势接管状态：借位跳日被手势打断时，jumpToPageSmoothly 借它同步平移松手落页基准
-    val takeoverGestureState = rememberPagerTakeoverGestureState()
 
     LaunchedEffect(scrollToTodayTrigger) {
-        if (scrollToTodayTrigger > 0 && pagerState.currentPage != MAX_DATE_OFFSET) {
+        if (scrollToTodayTrigger > 0 && pageState.currentPage != MAX_DATE_OFFSET) {
             // 相邻一天直接滑；跨多天借位后也只滑一页，全程连续
             pendingDatePage = MAX_DATE_OFFSET
             try {
-                pagerState.jumpToPageSmoothly(MAX_DATE_OFFSET, jumpNeighbor, takeoverGestureState)
+                pageState.jumpToPageSmoothly(MAX_DATE_OFFSET, jumpNeighbor)
             } finally {
                 // 落点不是目标（被打断）就立刻撤掉覆盖，别让标题卡在今天
-                if (pagerState.currentPage != MAX_DATE_OFFSET) pendingDatePage = -1
+                if (pageState.currentPage != MAX_DATE_OFFSET) pendingDatePage = -1
             }
         }
     }
@@ -552,15 +560,15 @@ fun TodayScreen(
     }
 
     // 落页后撤掉「立刻切日期」的覆盖
-    LaunchedEffect(pagerState.currentPage, pendingDatePage) {
-        if (pendingDatePage >= 0 && pagerState.currentPage == pendingDatePage) {
+    LaunchedEffect(pageState.currentPage, pendingDatePage) {
+        if (pendingDatePage >= 0 && pageState.currentPage == pendingDatePage) {
             pendingDatePage = -1
         }
     }
 
     // 跟手换日期：过半页就换（settledPage 要等 fling 停稳，翻起来标题会看着卡住）。
     // 程序化跳日期间由 [pendingDatePage] 提前钉住目标，借位也不会闪到中间那天。
-    LaunchedEffect(pagerState.currentPage, pendingDatePage, holidayDataTick) {
+    LaunchedEffect(pageState.currentPage, pendingDatePage, holidayDataTick) {
         var lastReportedDate: LocalDate? = null
         while (true) {
             val sampledAtMillis = Clock.System.now().toEpochMilliseconds()
@@ -569,7 +577,7 @@ fun TodayScreen(
             currentLocalDateTime = sampledNow
             // 程序化跳日期间用目标页，点「今」的那一帧日期就切过去
             val anchorPage =
-                if (pendingDatePage >= 0) pendingDatePage else pagerState.currentPage
+                if (pendingDatePage >= 0) pendingDatePage else pageState.currentPage
             val daysOffset = anchorPage - MAX_DATE_OFFSET
             val newDate = today.plusDays(daysOffset.toLong())
             if (newDate != lastReportedDate) {
@@ -586,7 +594,7 @@ fun TodayScreen(
                 lastReportedDate = newDate
             }
 
-            delay(HolidayCountdown.millisUntilNextMinute(sampledAtMillis))
+            delay(HolidayCountdown.millisUntilNextMinute(sampledAtMillis).milliseconds)
         }
     }
 
@@ -595,26 +603,17 @@ fun TodayScreen(
     // externalListState 仅作兼容参数保留，不再驱动列表
     val hapticFeedback = LocalHapticFeedback.current
 
-    val backgroundColor = MiuixTheme.colorScheme.surface
-    // 供今日页卡片 drawBackdrop 采样壁纸：共享层时直接用主层 backdrop，否则录本页壁纸
-    val localCardBackdrop = rememberKyantLayerBackdrop {
-        drawRect(backgroundColor)
-        drawContent()
-    }
-    val cardBackdrop: Backdrop =
-        if (useSharedWallpaper && sharedWallpaperBackdrop != null) sharedWallpaperBackdrop
-        else localCardBackdrop
-    val hasWallpaper = wallpaperBitmap != null
-    // 默认 15% 锚定当前观感（课程卡 0.45 / 格言卡 0.6），其余按百分比线性映射到 1
-    val p = cardSurfaceAlpha.coerceIn(0f, 1f)
-    fun anchorOpacity(anchor: Float): Float = if (p <= 0.15f) {
-        (p / 0.15f) * anchor
-    } else {
-        anchor + ((p - 0.15f) / 0.85f) * (1f - anchor)
-    }
-    val courseCardOpacity = anchorOpacity(0.45f)
-    val highlightCardOpacity = anchorOpacity(0.6f)
-
+    // 卡片一律采主 pager 后的共享壁纸层（柔光自己采样），本页不自挂录制层。
+    // 无材质档模糊/折射由 displayAppearance 钳 0，但卡片仍采壁纸（着色/不透明度照常生效）。
+    // 不透明度：设置值先按深色模式 ×0.8，再分发（默认亮色 34% / 深色 27.2%）。
+    // 今日页课程卡 = 基准值；高亮卡（摘要 / 格言）比它再亮 15pp。
+    // 课表页相反，用基准值 −15pp，见 AppearanceConfig.scheduleSurfaceAlpha。
+    val surfaceDark = isAppDarkTheme()
+    val p = (cardSurfaceAlpha * if (surfaceDark) CombinationDefaults.DARK_SURFACE_ALPHA_FACTOR else 1f)
+        .coerceIn(0f, 1f)
+    val courseCardOpacity = p
+    val highlightCardOpacity = (p + CombinationDefaults.HIGHLIGHT_SURFACE_ALPHA_BONUS)
+        .coerceIn(0f, 1f)
 
     val isTablet = navBarStyle == "rail"
     val nativeChromeInset = LocalHostNavigation.current
@@ -622,12 +621,62 @@ fun TodayScreen(
         ?.bottomBarInset?.toFloat()?.dp
     val tabletHorizontalPadding = if (isTablet) 24.dp else 16.dp
 
-    val todayRefraction = cardRefraction
-    CompositionLocalProvider(LocalCardRefraction provides todayRefraction) {
+    // 点课程只开弹窗：卡片位置/图层这些 morph 参数在这里用不上，全屏详情由弹窗里的卡片再触发
+    val openDetailSheet: (List<Course>, Float, Float, Float, Float, TransitionLayerSnapshot?, String, Int) -> Unit =
+        { coursesAtSlot, _, _, _, _, _, _, targetWeek ->
+            detailSheetCourses = coursesAtSlot
+            detailSheetWeek = targetWeek
+            showDetailSheet = true
+        }
+    // 内容单独录一层（页面坐标）：顶栏/菜单在层外，采样「壁纸 + 本页内容」，
+    // 不会把自己的模糊带/按钮再录进去形成循环采样。
+    val contentBackdrop = chrome?.contentBackdrop ?: rememberLayerBackdrop()
+    val glassLayersEnabled =
+        !com.haooz.chedule.ui.utils.AppMaterialSettings.isNoneTier() && chrome != null
+    val wallpaperBackdrop = chrome?.wallpaperBackdrop
+    val chromeBackdrop: GlassBackdrop = if (wallpaperBackdrop != null) {
+        rememberCombinedBackdrop(wallpaperBackdrop, contentBackdrop)
+    } else {
+        contentBackdrop
+    }
+    val moreSlotTopPx = remember { mutableFloatStateOf(0f) }
+    val moreMaterialAlpha = remember { mutableFloatStateOf(0f) }
+    val pageRootCoords = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    // 顶栏单独录一层：展开的「更多」菜单采「本页内容 + 本页顶栏」，不会采到自己
+    val topBarBackdrop = rememberLayerBackdrop()
+    val menuBackdrop = if (wallpaperBackdrop != null) {
+        rememberCombinedBackdrop(wallpaperBackdrop, contentBackdrop, topBarBackdrop)
+    } else {
+        rememberCombinedBackdrop(contentBackdrop, topBarBackdrop)
+    }
+    // 这层只为「更多」菜单服务：菜单收起且展开动画归零就摘掉，不让顶栏每帧白录一层
+    val topBarLayerWanted by remember(chrome?.moreMenu) {
+        derivedStateOf {
+            val menu = chrome?.moreMenu
+            menu != null && (menu.show || menu.fraction.value > 0f)
+        }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { pageRootCoords[0] = it }
+    ) {
+    Box(Modifier.fillMaxSize().then(
+        if (glassLayersEnabled) {
+            Modifier.layerBackdrop(contentBackdrop, chrome?.contentRecordKey, chrome?.contentMustRecord)
+        } else {
+            Modifier
+        }
+    )) {
+    CompositionLocalProvider(
+        LocalSoftGlassSurface provides softGlassSurface,
+        LocalOverScrollState provides overScrollState,
+        LocalGlassRedrawSignal provides baseGlassSignal,
+    ) {
     Scaffold(
         topBar = {},
         // 共享壁纸时本页必须透明，否则会盖住主 pager 后面的壁纸层
-        containerColor = if (useSharedWallpaper && wallpaperBitmap != null) {
+        containerColor = if (useSharedWallpaper) {
             Color.Transparent
         } else {
             MiuixTheme.colorScheme.surface
@@ -637,69 +686,15 @@ fun TodayScreen(
             modifier = Modifier
                 .fillMaxSize()
         ) {
-            if (wallpaperBitmap != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .then(
-                            // 共享层已负责显示并录制；本页不再录透明占位
-                            if (useSharedWallpaper) Modifier
-                            else Modifier.kyantLayerBackdrop(localCardBackdrop)
-                        )
-                ) {
-                    val brightnessFilter = if (wallpaperBrightness != 0f) {
-                        val b = (1f + wallpaperBrightness / 50f).coerceIn(0f, 2f)
-                        ColorFilter.colorMatrix(
-                            ColorMatrix(
-                                floatArrayOf(
-                                    b, 0f, 0f, 0f, 0f,
-                                    0f, b, 0f, 0f, 0f,
-                                    0f, 0f, b, 0f, 0f,
-                                    0f, 0f, 0f, 1f, 0f
-                                )
-                            )
-                        )
-                    } else null
-                    val todayWallpaperBlurEffect = remember(wallpaperBlur) {
-                        // 跨平台模糊模板：半径表达式与原实现逐字一致
-                        val blurRadiusPx = 24f * density.density
-                        // ⚠ 同 MainScheduleScreen：漏判 wallpaperBlur 会让关闭开关后
-                        // 非共享路径（alpha=1f）仍强制全屏高斯模糊，半径还大一倍。
-                        if (wallpaperBlur && blurRadiusPx > 0f && isRenderEffectSupported()) {
-                            BlurEffect(null, blurRadiusPx, blurRadiusPx, TileMode.Clamp)
-                        } else null
-                    }
-                    Image(
-                        bitmap = wallpaperBitmap,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                val effectiveScale = maxOf(wallpaperScale, minWallpaperScale)
-                                scaleX = effectiveScale
-                                scaleY = effectiveScale
-                                // 共享层负责显示；这里只录 backdrop，保持不可见
-                                alpha = if (useSharedWallpaper) 0f else 1f
-                                translationX = wallpaperOffset.x
-                                translationY = wallpaperOffset.y
-                                renderEffect = todayWallpaperBlurEffect
-                            },
-                        contentScale = ContentScale.Fit,
-                        colorFilter = brightnessFilter
-                    )
-                }
-            }
-
-            HorizontalPager(
-                state = pagerState,
-                // 与课表周 pager 同款预组合：翻日/返回今日时下一日页面在第一帧就要露出，
+            HorizontalPageSwitch(
+                state = pageState,
+                // 页数：MAX_DATE_OFFSET 前后各 1000 天
+                pageCount = MAX_DATE_OFFSET * 2,
+                // 预组合一页
                 // 现组一整页（resolveDaySchedule + 假期/调休查询 + 卡片）会把那一帧顶爆。
-                beyondViewportPageCount = 1,
-                modifier = Modifier
-                    .fillMaxSize()
-                    // 与课表周 pager 共用的横竖主导翻页手势；纵向仍归页内 LazyColumn
-                    .pagerAxisTakeoverGesture(pagerState = pagerState, gestureState = takeoverGestureState),
-                userScrollEnabled = false,
+                beyondPageCount = 1,
+                // 横向翻日由 draggable 接管，纵向归页内 LazyColumn
+                modifier = Modifier.fillMaxSize(),
             ) { physicalPage ->
                 // 借位页：长距跳日期间这一页按目标日期出内容，于是跨 N 天也只是一页连续位移
                 val page = jumpNeighbor?.resolve(physicalPage) ?: physicalPage
@@ -708,6 +703,7 @@ fun TodayScreen(
                     LocalTextMotionInstant provides (jumpNeighbor?.isBorrowed(physicalPage) == true)
                 ) {
                 val pageListState = remember(page) { LazyListState() }
+                SideEffect { currentListState.value = pageListState }
                 // 只把当前页的滚动状态报给 Activity（顶栏折叠 / 液态玻璃重录）
                 LaunchedEffect(pageListState, page) {
                     snapshotFlow {
@@ -717,11 +713,10 @@ fun TodayScreen(
                             pageListState.firstVisibleItemScrollOffset
                         )
                     }.collect { (p, scrolling, offset) ->
-                        if (p == pagerState.settledPage || p == pagerState.currentPage) {
+                        if (p == pageState.currentPage) {
                             onListScrollInProgress(scrolling)
-                            if (scrolling || p == pagerState.settledPage) {
-                                onScrollYChanged(offset)
-                            }
+                            // 停滑时上报最后一帧 offset
+                            onScrollYChanged(offset)
                         }
                     }
                 }
@@ -771,8 +766,7 @@ fun TodayScreen(
                         else -> emptyList()
                     }
                 }
-                val pageWeek = displayWeek
-                // 分组结果按课程/节次表缓存：原来每次重组都重建 map + 三次过滤
+                    // 分组结果按课程 / 节次表缓存：别退化成每次重组重建 map + 三次过滤
                 val coursePeriods = remember(pageCourses, sectionTimes, morningSections, afternoonSections) {
                     pageCourses.associateWith {
                         it.periodIndex(sectionTimes, morningSections, afternoonSections)
@@ -936,6 +930,7 @@ fun TodayScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
+                            .then(LocalPageStartPadding.current)
                             .padding(
                                 start = tabletHorizontalPadding,
                                 end = tabletHorizontalPadding,
@@ -971,12 +966,9 @@ fun TodayScreen(
                             }
                             Spacer(modifier = Modifier.height(12.dp))
                             QuoteCard(
-                                isPageToday = isPageToday,
+                                pageDate = pageDate,
                                 todayCourses = if (isPageToday) pageCourses else emptyList(),
-                                tomorrowCourses = tomorrowCourses,
                                 sectionTimes = sectionTimes,
-                                wallpaperBackdrop = if (hasWallpaper) cardBackdrop else null,
-                                blurRadius = cardBlurRadius,
                                 surfaceOpacity = highlightCardOpacity
                             )
                             if (isPageToday) {
@@ -990,26 +982,24 @@ fun TodayScreen(
                                         afternoonSections = afternoonSections,
                                         showClassroom = showClassroom,
                                         showTeacher = showTeacher,
-                                        wallpaperBackdrop = if (hasWallpaper) cardBackdrop else null,
-                                        blurRadius = cardBlurRadius,
                                         surfaceOpacity = highlightCardOpacity,
                                     )
                                 )
                             }
                         }
                         LazyColumn(
+                            state = pageListState,
                             modifier = Modifier
                                 .weight(1f)
                                 .collapsibleTopInset(settingsScrollBehavior)
                                 .fillMaxHeight()
+                                .overScrollVertical()
                                 .scrollEndHaptic(
                                     hapticFeedbackType = HapticFeedbackType.TextHandleMove
                                 )
                                 .then(
                                     if (settingsScrollBehavior != null) Modifier.nestedScroll(settingsScrollBehavior.nestedScrollConnection) else Modifier
-                                )
-                                // 放在最后 = 最靠近列表，优先收到 fling，与手机设置页一致
-                                .overScrollVertical(),
+                                ),
                             contentPadding = PaddingValues(
                                 top = paddingValues.calculateTopPadding() +
                                     CollapsibleTopAppBarDefaults.CollapsedHeight + 14.dp,
@@ -1021,13 +1011,20 @@ fun TodayScreen(
                                 item {
                                     HolidayBalanceCard(
                                         text = holidayBalanceText,
-                                        wallpaperBackdrop = if (hasWallpaper) cardBackdrop else null,
-                                        blurRadius = cardBlurRadius,
                                         surfaceOpacity = courseCardOpacity,
                                     )
                                 }
                             }
-                            addCourseSections(morningCourses, afternoonCourses, eveningCourses, pageCourses, isPageToday, pageDate, pageWeek, courses, hiddenCourseIds, sectionTimes, onCourseClick, if (hasWallpaper) cardBackdrop else null, cardBlurRadius, courseCardOpacity, showClassroom, showTeacher, isHolidayDate = pageResolution.isHolidayDate)
+                            if (scheduleViewMode == ScheduleViewMode.TIMELINE && pageCourses.isNotEmpty()) {
+                                addTodayTimeline(
+                                    pageCourses, sectionTimes, displayWeek, isPageToday, todayIsDark,
+                                    courseCardOpacity,
+                                    showClassroom, showTeacher,
+                                ) { course -> openTodayCourse(course, displayWeek, openDetailSheet) }
+                            } else {
+                                addCourseSections(morningCourses, afternoonCourses, eveningCourses, pageCourses, isPageToday, pageDate,
+                                    displayWeek, sectionTimes, openDetailSheet, courseCardOpacity, showClassroom, showTeacher, isHolidayDate = pageResolution.isHolidayDate)
+                            }
                         }
                     }
                 } else {
@@ -1036,13 +1033,14 @@ fun TodayScreen(
                         modifier = Modifier
                             .collapsibleTopInset(settingsScrollBehavior)
                             .fillMaxSize()
+                            // 采样连接必须最贴近列表：越界回弹位移不能算进 contentOffset
+                            .overScrollVertical()
                             .scrollEndHaptic(
                                 hapticFeedbackType = HapticFeedbackType.TextHandleMove
                             )
                             .then(
                                 if (settingsScrollBehavior != null) Modifier.nestedScroll(settingsScrollBehavior.nestedScrollConnection) else Modifier
-                            )
-                            .overScrollVertical(),
+                            ),
                         contentPadding = PaddingValues(
                             start = tabletHorizontalPadding,
                             top = paddingValues.calculateTopPadding() +
@@ -1076,12 +1074,9 @@ fun TodayScreen(
                         }
                         item {
                             QuoteCard(
-                                isPageToday = isPageToday,
+                                pageDate = pageDate,
                                 todayCourses = if (isPageToday) pageCourses else emptyList(),
-                                tomorrowCourses = tomorrowCourses,
                                 sectionTimes = sectionTimes,
-                                wallpaperBackdrop = if (hasWallpaper) cardBackdrop else null,
-                                blurRadius = cardBlurRadius,
                                 surfaceOpacity = highlightCardOpacity
                             )
                         }
@@ -1096,24 +1091,29 @@ fun TodayScreen(
                                         afternoonSections = afternoonSections,
                                         showClassroom = showClassroom,
                                         showTeacher = showTeacher,
-                                        wallpaperBackdrop = if (hasWallpaper) cardBackdrop else null,
-                                        blurRadius = cardBlurRadius,
                                         surfaceOpacity = highlightCardOpacity,
                                     )
                                 )
                             }
                         }
-                        if (holidayBalanceText != null) {
-                            item {
-                                HolidayBalanceCard(
-                                    text = holidayBalanceText,
-                                    wallpaperBackdrop = if (hasWallpaper) cardBackdrop else null,
-                                    blurRadius = cardBlurRadius,
-                                    surfaceOpacity = courseCardOpacity,
-                                )
-                            }
+if (holidayBalanceText != null) {
+                        item {
+                            HolidayBalanceCard(
+                                text = holidayBalanceText,
+                                surfaceOpacity = courseCardOpacity,
+                            )
                         }
-                        addCourseSections(morningCourses, afternoonCourses, eveningCourses, pageCourses, isPageToday, pageDate, pageWeek, courses, hiddenCourseIds, sectionTimes, onCourseClick, if (hasWallpaper) cardBackdrop else null, cardBlurRadius, courseCardOpacity, showClassroom, showTeacher, isHolidayDate = pageResolution.isHolidayDate)
+                        }
+                        if (scheduleViewMode == ScheduleViewMode.TIMELINE && pageCourses.isNotEmpty()) {
+                            addTodayTimeline(
+                                pageCourses, sectionTimes, displayWeek, isPageToday, todayIsDark,
+                                courseCardOpacity,
+                                showClassroom, showTeacher,
+                            ) { course -> openTodayCourse(course, displayWeek, openDetailSheet) }
+                        } else {
+                            addCourseSections(morningCourses, afternoonCourses, eveningCourses, pageCourses, isPageToday, pageDate,
+                                displayWeek, sectionTimes, openDetailSheet, courseCardOpacity, showClassroom, showTeacher, isHolidayDate = pageResolution.isHolidayDate)
+                        }
                     }
                 }
             }
@@ -1121,8 +1121,32 @@ fun TodayScreen(
         }
     }
 
+        // 课程详情弹窗：与课程表页共用同一个组件，备注入口就在卡片底部。
+        // 今日页不传 onEdit —— 编辑走全屏详情，这里没有编辑弹窗。
+        CourseDetailSheet(
+            show = showDetailSheet,
+            allCourses = courses,
+            selectedCourses = detailSheetCourses,
+            viewingWeek = detailSheetWeek,
+            isTablet = isTablet,
+            // 弹窗里的源卡片要先藏掉：进全屏详情时整页快照不能拍进它
+            hiddenCourseIds = hiddenCourseIds,
+            onDismiss = { showDetailSheet = false },
+            onCourseClick = onCourseClick,
+            onNoteSave = { course, week, text ->
+                val updated = if (week == null) {
+                    course.copy(note = text)
+                } else {
+                    val weekNotes = course.weekNotes.toMutableMap()
+                    if (text.isEmpty()) weekNotes.remove(week) else weekNotes[week] = text
+                    course.copy(weekNotes = weekNotes)
+                }
+                viewModel.updateCourse(updated)
+            },
+        )
+
         OverlayDialog(
-            title = "跳转日期",
+            title = TodayStr.jumpToDate(),
             show = showDatePicker,
             liquidGlassBackdrop = liquidGlassBackdrop,
             onDismissRequest = { showDatePicker = false }
@@ -1142,7 +1166,7 @@ fun TodayScreen(
                         range = 2024..2030,
                         visibleItemCount = 3,
                         itemHeight = 60.dp,
-                        label = { "${it}年" },
+                        label = { TodayStr.yearN(it) },
                         textStyle = MiuixTheme.textStyles.title2,
                         modifier = Modifier.weight(1f)
                     )
@@ -1152,7 +1176,7 @@ fun TodayScreen(
                         range = 0..11,
                         visibleItemCount = 3,
                         itemHeight = 60.dp,
-                        label = { "${it + 1}月" },
+                        label = { TodayStr.monthN(it + 1) },
                         wrapAround = true,
                         textStyle = MiuixTheme.textStyles.title2,
                         modifier = Modifier.weight(1f)
@@ -1170,7 +1194,7 @@ fun TodayScreen(
                         range = 1..maxDay,
                         visibleItemCount = 3,
                         itemHeight = 60.dp,
-                        label = { "${it}日" },
+                        label = { CommonStr.dateN(it) },
                         wrapAround = true,
                         textStyle = MiuixTheme.textStyles.title2,
                         modifier = Modifier.weight(1f)
@@ -1181,7 +1205,7 @@ fun TodayScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     TextButton(
-                        text = "取消",
+                        text = CommonStr.cancel(),
                         onClick = {
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                             showDatePicker = false
@@ -1189,25 +1213,23 @@ fun TodayScreen(
                         modifier = Modifier.weight(1f)
                     )
                     TextButton(
-                        text = "确定",
+                        text = CommonStr.ok(),
                         onClick = {
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                             val target =
                                 LocalDate(datePickerYear, datePickerMonth + 1, datePickerDay)
                             val now = todayLocalDate()
                             val days = now.daysUntil(target)
-                            val targetPage = MAX_DATE_OFFSET + days.toInt()
+                            val targetPage = MAX_DATE_OFFSET + days
                             scope.launch {
                                 // 选日期可能跨几十上百天：借位后只滑一页，不逐页组合中间每一天
-                                val dest = targetPage.coerceIn(
-                                    0, (pagerState.pageCount - 1).coerceAtLeast(0)
-                                )
+                                val dest = targetPage.coerceIn(0, MAX_DATE_OFFSET * 2 - 1)
                                 // 标题日期立刻切到目标日
                                 pendingDatePage = dest
                                 try {
-                                    pagerState.jumpToPageSmoothly(dest, jumpNeighbor, takeoverGestureState)
+                                    pageState.jumpToPageSmoothly(dest, jumpNeighbor)
                                 } finally {
-                                    if (pagerState.currentPage != dest) pendingDatePage = -1
+                                    if (pageState.currentPage != dest) pendingDatePage = -1
                                 }
                             }
                             showDatePicker = false
@@ -1219,13 +1241,71 @@ fun TodayScreen(
             }
         }
     }
+    }
+        // 顶栏与页面同层：翻日 / 切 tab 时跟着页面一起位移，不再由外层按页码算偏移
+        chrome?.let { c ->
+            PageLockedTopBarTheme(c.forcedDarkTheme) {
+                Box(Modifier.then(
+                    if (glassLayersEnabled && topBarLayerWanted) Modifier.layerBackdrop(topBarBackdrop) else Modifier
+                )) {
+                TodayTopBar(
+                    liquidGlassBackdrop = chromeBackdrop,
+                    navBarStyle = navBarStyle,
+                    currentDayOfWeek = selectedDate.dayOfWeek.isoDayNumber,
+                    isToday = isToday,
+                    onJumpToDate = c.onJumpToDate,
+                    onEnterCustomize = c.onEnterCustomize,
+                    scrollBehavior = settingsScrollBehavior,
+                    visible = true,
+                    blurResampleKey = c.blurResampleKey,
+                    blurSampleTrack = c.blurSampleTrack,
+                    onMoreSlotTop = { slot ->
+                        // 换算成相对页面根的局部坐标，避免外层开洞缩放把「更多」位置算得偏高
+                        val root = pageRootCoords[0]
+                        if (root != null && root.isAttached && slot.isAttached) {
+                            moreSlotTopPx.floatValue = root.localPositionOf(slot, Offset.Zero).y
+                        }
+                    },
+                    onMoreMaterial = { moreMaterialAlpha.floatValue = it },
+                    onMoreExpand = { c.moreMenu?.onExpand?.invoke() },
+                    titleEndPadding = c.titleEndPadding,
+                )
+                }
+                c.moreMenu?.let { menu ->
+                    MorePopupMenus(
+                        showMorePopup = false,
+                        onMorePopupDismiss = {},
+                        showTodayMorePopup = menu.show,
+                        onTodayMorePopupDismiss = menu.onDismiss,
+                        onTodayMorePopupExpand = menu.onExpand,
+                        morePopupFraction = remember { androidx.compose.animation.core.Animatable(0f) },
+                        todayMorePopupFraction = menu.fraction,
+                        todayMenuOffset = { Offset.Zero },
+                        moreSlotTopPx = moreSlotTopPx,
+                        todayMaterialAlpha = moreMaterialAlpha.floatValue,
+                        liquidGlassBackdrop = menuBackdrop,
+                        enabled = menu.enabled,
+                        todayMoreNative = menu.native,
+                        scheduleMoreNative = true,
+                        onJumpWeek = {},
+                        onCourseManage = c.onCourseManage,
+                        onEnterCustomize = c.onEnterCustomize,
+                        onJumpToDate = c.onJumpToDate,
+                    )
+                }
+            }
+        }
+    }
 }
 
 // 格言 = 课表场景 × 时段加菜；场景优先，时段补充
+// 别的日子分两支：往后翻（未来）和往前翻（过去）说的话不一样——
+// 未来是「别提前焦虑」，过去是「改不了，别沉浸」。
 private enum class QuoteScene {
     DEEP_NIGHT,
     NO_CLASS,
-    OTHER_DAY,
+    PAST_DAY,
+    FUTURE_DAY,
     SCHEDULE_BROKEN,
     BEFORE_FIRST,
     IN_CLASS_JUST,
@@ -1272,12 +1352,16 @@ private fun buildQuoteRanges(
 }
 
 private fun computeQuoteScene(
-    isPageToday: Boolean,
+    pageDate: LocalDate,
     courses: List<Course>,
     sectionTimes: Map<Int, String>,
-    now: LocalTime = nowLocalTime()
+    now: LocalTime = nowLocalTime(),
+    today: LocalDate = todayLocalDate()
 ): QuoteScene {
-    if (!isPageToday) return QuoteScene.OTHER_DAY
+    // 别的日子分前后：往后是「还没到」，往前是「已经过去」，说的是两件事
+    if (pageDate != today) {
+        return if (pageDate > today) QuoteScene.FUTURE_DAY else QuoteScene.PAST_DAY
+    }
 
     val ranges = buildQuoteRanges(courses, sectionTimes)
     // 有课但时间对不上有效区间 → 明确报「课表残缺」，不要装没课或看别的天
@@ -1311,174 +1395,6 @@ private fun computeQuoteScene(
     return QuoteScene.AFTER_ALL
 }
 
-// 嘴硬一点，但别变成劝退
-private val quotesDeepNight = listOf(
-    "凌晨了，你的黑眼圈在申请吉尼斯",
-    "别修仙了，早八不会为你的仙气让路",
-    "这个点的努力，感动天感动地，感动不了绩点",
-    "手机还剩 20% 电，你的意志力还剩多少",
-    "关机，睡觉，别逼我跪下来求你",
-    "你熬的不是夜，是明天迟到的底气",
-    "深夜的你最清醒——清醒地摆烂",
-    "头发在掉，作业在飘，就你在熬",
-    "别拿灵感当借口，你刷的是短视频不是文献",
-    "再不睡，明天第一节课的主角就是你的呼噜",
-    "凌晨的自我感动，白天的现实打脸，稳了",
-    "睡吧，让明天的你去面对今天的债",
-    "台灯比你努力，它至少在工作",
-    "这个点的「再学五分钟」，一般等于再玩两小时",
-    "别数羊了，数数你今天翘过的知识点",
-    "月亮都下班了，你还在硬撑，图啥"
-)
-private val quotesNoClass = listOf(
-    "今天没课，你的生产力大概率也没上班",
-    "自由日？通常是废掉日的委婉说法",
-    "别躺出褥子，明天课表会找你算账",
-    "没课的你：计划满满，进度零零",
-    "今天没有老师催你，你也别把自己催崩了",
-    "空出来的时间，最后都会变成刷手机的时长",
-    "难得没课，做点人事——比如真的睡一觉",
-    "别羡慕别人有课充实，你空虚得很彻底",
-    "没课不是奖励，是你自己把今天过成了过场",
-    "图书馆开门了，你大概率在门外路过",
-    "闹钟不用响，你也照样起不来，很稳定",
-    "别人满课像渡劫，你没课像断线",
-    "自由是有了，自律呢？哦，没装这个模块",
-    "今天省下的通勤，会在晚上变成刷夜"
-)
-private val quotesOtherDay = listOf(
-    "翻别人的课表干嘛，今天的你才是重灾区",
-    "别对照了，你自己的进度也好看不到哪去",
-    "看课表不能让课消失，但能让你更焦虑",
-    "这一天的你：还没到，已经开始慌了",
-    "提前预习焦虑，是你唯一的超前学习",
-    "别滑了，课不会因为你看两眼就少一节",
-    "未来的苦，现在的你先替他尝了一口",
-    "看得挺认真，就是一点用没有",
-    "现在研究那天的教室，那天你照样会迷路",
-    "课表翻得越勤，心里越慌，很科学"
-)
-private val quotesScheduleBroken = listOf(
-    "课有，时间没有——你这是薛定谔的课表",
-    "节次或时间没填全，格言都不知道怎么嘲你",
-    "去课表补一下，不然倒计时和笑话都对不上",
-    "时间残缺得跟期末范围似的，先补数据",
-    "课表在，起点终点不在，当代悬疑片",
-    "别指望我编故事，先把上课时间写上"
-)
-private val quotesBeforeFirst = listOf(
-    "离上课还有点时间，够你再赖一次",
-    "别吃了，再吃就得用跑的了",
-    "今天的第一节课，是你和被窝的告别演出",
-    "出门前再看一眼床，它舍不得你，但课表舍得",
-    "还有时间？不，是还有借口",
-    "你的早晨流程：醒→赖→慌→跑，稳定发挥",
-    "别收拾了，教室的灯不会给你打光",
-    "早饭随便塞两口，你的胃会记住这笔账",
-    "这个点还从容的，等会儿会在走廊飙车",
-    "闹钟响了三遍，你赢了两次，课赢了最后一次",
-    "现在有多悠闲，待会儿就有多冲刺",
-    "第一节还没开始，迟到的剧本已经写好了",
-    "外套记得带，教室空调不跟你讲武德",
-    "水杯记得带，忘带的上午你会懂"
-)
-private val quotesInClassJust = listOf(
-    "刚点完名，你的魂就开始请假了",
-    "这节课才开始，你已经在心里下课三次了",
-    "别急着关书，还有很久够你表演专注",
-    "老师还没讲到重点，你已经演完走神全套了",
-    "坐姿挺标准，就是眼神在窗外办签证",
-    "别装了，你打开书只是为了挡脸",
-    "连着上？恭喜，你可以完整睡一觉了",
-    "刚上课就盼下课，你的盼头比成绩稳定",
-    "这节要是选修，你连装都懒得装",
-    "上课五分钟，摸鱼两小时——预算已分配好",
-    "第一节就耗尽电量，后面靠什么撑？意志力？笑死",
-    "老师讲的是大纲，你听的是氛围",
-    "别急着拍 PPT，拍了你也不会再看",
-    "现在坐得多端正，中段就瘫得多彻底"
-)
-private val quotesInClassMid = listOf(
-    "过半了，你的耐心没有",
-    "老师的进度条在走，你的倒计时在蹦迪",
-    "别掐大腿了，掐完还是困",
-    "中段的你：眼睛睁着，脑子已签退",
-    "笔记记到一半开始画火柴人，艺术家实锤",
-    "撑住，后面的内容你反正也听不懂（不是）",
-    "你的专注力像流量包，早超额了",
-    "别问同学借笔记，你借的是别人的努力",
-    "这会儿还能听进去的，建议保送",
-    "半节课过去，你的人设从「认真」改成「还活着」",
-    "知识点从左耳进右耳出，路过都不打卡",
-    "别刷学习软件了，你在教室，不是在图书馆装",
-    "现在犯的困，都是昨晚欠的债",
-    "老师提问的概率在上升，你的低头角度也是"
-)
-private val quotesInClassEnd = listOf(
-    "还有几分钟，你的脚已经完成热身",
-    "别装了，书包拉链你都摸三遍了",
-    "最后几分钟的演技，够评奥斯卡",
-    "下课铃还没响，你的魂已经出校门打卡了",
-    "老师拖堂一分钟，你少活一年",
-    "忍住，现在冲出去会被记仇的",
-    "你的坐姿从听课切换成起跑预备了",
-    "最后几分钟，你听进去的只有自己的心跳",
-    "别提前收东西，老师就爱抓这个",
-    "再撑一下，食堂不会跑，但队伍会",
-    "这个点的「认真」，是装给老师看的余光",
-    "手机在包里震，你的心比它还抖",
-    "最后几分钟的知识点，往往是考点——你正好在收拾书包",
-    "拖堂是老师的特权，崩溃是你的义务"
-)
-private val quotesShortBreak = listOf(
-    "就这么几分钟，你还掏出手机？格局小了",
-    "接水排队都比你准备下节课久",
-    "别去走廊演风云人物了，下节课更困",
-    "课间是用来补觉的，不是用来假装社交的",
-    "上厕所+接水+刷手机：完美卡点迟到套餐",
-    "这几分钟够你想清楚要不要翘下一节（别）",
-    "歇够没？没歇够也得滚回去了",
-    "课间刷到的瓜，下节课讲不完更难受",
-    "别瘫了，下节课的老师已经在门口蹲你了",
-    "三分钟热度都不够你热完这个课间",
-    "同桌都睡着了，就你还清醒地浪费课间",
-    "打水的队伍，是你今天见过最长的卷",
-    "走廊逛一圈，风没醒，瓜吃了一堆",
-    "现在多玩一分钟，下节课多困十分钟，汇率很差"
-)
-private val quotesLongBreak = listOf(
-    "这么久的空档，你大概率会用来后悔",
-    "计划：预习。实际：刷到手机发烫",
-    "别瘫了，待会还要演一小时清醒",
-    "午休充电五分钟，续命一下午——并没充上",
-    "这段时间够你写作业，也够你把作业忘光",
-    "饭可以吃，觉可以睡，就是别打开那局游戏",
-    "你管这叫休息？手机电量都不信",
-    "长课间的尽头，是你踩点冲进教室的背影",
-    "别把空档过成加班，最后累的还是自己",
-    "现在有多闲，下节课开场就有多狼狈",
-    "睡有睡的代价，玩有玩的报应，你自己选",
-    "空档是用来回血的，不是用来掉段的",
-    "说好只躺十分钟，醒来天都变了",
-    "别开新剧了，开了一集就是一下午"
-)
-private val quotesAfterAll = listOf(
-    "课是上完了，作业才刚刚开始看你笑话",
-    "别急着躺，明天的早八已经在门口蹲着了",
-    "今天的你：完整出席，完整走神",
-    "恭喜通关今日副本，奖励是——明天还有",
-    "书包可以放下了，良心放不下",
-    "放学不是自由，是换个地方继续焦虑",
-    "今天的知识点，一个都没办理入住",
-    "别装充实了，你今天干了啥自己清楚",
-    "老师下班了，你的愧疚开始上班",
-    "自由了？作业群消息响了没",
-    "走出校门的风，都比教室里的清醒",
-    "今天的重点：你一个都没抓到",
-    "人是放了，魂还在最后一排没领走",
-    "复盘一下今天：出席率 100%，吸收率未知"
-)
-
 // 时段：场景定语气，时段再加菜，整点也会换一条
 private enum class QuoteTimeBand {
     DAWN,      // 5-7
@@ -1500,266 +1416,79 @@ private fun quoteTimeBand(hour: Int): QuoteTimeBand = when (hour) {
     else -> QuoteTimeBand.LATE
 }
 
-// 时段加菜：只在对应钟点并入当前场景池
-private val extrasClassDawn = listOf(
-    "早八的教室，灵魂还在宿舍办入住",
-    "这个点的笔记，写的是睡姿速写",
-    "别问老师为什么看你，你的眼睛还没开机",
-    "天刚亮就上课，你的床想报警",
-    "第一排都坐不醒的早八，建议改叫「晨间刑」",
-    "你人到了，生物钟还在昨天",
-    "老师声音越稳，你眼皮越重",
-    "早八的正确打开方式：睁一只眼闭一只眼"
-)
-private val extrasClassMorning = listOf(
-    "上午的清醒是限量款，你已经用完了",
-    "阳光正好，适合发呆，不适合听课",
-    "别看窗外了，窗外没有绩点",
-    "上午的效率曲线：开局即巅峰，然后跳水",
-    "别人在记重点，你在记「老师今天穿什么」",
-    "连堂的上午，是意志力的连续剧",
-    "别点头了，老师以为你听懂了会更来劲",
-    "上午的咖啡，撑的是仪式感，不是脑子"
-)
-private val extrasClassNoon = listOf(
-    "中午的课，是胃在讲课",
-    "别想食堂了，想了也得坐着",
-    "这节上完就是饭点，你的魂已经去排队了",
-    "饭点上课，是对干饭魂的公开处刑",
-    "老师讲公式，你脑子里全是菜名",
-    "中午的知识进不去，下午的困拦不住",
-    "别人等下课铃，你等开饭铃",
-    "这个点还能听进去的，建议直接保送食堂"
-)
-private val extrasClassAfternoon = listOf(
-    "下午的困，是生理规律，不是态度问题",
-    "太阳晒着，老师讲着，你飘着",
-    "别硬撑了，你的点头频率已经暴露了",
-    "空调在吹，你在睡，分工明确",
-    "下午第一节课，全班集体进入省电模式",
-    "眼皮在跳科目一，你在跳下课",
-    "别怪自己，是午饭在体内开了慢充",
-    "老师擦黑板的声音，是你的白噪音"
-)
-private val extrasClassEvening = listOf(
-    "晚课的教室，一半人在线下挂机",
-    "别睡了，晚课睡了晚上就真睡不着了",
-    "这个点还在听的，不是热爱，是怕点名",
-    "晚课的意义：证明你今天还没完全摆",
-    "窗外在天黑，你在神游，进度一致",
-    "晚课的手机亮度，暴露了你的听课深度",
-    "别看表了，看一次慢一分钟",
-    "别人晚自习开卷，你晚自习开机"
-)
-private val extrasClassNight = listOf(
-    "晚课收尾，宿舍的床已经在想你",
-    "别急，最后一节的结束铃比下课铃更神圣",
-    "撑完这节，今晚就可以名正言顺摆烂了",
-    "夜色正好，可惜你在教室，不在操场",
-    "这个点的知识，多半会和困意一起过期",
-    "最后一节的专注，全用来倒计时了",
-    "老师还在讲，你的魂已办理入住宿舍",
-    "别提前收包，最后五分钟才是修罗场"
-)
-
-private val extrasBreakDawn = listOf(
-    "早课间别趴了，趴了第二节更废",
-    "这个点的课间，用来清醒，不是用来做梦",
-    "走廊风大，吹不走你的困",
-    "去洗把脸，比咖啡便宜，比硬撑体面",
-    "早课间补觉，是给下午挖坑",
-    "别人晒太阳，你晒枕头印",
-    "别刷手机了，屏幕比天光还晃眼",
-    "站着也困的课间，建议原地罚站（不是）"
-)
-private val extrasBreakMorning = listOf(
-    "上午课间，刷两分钟就变十分钟",
-    "别去小卖部了，去了钱包和腰围一起受伤",
-    "接水的时候想想下节课，算了别想了",
-    "课间最忙的器官：拇指",
-    "走廊走一圈，消息刷一堆，重点一个没有",
-    "同桌补觉，你补瓜，分工合理",
-    "上午课间的规划很大，执行很手机",
-    "别笑太大声，下节课老师记得你"
-)
-private val extrasBreakNoon = listOf(
-    "饭点课间，食堂才是主战场",
-    "别纠结吃什么了，纠结完队伍就长了",
-    "中午能趴就趴，下午会感谢现在的你",
-    "冲食堂的速度，暴露了你对这门课的态度",
-    "课间十分钟，排队二十分钟，很公平",
-    "别人午休，你午刷，下午一起倒",
-    "吃完别立刻躺，除非你想给下午签到失败",
-    "中午的自由很短，队伍很长"
-)
-private val extrasBreakAfternoon = listOf(
-    "下午课间，走廊的风都比你清醒",
-    "用这几分钟站起来，不然第三节直接焊在椅子上",
-    "别刷手机了，你的眼睛比脑子先罢工",
-    "晒两分钟太阳，比续杯咖啡管用（大概）",
-    "下午课间的打哈欠会传染，你就是传染源",
-    "别买冰饮了，胃和钱包一起凉",
-    "站起来伸个懒腰，假装自己还活着",
-    "走廊的吵闹，是下午唯一的提神饮料"
-)
-private val extrasBreakEvening = listOf(
-    "晚课间，出去走两步，教室快把你腌入味了",
-    "别瘫，晚课间瘫完，最后一节直接交卷式听课",
-    "这个点的清醒，全靠走廊冷风硬灌",
-    "楼道灯比教室亮，也比你的前途亮一点",
-    "晚课间的风是免费的，困是自费的",
-    "别开黑了，开了最后一节就没了",
-    "去接杯热水，给晚上留点人样",
-    "窗外路灯亮了，你的斗志该开灯了"
-)
-private val extrasBreakNight = listOf(
-    "晚课间别开新局，开了就回不来了",
-    "最后一点课间电量，留给下节课，不是短视频",
-    "走廊灯下站会儿，回教室还能再演十分钟",
-    "夜课间的安静，适合反省——反省完接着玩",
-    "别去便利店了，去了钱包比人先空",
-    "最后一点课间的体面，是回教室坐直",
-    "晚课间刷到的下饭视频，下节课会在你脑子里重播"
-)
-
-private val extrasFreeDawn = listOf(
-    "这么早没课，你确定不是忘看课表",
-    "早起没事干，是奢侈，也是浪费",
-    "别睡回笼了，睡完中午更废",
-    "五点醒着还不学也不睡，卡在人生加载界面",
-    "清晨没课，食堂都比你有安排",
-    "这个点的自由，是昨晚熬夜的分期付款",
-    "别感动自己起得早，起得早也没干正事",
-    "窗外鸟都开工了，你还在缓冲"
-)
-private val extrasFreeMorning = listOf(
-    "上午没课，图书馆有空位，你有借口",
-    "别人在上课，你在计划——然后计划失败",
-    "自由的上午，通常从「先躺十分钟」开始",
-    "早饭可以慢慢吃，但别吃到中午",
-    "没课的上午，手机电量掉得比绩点快",
-    "说好预习，结果在给收藏夹分类",
-    "别人在教室渡劫，你在宿舍修仙",
-    "上午的安静很贵，你用来刷完了"
-)
-private val extrasFreeNoon = listOf(
-    "没课的中午，吃慢点，反正没人催你上课",
-    "午睡可以，别睡到以为今天是周末",
-    "饭点自由，是你今天最实在的自由",
-    "别人抢座，你抢被子，赛道不同",
-    "中午的计划：学习。中午的实际：饭+躺",
-    "没课的午饭吃出了放假的感觉，然后就真放假了一下午",
-    "别点太多，下午你会困到骂自己",
-    "午后的太阳不等你，你还在第二碗"
-)
-private val extrasFreeAfternoon = listOf(
-    "下午没课，阳光这么好，适合焦虑",
-    "别把空闲过成加班的愧疚，也别过成纯刷",
-    "这个点还躺着的，晚上会还的",
-    "说好下午学习，结果下午在想晚上吃什么",
-    "没课的下午，是给手机充电，不是给自己充电",
-    "别人实验报告，你实验发呆",
-    "阳光透过窗帘：提示你该出门了，你当暖被",
-    "下午的自由很长，进度条一直是 0%"
-)
-private val extrasFreeEvening = listOf(
-    "晚上没课，自由的味道是手机发烫",
-    "别报复性熬夜了，明天没有课也会困",
-    "空出来的晚上，最后都交给了短视频",
-    "晚上的计划很大，手很诚实地打开了娱乐软件",
-    "没课的夜，更容易把「明天一定」说出口",
-    "别人在晚自习，你在晚自习游戏（也算自习？）",
-    "晚饭后的躺平，会一路躺到愧疚",
-    "别开新番了，开了就是通宵预告"
-)
-private val extrasFreeNight = listOf(
-    "没课的晚上，更容易把自己熬废",
-    "别人晚自习，你晚自习手机——也算自习？",
-    "夜深了，你的待办列表还醒着，你快睡了",
-    "没课的夜很长，玩起来又太短",
-    "说好只玩一局，天都快亮了还没「只」",
-    "别把自由夜过成通宵前传",
-    "月亮上班了，你的正事还没上班",
-    "这个点还不睡的自由，明天会连本带利收走"
-)
-
-private fun timeExtrasFor(scene: QuoteScene, band: QuoteTimeBand): List<String> = when (scene) {
+private fun timeExtrasFor(scene: QuoteScene, band: QuoteTimeBand): List<L10n> = when (scene) {
     QuoteScene.IN_CLASS_JUST, QuoteScene.IN_CLASS_MID, QuoteScene.IN_CLASS_END -> when (band) {
-        QuoteTimeBand.DAWN -> extrasClassDawn
-        QuoteTimeBand.MORNING -> extrasClassMorning
-        QuoteTimeBand.NOON -> extrasClassNoon
-        QuoteTimeBand.AFTERNOON -> extrasClassAfternoon
-        QuoteTimeBand.EVENING -> extrasClassEvening
-        QuoteTimeBand.NIGHT -> extrasClassNight
+        QuoteTimeBand.DAWN -> TodayStr.extrasClassDawn
+        QuoteTimeBand.MORNING -> TodayStr.extrasClassMorning
+        QuoteTimeBand.NOON -> TodayStr.extrasClassNoon
+        QuoteTimeBand.AFTERNOON -> TodayStr.extrasClassAfternoon
+        QuoteTimeBand.EVENING -> TodayStr.extrasClassEvening
+        QuoteTimeBand.NIGHT -> TodayStr.extrasClassNight
         QuoteTimeBand.LATE -> emptyList()
     }
     QuoteScene.SHORT_BREAK, QuoteScene.LONG_BREAK -> when (band) {
-        QuoteTimeBand.DAWN -> extrasBreakDawn
-        QuoteTimeBand.MORNING -> extrasBreakMorning
-        QuoteTimeBand.NOON -> extrasBreakNoon
-        QuoteTimeBand.AFTERNOON -> extrasBreakAfternoon
-        QuoteTimeBand.EVENING -> extrasBreakEvening
-        QuoteTimeBand.NIGHT -> extrasBreakNight
+        QuoteTimeBand.DAWN -> TodayStr.extrasBreakDawn
+        QuoteTimeBand.MORNING -> TodayStr.extrasBreakMorning
+        QuoteTimeBand.NOON -> TodayStr.extrasBreakNoon
+        QuoteTimeBand.AFTERNOON -> TodayStr.extrasBreakAfternoon
+        QuoteTimeBand.EVENING -> TodayStr.extrasBreakEvening
+        QuoteTimeBand.NIGHT -> TodayStr.extrasBreakNight
         QuoteTimeBand.LATE -> emptyList()
     }
     QuoteScene.BEFORE_FIRST, QuoteScene.NO_CLASS, QuoteScene.AFTER_ALL -> when (band) {
-        QuoteTimeBand.DAWN -> extrasFreeDawn
-        QuoteTimeBand.MORNING -> extrasFreeMorning
-        QuoteTimeBand.NOON -> extrasFreeNoon
-        QuoteTimeBand.AFTERNOON -> extrasFreeAfternoon
-        QuoteTimeBand.EVENING -> extrasFreeEvening
-        QuoteTimeBand.NIGHT -> extrasFreeNight
+        QuoteTimeBand.DAWN -> TodayStr.extrasFreeDawn
+        QuoteTimeBand.MORNING -> TodayStr.extrasFreeMorning
+        QuoteTimeBand.NOON -> TodayStr.extrasFreeNoon
+        QuoteTimeBand.AFTERNOON -> TodayStr.extrasFreeAfternoon
+        QuoteTimeBand.EVENING -> TodayStr.extrasFreeEvening
+        QuoteTimeBand.NIGHT -> TodayStr.extrasFreeNight
         QuoteTimeBand.LATE -> emptyList()
     }
     else -> emptyList()
 }
 
-private fun quotePoolFor(scene: QuoteScene, hour: Int): List<String> {
+private fun quotePoolFor(scene: QuoteScene, hour: Int): List<L10n> {
     val base = when (scene) {
-        QuoteScene.DEEP_NIGHT -> quotesDeepNight
-        QuoteScene.NO_CLASS -> quotesNoClass
-        QuoteScene.OTHER_DAY -> quotesOtherDay
-        QuoteScene.SCHEDULE_BROKEN -> quotesScheduleBroken
-        QuoteScene.BEFORE_FIRST -> quotesBeforeFirst
-        QuoteScene.IN_CLASS_JUST -> quotesInClassJust
-        QuoteScene.IN_CLASS_MID -> quotesInClassMid
-        QuoteScene.IN_CLASS_END -> quotesInClassEnd
-        QuoteScene.SHORT_BREAK -> quotesShortBreak
-        QuoteScene.LONG_BREAK -> quotesLongBreak
-        QuoteScene.AFTER_ALL -> quotesAfterAll
+        QuoteScene.DEEP_NIGHT -> TodayStr.quotesDeepNight
+        QuoteScene.NO_CLASS -> TodayStr.quotesNoClass
+        QuoteScene.PAST_DAY -> TodayStr.quotesPastDay
+        QuoteScene.FUTURE_DAY -> TodayStr.quotesFutureDay
+        QuoteScene.SCHEDULE_BROKEN -> TodayStr.quotesScheduleBroken
+        QuoteScene.BEFORE_FIRST -> TodayStr.quotesBeforeFirst
+        QuoteScene.IN_CLASS_JUST -> TodayStr.quotesInClassJust
+        QuoteScene.IN_CLASS_MID -> TodayStr.quotesInClassMid
+        QuoteScene.IN_CLASS_END -> TodayStr.quotesInClassEnd
+        QuoteScene.SHORT_BREAK -> TodayStr.quotesShortBreak
+        QuoteScene.LONG_BREAK -> TodayStr.quotesLongBreak
+        QuoteScene.AFTER_ALL -> TodayStr.quotesAfterAll
     }
     val extras = timeExtrasFor(scene, quoteTimeBand(hour))
     if (extras.isEmpty()) return base
     // 去重，避免底池和加菜撞句
-    val seen = HashSet<String>(base.size + extras.size)
-    return (base + extras).filter { seen.add(it) }
+    return (base + extras).distinctBy { it() }
 }
 
-// 原来取的是平台的进程 id；top-level val 每进程只初始化一次，
-// 语义等价于「进程 id」，且 Android / Desktop / iOS 通用
+// 相当于「进程内 id」：top-level val 每进程只初始化一次，且 Android / Desktop / iOS 通用
 private val quoteProcessId: Long = Random.nextLong()
 
 @Composable
 private fun QuoteCard(
-    isPageToday: Boolean,
+    pageDate: LocalDate,
     todayCourses: List<Course>,
-    tomorrowCourses: List<Course> = emptyList(),
     sectionTimes: Map<Int, String>,
-    wallpaperBackdrop: Backdrop? = null,
-    blurRadius: Float = 0f,
     surfaceOpacity: Float
 ) {
     var scene by remember {
         mutableStateOf(
-            computeQuoteScene(isPageToday, todayCourses, sectionTimes)
+            computeQuoteScene(pageDate, todayCourses, sectionTimes)
         )
     }
     var hour by remember { mutableIntStateOf(nowLocalTime().hour) }
     // 与助手同频：场景/整点切换时立刻换池。
     // 按「睡到下一分钟」而不是每秒轮询 —— 这个循环每页一个，且 computeQuoteScene 会做时间解析+排序
-    LaunchedEffect(isPageToday, todayCourses, sectionTimes) {
+    LaunchedEffect(pageDate, todayCourses, sectionTimes) {
         while (true) {
-            val nextScene = computeQuoteScene(isPageToday, todayCourses, sectionTimes)
+            val nextScene = computeQuoteScene(pageDate, todayCourses, sectionTimes)
             if (nextScene != scene) scene = nextScene
             val nextHour = nowLocalTime().hour
             if (nextHour != hour) hour = nextHour
@@ -1775,13 +1504,10 @@ private fun QuoteCard(
         val seed = processId xor (scene.ordinal * 31L) xor (hour * 17L)
         (((seed % pool.size) + pool.size) % pool.size).toInt()
     }
-    val quote = pool[quoteIndex]
+    val quote = pool[quoteIndex]()
 
     BlurCard(
-        wallpaperBackdrop = wallpaperBackdrop,
-        blurRadius = blurRadius,
         surfaceOpacity = surfaceOpacity,
-        showEdgeLight = wallpaperBackdrop != null && blurRadius > 0f,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
@@ -1796,13 +1522,11 @@ private fun QuoteCard(
 }
 
 
-// 今日页分组标题：始终套椭圆（胶囊）底；有壁纸时走与卡片相同的 blur/lens/透明度
+// 今日页分组标题：始终套椭圆（胶囊）底；有壁纸时走与卡片相同的 blur/透明度
 // textAlign：节标题默认起始对齐；空态等居中场景由调用方传 Center
 @Composable
 private fun CourseSectionTitle(
     text: String,
-    wallpaperBackdrop: Backdrop? = null,
-    blurRadius: Float = 0f,
     surfaceOpacity: Float,
     modifier: Modifier = Modifier,
     style: TextStyle =
@@ -1810,59 +1534,39 @@ private fun CourseSectionTitle(
     textAlign: TextAlign? = null,
 ) {
     val isDark = isAppDarkTheme()
-    val refraction = LocalCardRefraction.current
-    // 有壁纸时用纯黑/纯白，压在毛玻璃上更干净
-    val textColor = when {
-        wallpaperBackdrop != null -> if (isDark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.5f)
-        else -> Color(0xFF8F9CAE)
+    val softGlass = LocalSoftGlassSurface.current
+    val glassRedraw = LocalGlassRedrawSignal.current
+    // 有玻璃时用纯黑/纯白，压在毛玻璃上更干净
+    val textColor = if (softGlass != null) {
+        if (isDark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.5f)
+    } else {
+        Color(0xFF8F9CAE)
     }
 
-    if (wallpaperBackdrop != null) {
+    if (softGlass != null) {
         val shape = ContinuousCapsule()
-        val blurPx = with(LocalDensity.current) { remember(blurRadius) { blurRadius.dp.toPx() } }
-        val titleEffects: BackdropEffectScope.() -> Unit =
-            remember(refraction, blurPx) {
-                {
-                    // 分组标题与卡片同一套降级口径（绘制期读、不进 remember 键；归零不追加 effect）
-                    val glassFactor = glassPerfFactor()
-                    if (glassFactor > 0.01f) {
-                        blur(blurPx * glassFactor)
-                        if (refraction != CardRefractionLevel.OFF) {
-                            // 折射宽度不乘系数、只淡强度（宽度一起乘会「扫过」+ 层几何每帧抖）
-                            lens(
-                                refraction.lensRadiusDp.dp.toPx(),
-                                refraction.lensStrengthDp.dp.toPx() * glassFactor
-                            )
-                        }
-                    }
-                }
-            }
-        val titleSurface: DrawScope.() -> Unit =
-            remember(isDark, surfaceOpacity) {
-                {
-                    drawRect(
-                        if (isDark) Color.Black.copy(alpha = surfaceOpacity)
-                        else Color.White.copy(alpha = surfaceOpacity)
-                    )
-                }
-            }
+        val density = LocalDensity.current
+        val glassOrigin = remember { arrayOf(Offset.Zero) }
+        val softGlassModifier = remember(softGlass, density, glassRedraw) {
+            softGlass.modifier(
+                density = density,
+                origin = { glassOrigin[0] },
+                // 胶囊由 softGlass 的半径钳制自动得到：style.cornerRadius 会被钳到高度一半
+                radiusPx = null,
+                redraw = glassRedraw,
+            )
+        }
+        val flatTitleColor = remember(isDark, surfaceOpacity) {
+            if (isDark) Color.Black.copy(alpha = surfaceOpacity)
+            else Color.White.copy(alpha = surfaceOpacity)
+        }
         Box(
             modifier = modifier
                 .padding(vertical = 6.dp)
                 .clip(shape)
-                .drawBackdrop(
-                    backdrop = wallpaperBackdrop,
-                    shape = { shape },
-                    effects = titleEffects,
-                    highlight = null,
-                    onDrawSurface = titleSurface
-                )
-                // 标题与课程卡一致用淡描边；亮版只留给今日助手/格言
-                .edgeLight(
-                    shape = shape,
-                    edgeLight = rememberCardEdgeLight(baseColor = if (isDark) Color.Black else Color.White),
-                    fadeAlpha = { glassPerfFactor() }
-                )
+                .onGloballyPositioned { glassOrigin[0] = it.positionInWindow() }
+                .then(softGlassModifier)
+                .background(flatTitleColor, shape)
         ) {
             Text(
                 text = text,
@@ -1907,13 +1611,11 @@ private typealias CourseDetailClick = (
 /** Retain the shared glass and crop a row only when opening its details. */
 @Composable
 private fun CourseDetailSectionCard(
-    wallpaperBackdrop: Backdrop?,
-    blurRadius: Float,
     surfaceOpacity: Float,
     onCourseClick: CourseDetailClick,
     content: @Composable (CourseDetailClick) -> Unit,
 ) {
-    if (wallpaperBackdrop == null) {
+    if (LocalSoftGlassSurface.current == null) {
         // Opaque rows already record their matching surface background locally.
         BlurCard(surfaceOpacity = surfaceOpacity, modifier = Modifier.fillMaxWidth()) {
             content(onCourseClick)
@@ -1939,8 +1641,6 @@ private fun CourseDetailSectionCard(
         }
     }
     BlurCard(
-        wallpaperBackdrop = wallpaperBackdrop,
-        blurRadius = blurRadius,
         surfaceOpacity = surfaceOpacity,
         modifier = Modifier
             .fillMaxWidth()
@@ -1972,6 +1672,36 @@ private fun CourseDetailSectionCard(
     }
 }
 
+/** 时间轴版课程区：整页一条时间轴（今日页单列），与列表版二选一 */
+private fun LazyListScope.addTodayTimeline(
+    pageCourses: List<Course>,
+    sectionTimes: Map<Int, String>,
+    pageWeek: Int,
+    isPageToday: Boolean,
+    isDark: Boolean,
+    surfaceOpacity: Float,
+    showClassroom: Boolean,
+    showTeacher: Boolean,
+    onCourseClick: (Course) -> Unit,
+) {
+    item(key = "today-timeline") {
+        TodayTimelineSection(
+            courses = pageCourses,
+            sectionTimes = sectionTimes,
+            pageWeek = pageWeek,
+            isToday = isPageToday,
+            style = TodayTimelineStyle(
+                isDark = isDark,
+                // 与今日列表行同一档表面不透明度（不是课表页的课程色着色度）
+                surfaceOpacity = surfaceOpacity,
+                showClassroom = showClassroom,
+                showTeacher = showTeacher,
+            ),
+            onCourseClick = onCourseClick,
+        )
+    }
+}
+
 private fun LazyListScope.addCourseSections(
     morningCourses: List<Course>,
     afternoonCourses: List<Course>,
@@ -1980,12 +1710,8 @@ private fun LazyListScope.addCourseSections(
     isPageToday: Boolean,
     pageDate: LocalDate,
     pageWeek: Int,
-    courses: List<Course>,
-    hiddenCourseIds: Set<String>,
     sectionTimes: Map<Int, String>,
     onCourseClick: (courses: List<Course>, cardLeft: Float, cardTop: Float, cardWidth: Float, cardHeight: Float, snapshot: TransitionLayerSnapshot?, courseIdToHide: String, targetWeek: Int) -> Unit,
-    wallpaperBackdrop: Backdrop? = null,
-    blurRadius: Float = 0f,
     surfaceOpacity: Float,
     showClassroom: Boolean = true,
     showTeacher: Boolean = true,
@@ -1995,16 +1721,14 @@ private fun LazyListScope.addCourseSections(
         item(key = "today-course-section-morning") {
             Column {
                 CourseSectionTitle(
-                    text = "上午课程",
-                    wallpaperBackdrop = wallpaperBackdrop,
-                    blurRadius = blurRadius,
+                    text = TodayStr.morningClasses(),
                     surfaceOpacity = surfaceOpacity
                 )
-                CourseDetailSectionCard(wallpaperBackdrop, blurRadius, surfaceOpacity, onCourseClick) { onCardClick ->
+                CourseDetailSectionCard(surfaceOpacity, onCourseClick) { onCardClick ->
                     Column {
                         morningCourses.forEach { course ->
                             key(course.id) {
-                                CourseItemWithClick(course, courses, hiddenCourseIds, sectionTimes, pageDate, pageWeek, onCardClick, wallpaperBackdrop != null, showClassroom, showTeacher)
+                                CourseItemWithClick(course, sectionTimes, pageDate, pageWeek, onCardClick, showClassroom, showTeacher)
                             }
                         }
                     }
@@ -2016,16 +1740,14 @@ private fun LazyListScope.addCourseSections(
         item(key = "today-course-section-afternoon") {
             Column {
                 CourseSectionTitle(
-                    text = "下午课程",
-                    wallpaperBackdrop = wallpaperBackdrop,
-                    blurRadius = blurRadius,
+                    text = TodayStr.afternoonClasses(),
                     surfaceOpacity = surfaceOpacity
                 )
-                CourseDetailSectionCard(wallpaperBackdrop, blurRadius, surfaceOpacity, onCourseClick) { onCardClick ->
+                CourseDetailSectionCard(surfaceOpacity, onCourseClick) { onCardClick ->
                     Column {
                         afternoonCourses.forEach { course ->
                             key(course.id) {
-                                CourseItemWithClick(course, courses, hiddenCourseIds, sectionTimes, pageDate, pageWeek, onCardClick, wallpaperBackdrop != null, showClassroom, showTeacher)
+                                CourseItemWithClick(course, sectionTimes, pageDate, pageWeek, onCardClick, showClassroom, showTeacher)
                             }
                         }
                     }
@@ -2037,16 +1759,14 @@ private fun LazyListScope.addCourseSections(
         item(key = "today-course-section-evening") {
             Column {
                 CourseSectionTitle(
-                    text = "晚上课程",
-                    wallpaperBackdrop = wallpaperBackdrop,
-                    blurRadius = blurRadius,
+                    text = TodayStr.eveningClasses(),
                     surfaceOpacity = surfaceOpacity
                 )
-                CourseDetailSectionCard(wallpaperBackdrop, blurRadius, surfaceOpacity, onCourseClick) { onCardClick ->
+                CourseDetailSectionCard(surfaceOpacity, onCourseClick) { onCardClick ->
                     Column {
                         eveningCourses.forEach { course ->
                             key(course.id) {
-                                CourseItemWithClick(course, courses, hiddenCourseIds, sectionTimes, pageDate, pageWeek, onCardClick, wallpaperBackdrop != null, showClassroom, showTeacher)
+                                CourseItemWithClick(course, sectionTimes, pageDate, pageWeek, onCardClick, showClassroom, showTeacher)
                             }
                         }
                     }
@@ -2062,13 +1782,11 @@ private fun LazyListScope.addCourseSections(
             ) {
                 CourseSectionTitle(
                     text = when {
-                        isHolidayDate && isPageToday -> "今天是假期，好好休息吧！"
-                        isHolidayDate -> "这天是假期"
-                        isPageToday -> "今天没有课程，好好休息吧！"
-                        else -> "这天没有课程"
+                        isHolidayDate && isPageToday -> TodayStr.holidayTodayRest()
+                        isHolidayDate -> TodayStr.holidayOtherDay()
+                        isPageToday -> TodayStr.noCourseTodayRest()
+                        else -> TodayStr.noCourseOtherDay()
                     },
-                    wallpaperBackdrop = wallpaperBackdrop,
-                    blurRadius = blurRadius,
                     surfaceOpacity = surfaceOpacity,
                     style = MiuixTheme.textStyles.body1.copy(
                         fontSize = 15.sp,
@@ -2082,81 +1800,43 @@ private fun LazyListScope.addCourseSections(
     }
 }
 
+/**
+ * 今日页点课程 → 弹详情：只带被点的这一节。
+ *
+ * 今日页每一行 / 每张卡就是当天的一节课，点谁只看谁；别的周里节次压过来的课不进弹窗。
+ */
+private fun openTodayCourse(
+    course: Course,
+    pageWeek: Int,
+    openDetailSheet: (List<Course>, Float, Float, Float, Float, TransitionLayerSnapshot?, String, Int) -> Unit,
+) {
+    // 位置/图层参数供「点卡片直接 morph 进详情」用；今日页先弹详情弹窗，起点由弹窗内卡片提供
+    openDetailSheet(listOf(course), 0f, 0f, 0f, 0f, null, course.id, pageWeek)
+}
+
 @Composable
 private fun CourseItemWithClick(
     course: Course,
-    allCourses: List<Course>,
-    hiddenCourseIds: Set<String>,
     sectionTimes: Map<Int, String>,
     pageDate: LocalDate,
     pageWeek: Int,
     onCourseClick: (courses: List<Course>, cardLeft: Float, cardTop: Float, cardWidth: Float, cardHeight: Float, snapshot: TransitionLayerSnapshot?, courseIdToHide: String, targetWeek: Int) -> Unit,
-    hasWallpaper: Boolean = false,
     showClassroom: Boolean = true,
     showTeacher: Boolean = true
 ) {
-    // 只存布局坐标，root 位置点击时现算。原来用 mutableStateOf<Rect> 接 onGloballyPositioned：
-    // 滚动时每次 placement 都写入不等的新 Rect → 每帧一次行重组（列表滚动的隐形大头）
-    val itemCoords = remember { arrayOfNulls<LayoutCoordinates>(1) }
-    val isHidden = course.id in hiddenCourseIds
-    val cardLayer = rememberGraphicsLayer()
-    val scope = rememberCoroutineScope()
-    // 只有真要打开详情时才把这一行录进图层：record 是每帧一次离屏重绘，一行一层；
-    // 有壁纸路径下上层改用 section 裁剪，这份录制 100% 白费。
-    val captureToken = remember { mutableIntStateOf(0) }
-    val recordedToken = remember { intArrayOf(0) }
-    Column(
+    val hasGlass = LocalSoftGlassSurface.current != null
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            // A retained section records the row's drawing, never a mutable hidden-alpha layer.
-            .drawWithContent { if (!isHidden) drawContent() }
+            // ⚠ 无壁纸时必须用 surfaceContainer，不能用 background：外层 BlurCard 此时退化成
+            //   miuix `Card()`，卡片色正是 surfaceContainer（Card.kt defaultColors）。内置方案下
+            //   两者恰好相等（#FFFFFF / #242424），莫奈下才分家：background 取 tone 98/6、
+            //   surfaceContainer 取 tone 94/12，差 4 个明度阶，写错会偏色。
+            .then(if (hasGlass) Modifier else Modifier.background(MiuixTheme.colorScheme.surfaceContainer))
+            .clickable {
+                openTodayCourse(course, pageWeek, onCourseClick)
+            }
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .drawWithContent {
-                    // 录好的那几帧走图层，其余时候直画（行内状态字会变，不能一直放旧快照）
-                    if (!isHidden && captureToken.intValue != 0) {
-                        cardLayer.record { this@drawWithContent.drawContent() }
-                        recordedToken[0] = captureToken.intValue
-                        drawLayer(cardLayer)
-                    } else {
-                        drawContent()
-                    }
-                }
-                // ⚠ 无壁纸时必须用 surfaceContainer，不能用 background：外层 BlurCard 此时退化成
-                //   miuix `Card()`，卡片色正是 surfaceContainer（Card.kt defaultColors）。内置方案下
-                //   两者恰好相等（#FFFFFF / #242424），莫奈下才分家：background 取 tone 98/6、
-                //   surfaceContainer 取 tone 94/12，差 4 个明度阶，写错会偏色。
-                .then(if (hasWallpaper) Modifier else Modifier.background(MiuixTheme.colorScheme.surfaceContainer))
-                .onGloballyPositioned { itemCoords[0] = it }
-                .clickable {
-                    val coordinates = itemCoords[0]
-                    if (coordinates != null && coordinates.isAttached && captureToken.intValue == 0) {
-                        val position = coordinates.localToRoot(Offset.Zero)
-                        val size = coordinates.size
-                        val sameNameCourses = allCourses.filter { it.name == course.name }
-                        captureToken.intValue += 1
-                        val token = captureToken.intValue
-                        scope.launch {
-                            // 等这一行真录进图层（draw 期回写 recordedToken）再抛快照
-                            while (recordedToken[0] < token) withFrameNanos { }
-                            onCourseClick(
-                                sameNameCourses,
-                                position.x,
-                                position.y,
-                                size.width.toFloat(),
-                                size.height.toFloat(),
-                                TransitionLayerSnapshot(cardLayer),
-                                course.id,
-                                pageWeek,
-                            )
-                            captureToken.intValue = 0
-                        }
-                    }
-                }
-        ) {
-            CourseItemContent(course, sectionTimes, pageDate, showClassroom, showTeacher)
-        }
+        CourseItemContent(course, sectionTimes, pageDate, showClassroom, showTeacher, pageWeek)
     }
 }

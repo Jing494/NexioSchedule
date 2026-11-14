@@ -39,13 +39,13 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
-import top.yukonga.miuix.kmp.color.api.toHsv
-import top.yukonga.miuix.kmp.color.space.Hsv
-import top.yukonga.miuix.kmp.squircle.squircleBackground
-import top.yukonga.miuix.kmp.squircle.squircleClip
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
+import top.yukonga.miuix.kmp.color.api.toHsv
+import top.yukonga.miuix.kmp.color.space.Hsv
+import com.haooz.softglass.shape.continuousBackground
+import com.haooz.softglass.shape.continuousClip
 
 /** Color palette for selecting a color from a grid of HSV values. */
 @Composable
@@ -111,7 +111,7 @@ fun ColorPalette(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(26.dp)
-                    .squircleBackground(
+                    .continuousBackground(
                         color = lastEmittedColor ?: color,
                         cornerRadius = 13.dp,
                     ),
@@ -185,7 +185,7 @@ private fun PaletteCanvas(
 
     Box(
         modifier = Modifier
-            .squircleClip(cornerRadius)
+            .continuousClip(cornerRadius)
             .onGloballyPositioned { sizePx = it.size }
             .pointerInput(rows, hueColumns, includeGrayColumn, isRtl) {
                 awaitEachGesture {

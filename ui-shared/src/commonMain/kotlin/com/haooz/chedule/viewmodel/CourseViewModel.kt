@@ -1,26 +1,25 @@
 package com.haooz.chedule.viewmodel
 
-import com.haooz.chedule.data.formatSlashDate
-
-import com.haooz.chedule.data.minusDays
-import com.haooz.chedule.data.todayLocalDate
-import kotlinx.datetime.isoDayNumber
-
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.haooz.chedule.data.Course
-import com.haooz.chedule.data.CourseRepository
-import com.haooz.chedule.data.TeachingWeekReorganization
-import com.haooz.chedule.data.ScheduleEffects
-import com.haooz.chedule.data.ioDispatcher
-import com.haooz.chedule.data.randomUuidV4
-import com.haooz.chedule.data.synchronizedOn
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.model.TeachingWeekReorganization
+import com.haooz.chedule.data.platform.ScheduleEffects
+import com.haooz.chedule.data.platform.ioDispatcher
+import com.haooz.chedule.data.platform.randomUuidV4
+import com.haooz.chedule.data.platform.synchronizedOn
+import com.haooz.chedule.data.repo.CourseRepository
+import com.haooz.chedule.data.util.formatSlashDate
+import com.haooz.chedule.data.util.minusDays
+import com.haooz.chedule.data.util.todayLocalDate
+import com.haooz.chedule.ui.utils.FeatureLog
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.isoDayNumber
 
 /**
  * ⚠ 原继承 `AndroidViewModel(application)` 只为拿 `Context` 调提醒/小组件/手表，现三者全走 `:core` 的 [ScheduleEffects] 出口（由 `NexioApplication` 注入 `AndroidScheduleEffects`），不再需要 Application。
@@ -78,6 +77,10 @@ class CourseViewModel : ViewModel() {
     /** 空白格添加时的默认周次；调课日应传 followWeek（被调来源周） */
     private val _addDialogDefaultWeeks = MutableStateFlow<Set<Int>>(emptySet())
     val addDialogDefaultWeeks: StateFlow<Set<Int>> = _addDialogDefaultWeeks.asStateFlow()
+
+    /** 添加时的默认自定义时间（时间轴空白点开）：非空即弹窗以自定义时间模式打开 */
+    private val _addDialogCustomTime = MutableStateFlow<Pair<String, String>?>(null)
+    val addDialogCustomTime: StateFlow<Pair<String, String>?> = _addDialogCustomTime.asStateFlow()
 
     private val _showJumpWeekDialog = MutableStateFlow(false)
     val showJumpWeekDialog: StateFlow<Boolean> = _showJumpWeekDialog.asStateFlow()
@@ -235,7 +238,7 @@ class CourseViewModel : ViewModel() {
     // Rebase the semester start so the selected teaching week remains stable under merge rules.
     fun setCurrentWeek(week: Int) {
         synchronizedOn(courseRefreshLock) {
-            com.haooz.chedule.ui.utils.FeatureLog.t("课表", "set_week", "week=$week")
+            FeatureLog.t("课表", "set_week", "week=$week")
             val oldWeek = _currentWeek.value
             val newStartDate = if (week != oldWeek) {
                 val semesterStartDate = LocalDate.parse(_classStartTime.value.replace("/", "-"))
@@ -422,6 +425,8 @@ class CourseViewModel : ViewModel() {
         startSection: Int? = null,
         endSection: Int? = null,
         defaultWeeks: Set<Int> = emptySet(),
+        customStartTime: String? = null,
+        customEndTime: String? = null,
     ) {
         _editingCourse.value = null
         _selectedDay.value = dayOfWeek ?: 0
@@ -430,12 +435,19 @@ class CourseViewModel : ViewModel() {
             _selectedEndSection.value = endSection ?: startSection
         }
         _addDialogDefaultWeeks.value = defaultWeeks
+        _addDialogCustomTime.value =
+            if (customStartTime != null && customEndTime != null) {
+                customStartTime to customEndTime
+            } else {
+                null
+            }
         _showAddDialog.value = true
     }
 
     fun showEditDialog(course: Course) {
         _editingCourse.value = course
         _addDialogDefaultWeeks.value = emptySet()
+        _addDialogCustomTime.value = null
         _showAddDialog.value = true
     }
 
@@ -443,6 +455,7 @@ class CourseViewModel : ViewModel() {
         _showAddDialog.value = false
         _editingCourse.value = null
         _addDialogDefaultWeeks.value = emptySet()
+        _addDialogCustomTime.value = null
     }
 
     fun showJumpWeekDialog() {

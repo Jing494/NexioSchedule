@@ -9,7 +9,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -28,6 +27,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.BasicComponentColors
 import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
@@ -35,6 +35,8 @@ import top.yukonga.miuix.kmp.basic.DropdownArrowEndAction
 import top.yukonga.miuix.kmp.basic.DropdownColors
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownEntry
+import top.yukonga.miuix.kmp.interactive.DropdownMaskMode
+import top.yukonga.miuix.kmp.interactive.DropdownPanelDragSelectState
 import top.yukonga.miuix.kmp.popup.OverlayDropdownPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -106,7 +108,7 @@ fun OverlayDropdownMenu(
     renderInRootScaffold: Boolean = true,
     collapseOnSelection: Boolean = true,
     onExpandedChange: ((Boolean) -> Unit)? = null,
-    liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = null,
+    liquidGlassBackdrop: com.haooz.softglass.backdrop.GlassBackdrop? = null,
     collapseExtra: DpSize = DefaultCollapseExtra,
 ) {
     val entries = remember(entry) { listOf(entry) }
@@ -151,7 +153,7 @@ fun OverlayDropdownMenu(
     renderInRootScaffold: Boolean = true,
     collapseOnSelection: Boolean = entries.size <= 1,
     onExpandedChange: ((Boolean) -> Unit)? = null,
-    liquidGlassBackdrop: com.kyant.backdrop.Backdrop? = null,
+    liquidGlassBackdrop: com.haooz.softglass.backdrop.GlassBackdrop? = null,
     collapseExtra: DpSize = DefaultCollapseExtra,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -195,7 +197,10 @@ fun OverlayDropdownMenu(
 
     // 跟手滑选状态。必须在本组件创建（不能由弹窗内容层自建）：弹窗在 Popup 独立
     // 窗口里，要跨窗口回传选中项，只能靠调用方持有的同一个实例
-    val dragSelectState = remember { DropdownPanelDragSelectState() }
+    // 与 LiquidGlassDropdownMenu 同款：整块遮罩在选项间连贯滑动
+    val dragSelectState = remember {
+        DropdownPanelDragSelectState(maskMode = DropdownMaskMode.Sliding)
+    }
 
     val nonEmptyEntries = entries.filter { it.items.isNotEmpty() }
     val hasEntries = nonEmptyEntries.isNotEmpty()

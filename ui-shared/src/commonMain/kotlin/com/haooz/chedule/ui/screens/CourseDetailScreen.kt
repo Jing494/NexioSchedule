@@ -1,12 +1,6 @@
 /** 课程详情页面 */
 package com.haooz.chedule.ui.screens
 
-import androidx.compose.ui.text.style.TextAlign
-import com.haooz.chedule.data.formatMonthDayShort
-
-import com.haooz.chedule.data.todayLocalDate
-import kotlinx.datetime.LocalDate
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,17 +10,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import com.haooz.chedule.ui.components.text.material.Text as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,6 +32,8 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -46,39 +41,49 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.haooz.chedule.data.Course
-import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBar
+import com.haooz.chedule.data.holiday.TeachingWeekReorganizationRule
+import com.haooz.chedule.data.model.Course
+import com.haooz.chedule.data.model.TeachingWeekReorganization
+import com.haooz.chedule.data.util.formatMonthDayShort
+import com.haooz.chedule.data.util.todayLocalDate
+import com.haooz.chedule.i18n.CommonStr
 import com.haooz.chedule.ui.basic.LiquidTopBarButton
-import top.yukonga.miuix.kmp.layout.ProgressiveBlurTopBar
-import top.yukonga.miuix.kmp.layout.rememberSharedScrollBehavior
+import com.haooz.chedule.ui.components.text.material.Text as Text
+import com.haooz.chedule.ui.effects.motion.morphClip
+import com.haooz.chedule.ui.effects.motion.rememberMorphTransition
+import com.haooz.chedule.ui.utils.ScreenCornerRadiiPx
 import com.haooz.chedule.ui.utils.TransitionLayerImage
 import com.haooz.chedule.ui.utils.TransitionLayerSnapshot
 import com.haooz.chedule.ui.utils.blockTouchPassThrough
-import com.haooz.chedule.ui.utils.isAppDarkTheme
 import com.haooz.chedule.ui.utils.hostVerticalBarEdge
-import top.yukonga.miuix.kmp.utils.overScrollVertical
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.haooz.chedule.ui.utils.ScreenCornerRadiiPx
-import com.kyant.capsule.ContinuousRoundedRectangle
+import com.haooz.chedule.ui.utils.isAppDarkTheme
+import com.haooz.chedule.ui.utils.screenWidthDp
+import com.haooz.softglass.backdrop.backdrops.layerBackdrop as liquidGlassLayerBackdrop
+import com.haooz.softglass.backdrop.backdrops.rememberLayerBackdrop
+import com.haooz.softglass.shape.ContinuousRoundedRectangle
+import kotlin.math.abs
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
+import kotlinx.datetime.LocalDate
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ChevronBackward
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import kotlin.math.abs
-import kotlin.time.Duration.Companion.milliseconds
-import androidx.compose.ui.graphics.Color as ComposeColor
-import com.kyant.backdrop.backdrops.layerBackdrop as liquidGlassLayerBackdrop
+import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBar
+import top.yukonga.miuix.kmp.layout.ProgressiveBlurTopBar
 import top.yukonga.miuix.kmp.layout.isTabletWidth
-import com.haooz.chedule.ui.utils.screenWidthDp
-import com.haooz.chedule.ui.effects.motion.rememberMorphTransition
+import top.yukonga.miuix.kmp.layout.rememberSharedScrollBehavior
+import top.yukonga.miuix.kmp.layout.TopBarMaterialThreshold
+import top.yukonga.miuix.kmp.layout.rememberTopBarMaterialState
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 
 @Composable
@@ -95,10 +100,12 @@ fun CourseDetailScreen(
     cardSnapshot: TransitionLayerSnapshot?,
     sectionTimes: Map<Int, String>,
     classStartTime: String,
-    teachingWeekReorganizations: List<com.haooz.chedule.data.TeachingWeekReorganizationRule>,
+    teachingWeekReorganizations: List<TeachingWeekReorganizationRule>,
     // 点击来源所在的周次（今日页=当前浏览日期所在周，bottomsheet=当前查看周），
     // 进入后自动滚动到对应周分组；<=0 表示不滚动。
     targetWeek: Int = 0,
+    /** false = 先以起点卡态上屏，等宿主持源卡藏掉、整页快照就位后再放行动画 */
+    morphStarted: Boolean = true,
     onBackStart: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -155,6 +162,7 @@ fun CourseDetailScreen(
         startCornerRadiusDp = 20f,
         onBackStart = onBackStart,
         onBack = onBack,
+        autoStart = morphStarted,
     )
 
 
@@ -164,19 +172,21 @@ fun CourseDetailScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                if (isDark) ComposeColor(0xFF2C2C2C).copy(alpha = morph.state.value.bgAlpha)
-                else ComposeColor.Black.copy(alpha = morph.state.value.bgAlpha)
-            )
+            .drawBehind {
+                val alpha = morph.state.value.bgAlpha
+                drawRect(
+                    if (isDark) ComposeColor(0xFF2C2C2C).copy(alpha = alpha)
+                    else ComposeColor.Black.copy(alpha = alpha)
+                )
+            }
             // 只挡下层穿透、不 consume：consumeAllTouches 会连 LazyColumn 拖动一起吃掉
             .blockTouchPassThrough()
     ) {
-        val s = morph.state.value
-
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
+                    val s = morph.state.value
                     clip = false
                     transformOrigin = TransformOrigin(s.anchorX, 0.5f)
                     scaleX = s.scale
@@ -184,17 +194,17 @@ fun CourseDetailScreen(
                     translationX = s.translationX
                     translationY = s.translationY
                 }
-                .clip(morph.clipShape)
+                .morphClip(morph)
                 .background(MiuixTheme.colorScheme.background)
         ) {
-            if (cardSnapshot != null && s.snapshotAlpha > 0f) {
+            if (cardSnapshot != null) {
                 TransitionLayerImage(
                     snapshot = cardSnapshot,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .fillMaxWidth()
                         .clip(ContinuousRoundedRectangle(20.dp))
-                        .graphicsLayer { alpha = s.snapshotAlpha },
+                        .graphicsLayer { alpha = morph.state.value.snapshotAlpha },
                     contentScale = ContentScale.FillWidth,
                     alignment = Alignment.TopStart,
                 )
@@ -203,8 +213,10 @@ fun CourseDetailScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = s.contentAlpha }
+                    .graphicsLayer { alpha = morph.state.value.contentAlpha }
             ) {
+                // 按钮玻璃走全站统一判据（本页遮罩常驻，不接 maskAlpha）
+                val material = rememberTopBarMaterialState(scrollBehavior)
                 Scaffold(
                     topBar = {
                         ProgressiveBlurTopBar(
@@ -218,13 +230,14 @@ fun CourseDetailScreen(
                                     WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
                                 ),
                                 scrollBehavior = scrollBehavior,
+                                materialState = material,
                                 contentPadding = {},
                                 startAction = { backdropAlpha, shadowAlpha ->
                                     LiquidTopBarButton(
                                         onClick = { morph.close() },
                                         backdrop = liquidGlassBackdrop,
                                         icon = MiuixIcons.ChevronBackward,
-                                        contentDescription = "返回",
+                                        contentDescription = CommonStr.back(),
                                         performHapticFeedback = false,
                                         iconSize = 25.dp,
                                         iconOffset = DpOffset(x = (-2).dp, y = 0.dp),
@@ -240,16 +253,21 @@ fun CourseDetailScreen(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .then(
-                                    Modifier.liquidGlassLayerBackdrop(
-                                        liquidGlassBackdrop
-                                    )
+                                    // 无材质档：玻璃全关，采样录屏层不挂
+                                    if (com.haooz.chedule.ui.utils.AppMaterialSettings.isNoneTier()) {
+                                        Modifier
+                                    } else {
+                                        Modifier.liquidGlassLayerBackdrop(
+                                            liquidGlassBackdrop
+                                        )
+                                    }
                                 )
                         ) {
                             val listState = rememberLazyListState()
                             // 程序化滚动不走 nestedScroll：监听 listState 同步 contentOffset 与标题栏
                             var isProgrammaticScroll by remember { mutableStateOf(false) }
                             var lastCollapsed by remember { mutableStateOf(false) }
-                            val scrollThresholdPx = with(density) { 10.dp.toPx() }
+                            val scrollThresholdPx = with(density) { TopBarMaterialThreshold.toPx() }
                             LaunchedEffect(listState) {
                                 snapshotFlow {
                                     listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
@@ -347,7 +365,7 @@ fun CourseDetailScreen(
                                         item {
                                             Column {
                                                 SmallTitle(
-                                                    text = "第${week}周",
+                                                    text = CommonStr.weekN(week),
                                                 )
                                                 Card(
                                                     modifier = Modifier.fillMaxWidth(),
@@ -360,20 +378,20 @@ fun CourseDetailScreen(
                                                     ) {
                                                         weekCourses.forEachIndexed { index, (_, course) ->
                                                             val dayName = when (course.dayOfWeek) {
-                                                                1 -> "周一"
-                                                                2 -> "周二"
-                                                                3 -> "周三"
-                                                                4 -> "周四"
-                                                                5 -> "周五"
-                                                                6 -> "周六"
-                                                                7 -> "周日"
-                                                                else -> "未知"
+                                                                1 -> CommonStr.weekdayMon()
+                                                                2 -> CommonStr.weekdayTue()
+                                                                3 -> CommonStr.weekdayWed()
+                                                                4 -> CommonStr.weekdayThu()
+                                                                5 -> CommonStr.weekdayFri()
+                                                                6 -> CommonStr.weekdaySat()
+                                                                7 -> CommonStr.weekdaySun()
+                                                                else -> CommonStr.unknown()
                                                             }
-                                                            val courseDate = com.haooz.chedule.data.TeachingWeekReorganization.dateForPosition(
+                                                            val courseDate = TeachingWeekReorganization.dateForPosition(
                                                                 semesterStartDate, week, course.dayOfWeek, teachingWeekReorganizations,
                                                             ) ?: return@forEachIndexed
                                                             val dateStr = courseDate.formatMonthDayShort()
-                                                            val sectionText = course.getTimeDisplayText()
+                                                            val sectionText = course.timeDisplayTextLocalized()
                                                             val timeStart = sectionTimes[course.startSection]?.split("-")?.firstOrNull() ?: ""
                                                             val timeEnd = sectionTimes[course.endSection]?.split("-")?.lastOrNull() ?: ""
                                                             val timeText = if (course.hasValidCustomTime()) {
