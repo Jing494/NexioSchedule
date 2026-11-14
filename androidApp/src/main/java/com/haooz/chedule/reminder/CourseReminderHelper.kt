@@ -1882,21 +1882,22 @@ object CourseReminderHelper {
         startMillis: Long,
         endMillis: Long,
     ) {
+        // KeyValueEditor 不支持链式调用（每条 put 返回 Unit），必须逐条写
         AppStorage.store("countdown_state").edit {
             putBoolean("active", true)
-                .putBoolean("test_mode", true)
-                .putBoolean("in_class_active", false)
-                .putString("courseName", courseName)
-                .putString("classroom", classroom)
-                .putString("section", section)
-                .putString("startTime", startTime)
-                .putLong("startMillis", startMillis)
-                .putLong("endMillis", endMillis)
-                .putInt("notificationId", liveCountdownId(true))
-                .remove("last_displayed_minutes")
-                .remove("last_in_class_minutes")
-                .remove("last_in_class_progress")
-                .remove("started_shown")
+            putBoolean("test_mode", true)
+            putBoolean("in_class_active", false)
+            putString("courseName", courseName)
+            putString("classroom", classroom)
+            putString("section", section)
+            putString("startTime", startTime)
+            putLong("startMillis", startMillis)
+            putLong("endMillis", endMillis)
+            putInt("notificationId", liveCountdownId(true))
+            remove("last_displayed_minutes")
+            remove("last_in_class_minutes")
+            remove("last_in_class_progress")
+            remove("started_shown")
         }
     }
 
