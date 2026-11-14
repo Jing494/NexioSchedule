@@ -36,11 +36,20 @@ class BackupScopeTest {
         repository = CourseRepository.getInstance()
         repository.invalidateAllCaches()
         freshState("备份范围")
+        // ⚠ 断言用的键必须**真的被写过**：KeyValueStore 里没有这个键时导出结果里也不会有它。
+        // 上一版测试忘了写后四个，断言一直在测"空状态"，看着像产品缺陷、实际是测试自己的疏漏。
         repository.setPreClassReminder(true)
         repository.setPreClassReminderMinutes(15)
+        repository.setNextDayReminder(true)
+        repository.setNextDayReminderHour(21)
+        repository.setNextDayReminderMinute(30)
         repository.setIslandNotification(true)
         repository.setClassDndEnabled(true)
         repository.setClassDndMode(2)
+        repository.setWidgetPaddingMode(1)
+        repository.setDefaultHomepage("今日")
+        repository.setShiftModeEnabled(true)
+        repository.setShiftSelectedSchedules(listOf("备份范围"))
     }
 
     private fun freshState(name: String) {
