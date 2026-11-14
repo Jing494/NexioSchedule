@@ -1376,13 +1376,15 @@ fun ReminderTestRoute(
     DocumentPageScaffold(
         title = "通知与超级岛测试",
         onBack = { router.popBack() },
-    ) { scrollBehavior, _ ->
+    ) { scrollBehavior, backdrop ->
         ReminderTestScreen(
             channelLabel = channelLabel,
             groups = groups,
             onRefreshChannel = onRefreshChannel,
             onSend = onSend,
             scrollBehavior = scrollBehavior,
+            // 1.7.x：卡片换成柔光玻璃，采样源由本路由提供（与其它文档页同一份）
+            liquidGlassBackdrop = backdrop,
         )
     }
 }
