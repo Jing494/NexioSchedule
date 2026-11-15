@@ -313,7 +313,7 @@ CHECKS = [
     (
         "更新包必须校验本 fork 签名（防替换包）",
         F_UPDCHECK,
-        [r'const val FORK_CERT_SHA256 = "a7fdc7b704db284774a0124fb13495b5e6ee4a05f6430547ad8ec21aba5ac938"'],
+        [r'const val FORK_CERT_SHA256 = "c204eddd45afcf04f6e455bb0c866b3076895adca2875c889bcccc43f79a8bc3"'],
         [],
     ),
     (
@@ -326,7 +326,7 @@ CHECKS = [
         "workflow 的 EXPECT_CERT 必须与 app 里的 FORK_CERT_SHA256 是同一把证书"
         "（改了一处忘了另一处 = 更新校验会失效）",
         WF_REL,
-        [r"EXPECT_CERT: a7fdc7b704db284774a0124fb13495b5e6ee4a05f6430547ad8ec21aba5ac938"],
+        [r"EXPECT_CERT: c204eddd45afcf04f6e455bb0c866b3076895adca2875c889bcccc43f79a8bc3"],
         [],
     ),
     (

@@ -45,7 +45,7 @@ internal object UpdateChecker {
      * 用途：更新包安装前校验「是不是本 fork 签的」，挡住被替换的包/半成品。
      * 必须与 .github/workflows 里的 EXPECT_CERT 一致（tools/ci_check.py 会钉住两边）。
      */
-    const val FORK_CERT_SHA256 = "a7fdc7b704db284774a0124fb13495b5e6ee4a05f6430547ad8ec21aba5ac938"
+    const val FORK_CERT_SHA256 = "c204eddd45afcf04f6e455bb0c866b3076895adca2875c889bcccc43f79a8bc3"
 
     /** 本机当前安装包的签名证书 SHA-256（小写十六进制）；取不到返回空串（调用方按"不匹配"处理） */
     fun ownSignerSha256(context: Context): String {

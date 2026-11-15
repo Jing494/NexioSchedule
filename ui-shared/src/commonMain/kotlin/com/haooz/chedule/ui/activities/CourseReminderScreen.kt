@@ -2106,7 +2106,9 @@ private fun ReminderHealthCard(controller: ReminderController) {
 
     Card(
         cornerRadius = 20.dp,
-        modifier = Modifier.fillMaxWidth(),
+        // 与页内其它卡同一条约定：本页列表用 Arrangement.Top，间距一律由卡片自己的
+        // bottom padding 提供。漏了这条，体检卡就会和下面的「提醒详情」粘在一起。
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
         insideMargin = PaddingValues(0.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
