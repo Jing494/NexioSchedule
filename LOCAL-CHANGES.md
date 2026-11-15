@@ -701,3 +701,28 @@ merge-base 21919ead（1.6.7-1025）→ 上游 2659d244（1.7.1-1115）
 分支 sync/upstream-2659d244 → 合并提交 222c542b，编译修复 f5f322b0
 ```
 
+
+---
+
+## 三十六、gh31 → gh32：文档页 content 里不能画玻璃卡（2026-11-15）
+
+### 一句话
+
+「通知与超级岛测试」页在 gh31 真机**点进去即闪退**：根因是我在 content 里用
+`softGlassBackdrop` 自采样了正在录制 content 的那一层。
+
+### 为什么这条要写进门禁（而不是只修一次）
+
+它**不是**「写错了一行 API」，而是**结构约束**：`DocumentPageScaffold` 的 content
+整块挂在 `layerBackdrop(liquidGlassBackdrop)` 里，任何在 content 内采样该 backdrop
+的玻璃节点都是自引用。全仓原本没有一处这么干（`FeedbackScreen` 的注释甚至写明了规则），
+是我加进去的。下一次只要有人「顺手在文档页卡片上加玻璃」就会再崩一次，
+所以第 47 条门禁守这个结构。
+
+### 改法（与全站一致）
+
+| 位置 | 改动 |
+|---|---|
+| `ReminderTestScreen.kt` | 卡片回 miuix `Card`；保留通道色条 / 状态点 / 按压反馈 / 连续卡 |
+| `AppRoutes.kt` `ReminderTestRoute` | content lambda 不再接 `backdrop`（改 `_`），并在原地写原因 |
+| 顶部内边距 | 回 `Scaffold.calculateTopPadding() + CollapsedHeight + 20dp`（上一版跳过 Scaffold 会吃掉状态栏） |

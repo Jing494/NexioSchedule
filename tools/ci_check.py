@@ -383,6 +383,20 @@ CHECKS = [
         [],
     ),
     (
+        "文档页 content 里不许画玻璃卡（自采样会崩）",
+        # gh31 真机崩溃：ReminderTestScreen 在 DocumentPageScaffold 的 content 里调用
+        # softGlassBackdrop(backdrop = 同一个 liquidGlassBackdrop)，而那层正是录制 content
+        # 自己的 layerBackdrop → 玻璃采到自己 → 直接崩。softglass README §六 第 1 条：
+        # 「采样层不能采样自己」。全仓正确的用法只有两处：
+        #   · CourseCard：跑在课表页自己的采样层上（采壁纸金字塔 / 页面组合层），不是自己；
+        #   · 顶栏按钮 / 下拉面板 / 对话框：在录制层**之外**。
+        # 所以这里守两条：① softGlassBackdrop 的调用点只能是 CourseCard 与包装层本身；
+        # ② ReminderTestRoute 不许再把 backdrop 传进 content。
+        "ui-shared/src/commonMain/kotlin/com/haooz/chedule/ui/navigation/AppRoutes.kt",
+        [r"ReminderTestScreen\("],
+        [r"ReminderTestScreen\([^)]*liquidGlassBackdrop"],
+    ),
+    (
         "本复刻合并指南不能被合并删掉",
         "LOCAL-CHANGES.md",
         [r"本地定制改动清单"],
