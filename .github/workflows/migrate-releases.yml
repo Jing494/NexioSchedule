@@ -1,0 +1,125 @@
+# 一次性：把旧发布仓库的历史 Release（APK + sha256）迁到本仓库
+#
+# 为什么用 workflow 而不是本地：本地上传 4.5MB 资产到 uploads.github.com 会 TLS 中断
+# （api.github.com 正常，upload 域名抖），跑在 runner 上则没有这个问题。
+#
+# 用法：Actions → 迁移历史 Release → Run workflow
+#      手动触发一次即可，跑完把本文件删掉（或保留也无害，它只在 dispatch 时执行）。
+name: 迁移历史 Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: '源仓库（owner/name）'
+        default: 'Jing494/NexioSchedule'
+        type: string
+      only_tag:
+        description: '只迁某一个 tag（留空 = 全部）'
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: migrate-releases
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+      SRC_REPO: ${{ inputs.source_repo }}
+      ONLY_TAG: ${{ inputs.only_tag }}
+      DST_REPO: ${{ github.repository }}
+    steps:
+      - name: 迁移 Release 与资产
+        run: |
+          set -uo pipefail
+          echo "从 $SRC_REPO 迁到 $DST_REPO（only_tag='${ONLY_TAG}'）"
+
+          # 目标已有 tag 列表：已存在的跳过（幂等，可重复跑）
+          EXIST=$(gh release list --repo "$DST_REPO" --limit 200 --json tagName --jq '.[].tagName' 2>/dev/null || true)
+
+          # 按发布时间**从旧到新**，让新仓库的列表顺序与旧仓库一致
+          gh api "repos/$SRC_REPO/releases?per_page=100" \
+            --jq 'sort_by(.published_at) | .[] | @base64' > /tmp/releases.b64
+
+          while read -r line; do
+            [ -z "$line" ] && continue
+            R=$(printf '%s' "$line" | base64 -d)
+            TAG=$(printf '%s' "$R" | jq -r .tag_name)
+            [ -n "$ONLY_TAG" ] && [ "$TAG" != "$ONLY_TAG" ] && continue
+            if printf '%s\n' "$EXIST" | grep -qx "$TAG"; then
+              echo "⏭  $TAG 已存在，跳过"
+              continue
+            fi
+
+            NAME=$(printf '%s' "$R" | jq -r .name)
+            BODY=$(printf '%s' "$R" | jq -r '.body // ""')
+            PRE=$(printf '%s' "$R" | jq -r .prerelease)
+            echo "→ 创建 $TAG（prerelease=$PRE）"
+
+            printf '%s' "$BODY" > /tmp/body.md
+            RID=$(gh release create "$TAG" --repo "$DST_REPO" --title "$NAME" \
+                    --notes-file /tmp/body.md \
+                    $( [ "$PRE" = "true" ] && echo --prerelease ) \
+                    --json databaseId --jq .databaseId)
+            [ -n "$RID" ] || { echo "::error::$TAG 创建失败"; exit 1; }
+
+            # 逐个资产：下载 → 上传 → 校验大小
+            printf '%s' "$R" | jq -r '.assets[] | @base64' | while read -r aline; do
+              [ -z "$aline" ] && continue
+              A=$(printf '%s' "$aline" | base64 -d)
+              AN=$(printf '%s' "$A" | jq -r .name)
+              AS=$(printf '%s' "$A" | jq -r .size)
+              AU=$(printf '%s' "$A" | jq -r .url)
+              echo "   资产 $AN ($AS B)"
+
+              ok=0
+              for attempt in 1 2 3 4 5; do
+                # 用 API 的 asset 端点（带 octet-stream），303 会跟到真实 blob
+                if curl -sS -f -L --retry 3 --retry-delay 3 \
+                     -H "Authorization: Bearer $GH_TOKEN" \
+                     -H "Accept: application/octet-stream" \
+                     -o "/tmp/$AN" "$AU"; then
+                  GOT=$(stat -c%s "/tmp/$AN")
+                  if [ "$GOT" = "$AS" ]; then ok=1; echo "     下载 OK（$GOT B）"; break; fi
+                  echo "     大小不符：$GOT ≠ $AS（第 $attempt 次）"
+                else
+                  echo "     下载失败（第 $attempt 次）"
+                fi
+                sleep 5
+              done
+              [ "$ok" = "1" ] || { echo "::error::$AN 下载始终失败"; exit 1; }
+
+              case "$AN" in
+                *.apk) CT="application/vnd.android.package-archive" ;;
+                *)     CT="text/plain" ;;
+              esac
+              up=0
+              for attempt in 1 2 3 4 5; do
+                if gh release upload "$TAG" "/tmp/$AN" --repo "$DST_REPO" --clobber; then
+                  up=1; break
+                fi
+                echo "     上传失败（第 $attempt 次），重试…"; sleep 5
+              done
+              [ "$up" = "1" ] || { echo "::error::$AN 上传始终失败"; exit 1; }
+            done
+
+            # 核验：目标该 release 的资产数与源一致
+            SRC_N=$(printf '%s' "$R" | jq '.assets | length')
+            DST_N=$(gh api "repos/$DST_REPO/releases/$RID/assets" --jq 'length')
+            if [ "$SRC_N" = "$DST_N" ]; then
+              echo "✅ $TAG 资产数一致（$DST_N）"
+            else
+              echo "::error::$TAG 资产数不一致：源 $SRC_N / 目标 $DST_N"
+              exit 1
+            fi
+          done < /tmp/releases.b64
+
+          echo "全部完成。目标现有 Release："
+          gh release list --repo "$DST_REPO" --limit 200
