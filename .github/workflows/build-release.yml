@@ -15,14 +15,15 @@
 
 name: 同步上游并构建 Release APK
 
+# 频次：每天一次（原先每 6 小时）。
+#   降频原因：① 一次完整 Android 构建（Gradle + SDK 37）开销大，fork 仓库本就容易撞
+#     平台的风控/额度判定；② 上游一天也发不了几版，6 小时跑一次绝大多数在空转。
+#   手动 workflow_dispatch 不受影响，随时可以出包。
+#   ⚠ 注释必须写在 `on:` **之前**：写进 schedule 的列表项中间会把 YAML 结构弄坏，
+#     症状是 GitHub 压根不注册这个 workflow（不是报错，是静默不出现）。
 on:
   schedule:
-    # 频次：每天一次（原先每 6 小时）。
-    #   降频原因：① 一次完整 Android 构建（Gradle + SDK 37）开销大，
-    #   fork 仓库本就容易撞平台的风控/额度判定；② 上游一天也发不了几版，
-    #   6 小时跑一次绝大多数是在空转。手动 workflow_dispatch 不受影响，随时可以出包。
     - cron: '0 21 * * *'      # UTC 21:00 = 北京时间次日 05:00（夜里跑，不占白天）
-
   workflow_dispatch:
     inputs:
       dry_run:
