@@ -1376,15 +1376,16 @@ fun ReminderTestRoute(
     DocumentPageScaffold(
         title = "通知与超级岛测试",
         onBack = { router.popBack() },
-    ) { scrollBehavior, backdrop ->
+    ) { scrollBehavior, _ ->
+        // ⚠ 刻意不把 `backdrop` 传进 content：它正是录制 content 自己那一层，
+        // 在里面画玻璃卡就是自采样（softglass README §六 第 1 条：直接崩或全黑）。
+        // 文档页里玻璃只出现在顶栏按钮、下拉面板与对话框这些「录制层之外」的位置。
         ReminderTestScreen(
             channelLabel = channelLabel,
             groups = groups,
             onRefreshChannel = onRefreshChannel,
             onSend = onSend,
             scrollBehavior = scrollBehavior,
-            // 1.7.x：卡片换成柔光玻璃，采样源由本路由提供（与其它文档页同一份）
-            liquidGlassBackdrop = backdrop,
         )
     }
 }

@@ -38,13 +38,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.haooz.chedule.data.platform.showToast
-import com.haooz.chedule.ui.glass.ScheduleSoftGlassStyle
 import com.haooz.chedule.ui.components.text.material.Text
-import com.haooz.chedule.ui.utils.AppMaterialSettings
-import com.haooz.chedule.ui.utils.isAppDarkTheme
-import com.haooz.softglass.backdrop.GlassBackdrop
-import com.haooz.chedule.ui.components.softGlassBackdrop
 import com.haooz.softglass.shape.ContinuousRoundedRectangle
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.layout.CollapsibleTopAppBarDefaults
 import top.yukonga.miuix.kmp.layout.SharedScrollBehavior
 import top.yukonga.miuix.kmp.layout.collapsibleTopInset
@@ -79,7 +76,7 @@ data class ReminderTestGroup(
     val entries: List<ReminderTestEntry>,
 )
 
-/** 卡片圆角：与课表卡片同一档（20dp），视觉上一眼「同一套材质」。 */
+/** 卡片圆角：与课表卡片同一档（20dp），视觉上一眼「同一套器件」。 */
 private val CardCorner = 20.dp
 /** 行内左侧色条宽度。 */
 private val AccentBarWidth = 3.dp
@@ -93,18 +90,25 @@ private val AccentBarWidth = 3.dp
  * 通道（超级岛 / 原生实时动态）由主路径同一套判定决定，页面上直接显示出来，
  * 免得「点了没反应却不知道发去哪了」。
  *
- * ## 视觉（1.7.x 重做）
- * 上游这一轮把玻璃抽成了 :softglass 库，本页跟着换成**同一套材质语言**：
- * - 卡片走 `softGlassBackdrop`（实时录制采样），不再是纯色 `Card`；
+ * ## 视觉（1.7.x 重做，第二版）
+ * - 卡片走 miuix `Card`（与备份、导入导出、提醒设置这些**同为文档页**的页面一致）；
  * - 每个场景带一条**通道色条**（岛=靛蓝 / 普通通知=灰），扫一眼就知道发去哪；
- * - 按压有明确的缩放与高光，点了到底有没有反应不再靠猜；
- * - 无材质档 / 无 shader 时自动退回实色（与 `AppMaterialSettings` 同一套判定）。
+ * - 行按压有缩放 + 触感反馈，点了到底有没有反应不再靠猜；
+ * - 顶部通道卡再加一个状态点，与色条同一套语义。
+ *
+ * ## 为什么这里**不**用 softglass（第一版崩在这）
+ * 本页挂在 `DocumentPageScaffold` 的 `content` 里，而那个 content 正被
+ * `layerBackdrop(liquidGlassBackdrop)` 整块录进采样层。在 content 里画玻璃卡 =
+ * 玻璃去采「正在录制自己」的那一层，softglass README §六 第 1 条写得很直白：
+ * **采样层不能采样自己，包在同一层里就是自采样，直接崩或画面全黑。**
+ * 全仓的用法都是「玻璃件画在录制层之外」：顶栏按钮、下拉面板、对话框、
+ * 长按浮层的课程卡（采的是页面层的组合采样源）。文档页的 content 里没有任何一处玻璃卡，
+ * 本页第一版是唯一一个 —— 真机点进去即崩，改回与全站一致的做法。
  *
  * @param channelLabel 当前实际生效的通道文案（宿主判定，与主路径一致）
  * @param groups 场景分组；空列表 = 该平台没有可测场景（桌面/iOS）
  * @param onRefreshChannel 重新读取通道，返回新的文案
  * @param onSend 点一条场景：宿主按 [ReminderTestEntry.id] 调主路径发送函数
- * @param liquidGlassBackdrop 玻璃采样源（宿主提供）；null = 无玻璃，卡片退回实色
  */
 @Composable
 fun ReminderTestScreen(
@@ -113,12 +117,14 @@ fun ReminderTestScreen(
     onRefreshChannel: () -> String,
     onSend: (ReminderTestEntry) -> Unit,
     scrollBehavior: SharedScrollBehavior? = null,
-    liquidGlassBackdrop: GlassBackdrop? = null,
 ) {
     // 通道是设置项的派生值：进页面读一次，另给一个「重新读取」入口
     var channel by remember(channelLabel) { mutableStateOf(channelLabel) }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // Scaffold 只为了拿状态栏内边距：DocumentPageScaffold 的 content 是整屏摆放的
+    // （顶栏叠在内容之上），页内必须自己让出状态栏 + 折叠顶栏，否则第一张卡会被胶囊顶栏压住。
+    // 与备份 / 导入导出 / 提醒设置这些文档页同一套算法。
+    Scaffold(topBar = {}) { paddingValues ->
         val listState = rememberLazyListState()
         LazyColumn(
             state = listState,
@@ -132,8 +138,9 @@ fun ReminderTestScreen(
                 ),
             contentPadding = PaddingValues(
                 start = 16.dp,
-                // 顶栏折叠高度 + 呼吸：既不被胶囊顶栏盖住，也不让第一张卡贴边
-                top = CollapsibleTopAppBarDefaults.CollapsedHeight + 20.dp,
+                // 状态栏 + 折叠态顶栏高度 + 呼吸：既不被胶囊顶栏盖住，也不让第一张卡贴边
+                top = paddingValues.calculateTopPadding() +
+                    CollapsibleTopAppBarDefaults.CollapsedHeight + 20.dp,
                 end = 16.dp,
                 bottom = 120.dp,
             ),
@@ -141,12 +148,11 @@ fun ReminderTestScreen(
         ) {
             if (groups.isEmpty()) {
                 // 该平台没有可测场景（桌面/iOS）：只给一句说明，别渲染一个空通道卡片
-                item(key = "empty") { ReminderTestEmptyHint(liquidGlassBackdrop) }
+                item(key = "empty") { ReminderTestEmptyHint() }
             } else {
                 item(key = "channel") {
                     ReminderTestChannelCard(
                         channel = channel,
-                        backdrop = liquidGlassBackdrop,
                         onRefresh = { channel = onRefreshChannel() },
                     )
                 }
@@ -156,7 +162,6 @@ fun ReminderTestScreen(
                         ReminderTestScenarioCard(
                             entries = group.entries,
                             channel = channel,
-                            backdrop = liquidGlassBackdrop,
                             onSend = onSend,
                         )
                     }
@@ -168,59 +173,28 @@ fun ReminderTestScreen(
 }
 
 /**
- * 玻璃卡片壳：本页所有卡片共用。
+ * 卡片壳：本页所有卡片共用，只负责圆角与底色。
  *
- * 两条硬约束（都是踩过的坑，与课表卡片同一套口径）：
- * 1. `shape` / `style` 必须 **remember 出稳定引用** —— drawBackdrop 按引用比较，
- *    每次重组新建会让采样层整块重录；
- * 2. 无材质档 / 没给采样源 → 直接画实色，不挂玻璃节点。
- *
- * 滑动降级系数**不用在这里读**：`SoftGlassSurface` 内部已在绘制期把它乘进样式
- * （`withGlassPerf()`，静态与实时两条路径共用），本页作为消费者不必重复一遍 ——
- * 重复读反而多一处"忘了进 remember 键"的风险。
+ * 用 `Card` 而不是自绘表面：文档页的视觉基线就是它，备份 / 导入导出 / 提醒设置都这样，
+ * 换主题、换莫奈配色时不需要本页再跟一遍。
  */
 @Composable
-private fun GlassCard(
-    backdrop: GlassBackdrop?,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    val materialsOn = AppMaterialSettings.glassEffectsEnabled()
-    val isDark = isAppDarkTheme()
-    val shape = remember { ContinuousRoundedRectangle(CardCorner) }
-    val radiusPx = with(androidx.compose.ui.platform.LocalDensity.current) { CardCorner.toPx() }
-    val flatColor = remember(isDark) {
-        if (isDark) Color.White.copy(alpha = 0.06f) else Color.White.copy(alpha = 0.72f)
+private fun TestCard(content: @Composable () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        cornerRadius = CardCorner,
+        insideMargin = PaddingValues(0.dp),
+    ) {
+        content()
     }
-    val glassStyle = remember { ScheduleSoftGlassStyle }
-
-    val decorated = modifier
-        .fillMaxWidth()
-        .clip(shape)
-        .then(
-            if (materialsOn && backdrop != null) {
-                Modifier.softGlassBackdrop(
-                    backdrop = backdrop,
-                    shape = shape,
-                    style = glassStyle,
-                    radiusPx = radiusPx,
-                    blurSigmaPx = glassStyle.smallBlurRadius,
-                )
-            } else {
-                Modifier.background(flatColor, shape)
-            }
-        )
-
-    Box(modifier = decorated) { content() }
 }
 
 @Composable
 private fun ReminderTestChannelCard(
     channel: String,
-    backdrop: GlassBackdrop?,
     onRefresh: () -> Unit,
 ) {
-    GlassCard(backdrop) {
+    TestCard {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
@@ -320,15 +294,13 @@ private fun ReminderTestSectionTitle(text: String) {
 private fun ReminderTestScenarioCard(
     entries: List<ReminderTestEntry>,
     channel: String,
-    backdrop: GlassBackdrop?,
     onSend: (ReminderTestEntry) -> Unit,
 ) {
-    GlassCard(backdrop) {
+    TestCard {
         Column(modifier = Modifier.fillMaxWidth()) {
             entries.forEachIndexed { index, entry ->
                 ScenarioRow(
                     entry = entry,
-                    channel = channel,
                     onClick = {
                         onSend(entry)
                         val where = if (entry.liveContainer) channel else "普通通知"
@@ -353,7 +325,6 @@ private fun ReminderTestScenarioCard(
 @Composable
 private fun ScenarioRow(
     entry: ReminderTestEntry,
-    channel: String,
     onClick: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -416,8 +387,8 @@ private fun ScenarioRow(
 
 /** 空状态：桌面/iOS 没有 Android 的通知通道，给一句说明而不是白屏 */
 @Composable
-private fun ReminderTestEmptyHint(backdrop: GlassBackdrop?) {
-    GlassCard(backdrop) {
+private fun ReminderTestEmptyHint() {
+    TestCard {
         Text(
             text = "当前平台没有可用的测试场景：这些场景测的是 Android 的通知通道 / 超级岛 / 实时动态。",
             style = MiuixTheme.textStyles.body1.copy(fontSize = 12.sp),
