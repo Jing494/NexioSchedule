@@ -17,7 +17,12 @@ name: 同步上游并构建 Release APK
 
 on:
   schedule:
-    - cron: '0 */6 * * *'      # 每 6 小时自动跟一次上游：能干净合并就构建+发版，冲突/命中清单只开 Issue
+    # 频次：每天一次（原先每 6 小时）。
+    #   降频原因：① 一次完整 Android 构建（Gradle + SDK 37）开销大，
+    #   fork 仓库本就容易撞平台的风控/额度判定；② 上游一天也发不了几版，
+    #   6 小时跑一次绝大多数是在空转。手动 workflow_dispatch 不受影响，随时可以出包。
+    - cron: '0 21 * * *'      # UTC 21:00 = 北京时间次日 05:00（夜里跑，不占白天）
+
   workflow_dispatch:
     inputs:
       dry_run:
@@ -228,10 +233,19 @@ jobs:
           #   既触发不了"覆盖安装"，也会被下面的单调性守卫拦下。全局计数天然单调。
           # ★ 序号必须数**发版仓库**的 Release：用构建机仓库数会从 1 重新开始，
           #   既撞下面的单调性守卫，也会让 App 的更新检查认不出新版（详见 RELEASE_REPO 那段说明）。
-          COUNT_REPO="${RELEASE_REPO:-}"
+          COUNT_REPO="${RELEASE_REPO:-$GITHUB_REPOSITORY}"
+          # ★ 必须在计数**之前**切 token：github.token 只能读本仓库，
+          #   跨仓库读 releases 会 404 → 计数变 0 → 序号从 1 重来 → 撞单调性守卫。
+          #   （2026-11-15 构建机模式第一次跑就栽在这：占位符算成 gh6，历史已是 gh31。）
           if [ -n "$RELEASE_TOKEN" ]; then export GH_TOKEN="$RELEASE_TOKEN"; fi
-          GH_COUNT=$(gh api "repos/${COUNT_REPO:-$GITHUB_REPOSITORY}/releases?per_page=100" --paginate \
-            --jq '.[].tag_name' 2>/dev/null | sed 's/.*-gh//' | grep -cE '^[0-9]+$' || true)
+          # 先做一次显式可达性检查：读不到就**直接红**，不要静默算成 0
+          if ! gh api "repos/$COUNT_REPO" --jq .full_name >/dev/null 2>&1; then
+            echo "::error::读不到发版仓库 $COUNT_REPO 的 releases（token 权限不足？）—— 拒绝把序号从 1 重算"
+            exit 1
+          fi
+          GH_COUNT=$(gh api "repos/$COUNT_REPO/releases?per_page=100" --paginate \
+            --jq '.[].tag_name' | sed 's/.*-gh//' | grep -cE '^[0-9]+$' || true)
+          echo "发版仓库 $COUNT_REPO 已有 $GH_COUNT 个 gh 版本"
           # 迁移到新仓库时旧仓库已发到 gh26；仓库变量 GH_BASE 用来接上序号。
           GH_BASE="${GH_BASE:-0}"
           GH_N=$((GH_BASE + GH_COUNT + 1))
@@ -320,6 +334,8 @@ jobs:
             exit 1
           fi
           # ③ versionCode 必须严格大于所有已发版本（保证能直接覆盖安装）
+          # 同前：跨仓库读 releases 必须用 RELEASE_TOKEN，否则读到 0 条 → MAX=0 → 守卫形同虚设
+          if [ -n "$RELEASE_TOKEN" ]; then export GH_TOKEN="$RELEASE_TOKEN"; fi
           MAX=$(gh release list --repo "${RELEASE_REPO:-$GITHUB_REPOSITORY}" --limit 200 2>/dev/null | awk '{print $1}' | head -0; true)
           MAX=$(gh api "repos/${RELEASE_REPO:-$GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[].tag_name' 2>/dev/null                 | sed 's/.*-gh//' | grep -E '^[0-9]+$' | sort -n | tail -1)
           MAX=${MAX:-0}
